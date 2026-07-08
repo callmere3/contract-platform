@@ -1,30 +1,25 @@
 """
 Точка входа FastAPI.
 
-Задача этапа 1 — доказать, что три компонента системы (API, PostgreSQL,
-MinIO) реально связаны друг с другом, а не просто одновременно запущены.
-Для этого три эндпоинта:
-
-  GET /health          — жив ли сам процесс API
-  GET /health/db        — доходит ли API до PostgreSQL
-  GET /health/storage    — доходит ли API до MinIO: кладём тестовый файл
-                          и тут же читаем его обратно (тот самый "файл
-                          руками кладётся в MinIO и читается обратно"
-                          из критерия готовности этапа)
+Этап 1: health-эндпоинты (проверка связи с БД и MinIO).
+Этап 2: подключён роутер /templates (загрузка шаблонов и генерация),
+на старте создаются таблицы БД.
 """
 from fastapi import FastAPI, HTTPException
 
-from app.db import check_db_connection
+from app.db import check_db_connection, init_db
+from app.routers_templates import router as templates_router
 from app.storage import download_test_file, ensure_bucket_exists, upload_test_file
 
 app = FastAPI(title="Contract Platform API")
 
+app.include_router(templates_router)
+
 
 @app.on_event("startup")
 def on_startup() -> None:
-    # Бакет в MinIO должен существовать до первого запроса на загрузку файла —
-    # создаём его один раз при старте приложения, а не при каждом обращении
     ensure_bucket_exists()
+    init_db()  # создаёт таблицы templates и template_fields, если их ещё нет
 
 
 @app.get("/health")
@@ -37,8 +32,6 @@ def health_db() -> dict:
     try:
         check_db_connection()
     except Exception as exc:
-        # 503 Service Unavailable — правильный код для "зависимость недоступна",
-        # в отличие от 500, который обычно означает баг в самом коде
         raise HTTPException(status_code=503, detail=f"db unavailable: {exc}") from exc
     return {"status": "ok"}
 
