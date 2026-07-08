@@ -1,0 +1,61 @@
+services:
+  api:
+    build: ./backend
+    container_name: contracts_api
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    volumes:
+      # монтируем код внутрь контейнера, чтобы правки на хосте сразу подхватывались
+      # (вместе с --reload в команде запуска) — удобно на этапе разработки
+      - ./backend/app:/app/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  db:
+    image: postgres:16
+    container_name: contracts_db
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      # порт наружу нужен только для локальной разработки (посмотреть базу
+      # через DBeaver/pgAdmin с хоста). На проде эту секцию лучше убрать.
+      - "5432:5432"
+    healthcheck:
+      # docker-compose не запустит api, пока Postgres не ответит на этот тест —
+      # это и даёт condition: service_healthy выше
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio
+    container_name: contracts_minio
+    command: server /data --console-address ":9001"
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
+    volumes:
+      - miniodata:/data
+    ports:
+      - "9000:9000"   # S3 API — сюда стучится backend
+      - "9001:9001"   # веб-консоль MinIO — глазами посмотреть загруженные файлы
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
+  miniodata:
