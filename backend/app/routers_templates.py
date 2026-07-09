@@ -9,7 +9,8 @@
     POST /folders                     — создать папку (name, parent_id)
 
   Шаблоны:
-    POST /templates                   — загрузить шаблон в папку
+    POST /templates                   — загрузить НОВЫЙ шаблон в папку
+    PUT  /templates/{id}/file         — заменить файл у СУЩЕСТВУЮЩЕГО шаблона
     GET  /templates/{id}/fields       — какие поля нужно заполнить
     POST /templates/{id}/generate     — сгенерировать документ
 """
@@ -141,6 +142,60 @@ def upload_template(
         "id": str(template_id),
         "name": name,
         "doc_type": doc_type,
+        "fields_found": placeholders,
+    }
+
+
+@templates_router.put("/{template_id}/file")
+def replace_template_file(
+    template_id: uuid.UUID,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_session),
+) -> dict:
+    """
+    Заменяет docx-файл у СУЩЕСТВУЮЩЕГО шаблона, не создавая новый.
+
+    Используется, когда в шаблон внесли правки (поправили формулировку,
+    добавили метку) и нужно обновить его на сервере — id, папка, doc_type
+    и все ссылки на него (напр. из истории сгенерированных документов
+    на будущих этапах) остаются прежними.
+
+    storage_key строится из template_id и поэтому не меняется — новый
+    файл просто перезаписывает старый по тому же пути в MinIO, старый
+    файл нигде не остаётся.
+
+    Метки пересканируются заново: старые template_fields удаляются,
+    вместо них создаются новые под обновлённую разметку. version
+    увеличивается — пригодится, если понадобится история изменений.
+    """
+    if not file.filename.endswith(".docx"):
+        raise HTTPException(status_code=400, detail="Ожидается файл .docx")
+
+    template = db.get(Template, template_id)
+    if template is None:
+        raise HTTPException(status_code=404, detail="Шаблон не найден")
+
+    content = file.file.read()
+
+    try:
+        placeholders = scan_placeholders(content)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Не удалось прочитать шаблон: {exc}")
+
+    # тот же storage_key, что и был — файл в MinIO перезаписывается на месте
+    put_file(template.storage_key, content)
+
+    # старые метки больше не актуальны — пересобираем список заново
+    template.fields = [TemplateField(placeholder=p, maps_to="manual") for p in placeholders]
+    template.version += 1
+
+    db.add(template)
+    db.commit()
+
+    return {
+        "id": str(template.id),
+        "name": template.name,
+        "version": template.version,
         "fields_found": placeholders,
     }
 
