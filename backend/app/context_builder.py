@@ -129,55 +129,64 @@ def build_profanity_note(tracks: list[dict]) -> str:
     return ", ".join(parts)
 
 
-def _normalize_performers(raw_performers) -> list[str]:
+def _normalize_performers(raw_performers) -> list[dict]:
     """
-    Приводит исполнителей к списку строк.
+    Приводит исполнителей к списку {'nickname': ..., 'fio': ...}.
 
-    Форма присылает list-поля как список объектов: [{"fio": "Иванов И.И."}],
-    а из кода/тестов удобнее передавать просто ["Иванов И.И."].
-    Поддерживаем оба вида.
+    Форма присылает list-поля как список объектов:
+        [{"nickname": "IVAN", "fio": "Иванов И.И."}, ...]
+    Поддерживается и старый вид (только ФИО строкой) — для обратной
+    совместимости с кодом/тестами, где никнейм не передавали.
     """
     if not raw_performers:
         return []
     result = []
     for p in raw_performers:
         if isinstance(p, dict):
-            # берём первое непустое значение объекта (обычно ключ 'fio')
-            value = next((v for v in p.values() if v), "")
-            if value:
-                result.append(str(value).strip())
+            nickname = str(p.get("nickname", "")).strip()
+            fio = str(p.get("fio", "")).strip()
+            if nickname or fio:
+                result.append({"nickname": nickname, "fio": fio})
         elif p:
-            result.append(str(p).strip())
+            result.append({"nickname": "", "fio": str(p).strip()})
     return result
 
 
 def build_performer_note(
-    performers: list[str],
+    performers: list[dict],
     nickname: str | None = None,
     group_name: str | None = None,
 ) -> str:
     """
     Формирует сноску про исполнителей (всегда присутствует).
-    Формат: "никнейм - ФИО" (требование заказчика).
+    Формат: "никнейм - ФИО" — для КАЖДОГО исполнителя, без буквенных
+    обозначений (буквы в колонке таблицы треков были ошибкой первой
+    версии — юрист имел в виду именно никнейм-ФИО построчно).
 
       - один исполнитель            -> "Исполнитель: IVAN - Иванов И.И."
       - группа (указано group_name) -> "Исполнители в составе группы «X»: Иванов И.И., Петров П.П."
-      - несколько без группы         -> "Исполнители: А – Иванов И.И.; В – Петров П.П."
+      - несколько без группы         -> "Исполнители: IVAN - Иванов И.И.; PETROV - Петров П.П."
+
+    performers — список словарей {'nickname', 'fio'} (см. _normalize_performers).
+    Каждая пара соответствует одному треку — колонка «Исполнитель» в
+    таблице треков теперь заполняется никнеймом напрямую, а не буквой.
     """
     if not performers:
         return "Исполнитель: —"
 
     if len(performers) == 1:
-        fio = performers[0]
-        if nickname:
-            return f"Исполнитель: {nickname} - {fio}"
+        p = performers[0]
+        fio = p["fio"]
+        nick = p["nickname"] or nickname or ""
+        if nick:
+            return f"Исполнитель: {nick} - {fio}"
         return f"Исполнитель: {fio}"
 
     if group_name:
-        return f"Исполнители в составе группы «{group_name}»: {', '.join(performers)}"
+        fios = ", ".join(p["fio"] for p in performers)
+        return f"Исполнители в составе группы «{group_name}»: {fios}"
 
-    letters = "АВСDEFGH"
-    pairs = [f"{letters[i]} – {p}" for i, p in enumerate(performers)]
+    pairs = [f"{p['nickname'] or '—'} - {p['fio']}" for p in performers]
     return f"Исполнители: {'; '.join(pairs)}"
 
 

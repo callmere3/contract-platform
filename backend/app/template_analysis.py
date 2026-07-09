@@ -110,7 +110,8 @@ ITEM_FIELD_LABELS = {
     "director":      "Режиссёр / автор сценария",
     "production":    "Страна / год / хронометраж / возраст",
     "share":         "Доля",
-    "fio":           "ФИО исполнителя",
+    "nickname":      "Никнейм",
+    "fio":           "ФИО",
 }
 
 # Порядок колонок в таблицах. Без этого они идут по алфавиту,
@@ -118,7 +119,7 @@ ITEM_FIELD_LABELS = {
 ITEM_FIELD_ORDER = [
     "title", "music_author", "lyrics_author", "director", "performer",
     "producer", "production", "share_author", "share_related", "share",
-    "fio",
+    "nickname", "fio",
 ]
 
 # Порядок полей внутри группы. Отражает порядок в документе,
@@ -158,7 +159,9 @@ VIRTUAL_FIELDS = [
     ("contract_year",  "text", "Документ", "Год (2 цифры)", "26", "contract"),
     ("term_quarter",   "choice", "Документ", "Срок до конца квартала", "", "term_end"),
     ("term_year",      "text", "Документ", "Год окончания срока", "2027", "term_end"),
-    ("performers",     "list", "Треки", "Исполнители (для сноски)", "", "performer_note"),
+    ("performers",     "list", "Треки", "Исполнители (для сноски)",
+     "впишите тех же исполнителей никнеймом в колонку «Исполнитель» таблицы треков выше",
+     "performer_note"),
     ("group_name",     "text", "Треки", "Название группы",
      "если исполнители — участники группы", "performer_note"),
 ]
@@ -169,7 +172,7 @@ VIRTUAL_CHOICES = {
 }
 
 VIRTUAL_LIST_ITEMS = {
-    "performers": ["fio"],
+    "performers": ["nickname", "fio"],
 }
 
 
