@@ -1,0 +1,341 @@
+"""
+Анализ шаблона: определение ТИПОВ полей для автоматического построения формы.
+
+Проблема: docxtpl отдаёт плоский список меток. Форма не может отличить
+    name    — текстовое поле
+    tracks  — таблица с добавлением строк
+    edo     — галочка
+и сгенерирует три одинаковых <input type="text">.
+
+Решение: тип выводится из самого шаблона, а не хранится в БД.
+    {% for t in tracks %}   -> tracks это список, а t.title -> колонка таблицы
+    {% if edo %}             -> edo это флаг (используется только в условии)
+    {{ name }}                -> обычное текстовое поле
+
+Так тип не может рассинхронизироваться с шаблоном: поменял разметку —
+форма перестроилась сама.
+
+Отдельно исключаются ВЫЧИСЛЯЕМЫЕ поля (contract, profanity_note и т.д.) —
+их считает context_builder, оператор их не вводит.
+"""
+import io
+import re
+import zipfile
+from dataclasses import dataclass, field
+
+# Поля, которые вычисляет context_builder — в форме не показываются.
+# Синхронизировано с context_builder.build_context()
+COMPUTED_FIELDS = {
+    "contract",         # собирается из даты + инициалов ФИО
+    "name_short",       # из ФИО
+    "profanity_note",   # из галочек НЛ у треков
+    "performer_note",   # из списка исполнителей
+    "term_end",         # из квартала и года
+    "release_label",    # из release_type
+}
+
+# Служебные переменные Jinja, не являющиеся полями
+JINJA_BUILTINS = {"loop"}
+
+# Перечисления, которые НЕЛЬЗЯ вывести из шаблона целиком.
+# Шаблон содержит только `release_type != 'none'`, но реальных значений три.
+# Здесь задаём полный список вариантов и человекочитаемые подписи.
+KNOWN_CHOICES = {
+    "release_type": [
+        ("album", "Альбом"),
+        ("ep", "ЕР"),
+        ("none", "Сингл (без альбома)"),
+    ],
+}
+
+# Человекочитаемые подписи и группировка.
+# Ключ — имя метки, значение — (группа, подпись, подсказка).
+# Метки, которых здесь нет, попадут в группу «Прочее» с именем как есть.
+FIELD_META = {
+    # Контрагент
+    "name":       ("Контрагент", "ФИО полностью", "Иванов Иван Иванович"),
+    "inn":        ("Контрагент", "ИНН", "771234567890"),
+    "nickname":   ("Контрагент", "Псевдоним", "если нет — оставьте пустым"),
+    "npd":        ("Контрагент", "Дата и место постановки на учёт НПД", ""),
+    "birthday":   ("Контрагент", "Дата рождения", "01.01.1990"),
+
+    # Паспорт
+    "serial":     ("Паспорт", "Серия", "4500"),
+    "number":     ("Паспорт", "Номер", "123456"),
+    "pas_place":  ("Паспорт", "Кем выдан", ""),
+    "pas_date":   ("Паспорт", "Дата выдачи", "10.05.2015"),
+    "kp":         ("Паспорт", "Код подразделения", "770-001"),
+
+    # Контакты
+    "adress":     ("Контакты", "Адрес", ""),
+    "phone":      ("Контакты", "Телефон", "+7 900 000-00-00"),
+    "mail":       ("Контакты", "E-mail", ""),
+
+    # Реквизиты
+    "rs":         ("Банковские реквизиты", "Расчётный счёт", ""),
+    "bank":       ("Банковские реквизиты", "Банк", ""),
+    "ks":         ("Банковские реквизиты", "Корр. счёт", ""),
+    "bik":        ("Банковские реквизиты", "БИК", ""),
+
+    # Документ
+    "c_date":     ("Документ", "Дата договора", "«15» марта 2026 г."),
+    "date":       ("Документ", "Дата документа", "«15» марта 2026 г."),
+    "appendix_no":("Документ", "Номер приложения", "1"),
+    "edo":        ("Документ", "Подписание через ЭДО",
+                   "в нижнем колонтитуле останется только номер страницы"),
+    "royalty":    ("Документ", "Роялти, %", "50"),
+    "royalty_text":("Документ", "Роялти прописью", "пятьдесят"),
+
+    # Релиз
+    "release_type":  ("Релиз", "Тип релиза", ""),
+    "release_name":  ("Релиз", "Название релиза", "заполняется для альбома и ЕР"),
+    "release_year":  ("Релиз", "Год выпуска", "2026"),
+    "has_videoclip": ("Релиз", "Есть видеоклип",
+                      "если нет — пункт про клип удалится, нумерация сдвинется"),
+
+    # Таблицы
+    "tracks":     ("Треки", "Список треков", ""),
+    "videoclips": ("Видеоклипы", "Список видеоклипов", ""),
+}
+
+# Подписи к колонкам таблиц
+ITEM_FIELD_LABELS = {
+    "title":         "Название",
+    "music_author":  "Автор музыки",
+    "lyrics_author": "Автор текста",
+    "performer":     "Исполнитель",
+    "producer":      "Изготовитель / хронометраж",
+    "share_author":  "Доля авторская",
+    "share_related": "Доля смежная",
+    "director":      "Режиссёр / автор сценария",
+    "production":    "Страна / год / хронометраж / возраст",
+    "share":         "Доля",
+    "fio":           "ФИО исполнителя",
+}
+
+# Порядок колонок в таблицах. Без этого они идут по алфавиту,
+# и «Название» оказывается последним, что неудобно для ввода.
+ITEM_FIELD_ORDER = [
+    "title", "music_author", "lyrics_author", "director", "performer",
+    "producer", "production", "share_author", "share_related", "share",
+    "fio",
+]
+
+# Порядок полей внутри группы. Отражает порядок в документе,
+# а не алфавит: Серия -> Номер -> Кем выдан -> Дата -> КП.
+FIELD_ORDER = [
+    # Документ
+    "contract_day", "contract_month", "contract_year",
+    "c_date", "date", "appendix_no", "edo", "royalty", "royalty_text",
+    "term_quarter", "term_year",
+    # Контрагент
+    "name", "inn", "nickname", "npd", "birthday",
+    # Паспорт
+    "serial", "number", "pas_place", "pas_date", "kp",
+    # Контакты
+    "adress", "phone", "mail",
+    # Реквизиты
+    "rs", "bank", "ks", "bik",
+    # Релиз
+    "release_type", "release_name", "release_year", "has_videoclip",
+    # Таблицы
+    "tracks", "performers", "group_name", "videoclips",
+]
+
+# Порядок групп в форме
+GROUP_ORDER = [
+    "Документ", "Контрагент", "Паспорт", "Контакты",
+    "Банковские реквизиты", "Релиз", "Треки", "Видеоклипы", "Прочее",
+]
+
+# Поля, которых НЕТ в шаблоне, но которые нужны context_builder.
+# Например, номер договора вычисляется из дня/месяца — а их надо где-то ввести.
+# Появляются в форме, только если в шаблоне есть поле-триггер.
+VIRTUAL_FIELDS = [
+    # (имя, тип, группа, подпись, подсказка, триггер)
+    ("contract_day",   "text", "Документ", "День заключения договора", "15", "contract"),
+    ("contract_month", "text", "Документ", "Месяц заключения договора", "03", "contract"),
+    ("contract_year",  "text", "Документ", "Год (2 цифры)", "26", "contract"),
+    ("term_quarter",   "choice", "Документ", "Срок до конца квартала", "", "term_end"),
+    ("term_year",      "text", "Документ", "Год окончания срока", "2027", "term_end"),
+    ("performers",     "list", "Треки", "Исполнители (для сноски)", "", "performer_note"),
+    ("group_name",     "text", "Треки", "Название группы",
+     "если исполнители — участники группы", "performer_note"),
+]
+
+VIRTUAL_CHOICES = {
+    "term_quarter": [("1", "I (31 марта)"), ("2", "II (30 июня)"),
+                     ("3", "III (30 сентября)"), ("4", "IV (31 декабря)")],
+}
+
+VIRTUAL_LIST_ITEMS = {
+    "performers": ["fio"],
+}
+
+
+@dataclass
+class FormField:
+    """Описание одного поля формы."""
+    name: str
+    type: str                       # 'text' | 'flag' | 'choice' | 'list'
+    # для type='list' — колонки элемента списка
+    item_fields: list[str] = field(default_factory=list)
+    # для type='choice' — значения и подписи к ним
+    choices: list[str] = field(default_factory=list)
+    choice_labels: list[str] = field(default_factory=list)
+
+
+def _extract_text(docx_bytes: bytes) -> str:
+    """
+    Достаёт текст всех XML-частей документа (тело + колонтитулы),
+    убирая теги Word. Метки могут стоять и в колонтитулах.
+    """
+    with zipfile.ZipFile(io.BytesIO(docx_bytes)) as z:
+        parts = [
+            n for n in z.namelist()
+            if n.endswith(".xml") and any(k in n for k in ("document", "header", "footer"))
+        ]
+        raw = "".join(z.read(p).decode("utf-8", "ignore") for p in parts)
+    # вырезаем XML-теги: остаётся чистый текст с метками Jinja
+    return re.sub(r"<[^>]+>", "", raw)
+
+
+def analyze_template(docx_bytes: bytes) -> list[FormField]:
+    """
+    Возвращает описание полей формы, выведенное из разметки шаблона.
+
+    Порядок определения типа (важен — от специфичного к общему):
+      1. list   — переменная участвует в {% for x in ЭТО %}
+      2. choice — сравнивается со строковым литералом: ЭТО != 'none'
+      3. flag   — используется ТОЛЬКО в условиях, нигде не выводится как {{ }}
+      4. text   — всё остальное
+    """
+    text = _extract_text(docx_bytes)
+
+    # --- 1. Списки и колонки их элементов ---
+    # {%tr for t in tracks %} / {%p for %} / {% for %}
+    loops = re.findall(r"\{%\s*(?:tr\s+|p\s+)?for\s+(\w+)\s+in\s+(\w+)\s*%\}", text)
+
+    lists: dict[str, list[str]] = {}
+    loop_vars = set()
+    for item_var, collection in loops:
+        loop_vars.add(item_var)
+        # колонки: {{ t.title }} -> title
+        attrs = set(re.findall(rf"\{{\{{\s*{re.escape(item_var)}\.(\w+)", text))
+        lists[collection] = sorted(attrs)
+
+    # --- 2. Переменные, выводимые как {{ x }} (без точки) ---
+    printed = set(re.findall(r"\{\{\s*(\w+)\s*\}\}", text))
+    printed -= JINJA_BUILTINS
+    printed -= loop_vars  # {{ t }} сам по себе не поле
+
+    # --- 3. Переменные в условиях ---
+    cond_bodies = re.findall(r"\{%\s*(?:tr\s+|p\s+)?if\s+([^%]+?)\s*%\}", text)
+
+    in_conditions: set[str] = set()
+    choices: dict[str, set[str]] = {}
+
+    for body in cond_bodies:
+        # сначала вытаскиваем сравнения со строковыми литералами:
+        #   release_type != 'none'  ->  choices['release_type'] = {'none'}
+        for var, val in re.findall(r"(\w+)\s*[!=]=\s*'([^']*)'", body):
+            choices.setdefault(var, set()).add(val)
+
+        # затем УБИРАЕМ литералы из текста условия, иначе 'none' будет
+        # распознан как имя переменной и попадёт в форму отдельным полем
+        body_no_literals = re.sub(r"'[^']*'", "", body)
+
+        names = set(re.findall(r"\b([a-zA-Z_]\w*)\b", body_no_literals))
+        names -= {"not", "and", "or", "in", "is", "length", "None", "True", "False"}
+        in_conditions |= names
+
+    # --- Собираем результат ---
+    fields: list[FormField] = []
+
+    # все переменные шаблона (для решения, какие виртуальные поля нужны)
+    all_vars = printed | in_conditions | set(lists)
+    computed_present = all_vars & COMPUTED_FIELDS
+
+    # списки
+    for name, item_fields in sorted(lists.items()):
+        fields.append(FormField(name=name, type="list", item_fields=item_fields))
+
+    # остальные переменные
+    others = (printed | in_conditions) - set(lists) - COMPUTED_FIELDS - JINJA_BUILTINS
+    for name in sorted(others):
+        if name in KNOWN_CHOICES:
+            # полный список вариантов задан явно (шаблон знает не все)
+            fields.append(FormField(
+                name=name, type="choice",
+                choices=[v for v, _ in KNOWN_CHOICES[name]],
+                choice_labels=[l for _, l in KNOWN_CHOICES[name]],
+            ))
+        elif name in choices:
+            vals = sorted(choices[name])
+            fields.append(FormField(name=name, type="choice", choices=vals,
+                                    choice_labels=vals))
+        elif name in in_conditions and name not in printed:
+            # используется только в {% if %}, нигде не выводится -> флаг
+            fields.append(FormField(name=name, type="flag"))
+        else:
+            fields.append(FormField(name=name, type="text"))
+
+    # --- виртуальные поля ---
+    # Добавляем те, чей триггер (вычисляемая метка) есть в шаблоне.
+    # Пример: если шаблон содержит {{ contract }}, значит нужны поля
+    # день/месяц/год, из которых context_builder соберёт номер.
+    for vname, vtype, _grp, _lbl, _hint, trigger in VIRTUAL_FIELDS:
+        if trigger not in computed_present:
+            continue
+        f = FormField(name=vname, type=vtype)
+        if vtype == "choice":
+            f.choices = [v for v, _ in VIRTUAL_CHOICES[vname]]
+            f.choice_labels = [l for _, l in VIRTUAL_CHOICES[vname]]
+        if vtype == "list":
+            f.item_fields = VIRTUAL_LIST_ITEMS[vname]
+        fields.append(f)
+
+    return fields
+
+
+def fields_to_dict(fields: list[FormField]) -> list[dict]:
+    """
+    Приводит к JSON-виду для фронтенда: добавляет группу, подпись, подсказку.
+    Поля отсортированы по порядку групп (GROUP_ORDER).
+    """
+    out = []
+    virtual_meta = {v[0]: (v[2], v[3], v[4]) for v in VIRTUAL_FIELDS}
+
+    for f in fields:
+        if f.name in virtual_meta:
+            group, label, hint = virtual_meta[f.name]
+        else:
+            group, label, hint = FIELD_META.get(f.name, ("Прочее", f.name, ""))
+
+        item = {
+            "name": f.name,
+            "type": f.type,
+            "group": group,
+            "label": label,
+            "hint": hint,
+        }
+        if f.type == "list":
+            # колонки в осмысленном порядке, а не по алфавиту
+            col_order = {c: i for i, c in enumerate(ITEM_FIELD_ORDER)}
+            cols = sorted(f.item_fields, key=lambda c: col_order.get(c, 999))
+            item["item_fields"] = [
+                {"name": c, "label": ITEM_FIELD_LABELS.get(c, c)} for c in cols
+            ]
+        if f.type == "choice":
+            item["choices"] = [
+                {"value": v, "label": l}
+                for v, l in zip(f.choices, f.choice_labels or f.choices)
+            ]
+        out.append(item)
+
+    # сортируем: сначала по порядку групп, внутри группы — по FIELD_ORDER
+    group_pos = {g: i for i, g in enumerate(GROUP_ORDER)}
+    field_pos = {f: i for i, f in enumerate(FIELD_ORDER)}
+    out.sort(key=lambda x: (group_pos.get(x["group"], 999),
+                            field_pos.get(x["name"], 999)))
+    return out

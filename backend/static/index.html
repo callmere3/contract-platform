@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Генерация договоров</title>
+<style>
+  :root{
+    --ink:#141b26;
+    --ink-2:#4a5568;
+    --ink-3:#8996a8;
+    --line:#dde3ea;
+    --line-2:#eef2f6;
+    --bg:#f7f9fb;
+    --panel:#fff;
+    --accent:#1f5f8b;
+    --accent-soft:#e8f1f7;
+    --danger:#a4342b;
+    --ok:#2d6a4a;
+    --radius:3px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    color:var(--ink);background:var(--bg);
+    -webkit-font-smoothing:antialiased;
+  }
+  code,.mono{font-family:"SF Mono",Menlo,Consolas,monospace;font-size:.85em}
+
+  /* --- каркас --- */
+  .shell{max-width:1180px;margin:0 auto;padding:0 20px}
+  header{
+    background:var(--panel);border-bottom:1px solid var(--line);
+    padding:14px 0;position:sticky;top:0;z-index:20;
+  }
+  header .shell{display:flex;align-items:baseline;gap:14px}
+  h1{font-size:16px;font-weight:600;letter-spacing:-.01em}
+  header .sub{color:var(--ink-3);font-size:13px}
+
+  main{padding:24px 0 80px}
+
+  /* --- панели --- */
+  .panel{
+    background:var(--panel);border:1px solid var(--line);
+    border-radius:var(--radius);margin-bottom:18px;
+  }
+  .panel-head{
+    padding:12px 16px;border-bottom:1px solid var(--line-2);
+    display:flex;align-items:center;justify-content:space-between;gap:12px;
+  }
+  .panel-head h2{font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-2)}
+  .panel-body{padding:16px}
+
+  /* --- хлебные крошки + навигация --- */
+  .crumbs{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ink-3);flex-wrap:wrap}
+  .crumbs button{
+    background:none;border:none;color:var(--accent);cursor:pointer;
+    font:inherit;padding:2px 4px;border-radius:2px;
+  }
+  .crumbs button:hover{background:var(--accent-soft)}
+  .crumbs .sep{color:var(--line)}
+
+  .browse{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px}
+  .node{
+    display:flex;align-items:center;gap:9px;padding:10px 12px;
+    border:1px solid var(--line);border-radius:var(--radius);
+    background:var(--panel);cursor:pointer;text-align:left;font:inherit;
+    transition:border-color .12s,background .12s;
+  }
+  .node:hover{border-color:var(--accent);background:var(--accent-soft)}
+  .node:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+  .node .icon{flex:none;color:var(--ink-3);font-size:15px}
+  .node.tpl .icon{color:var(--accent)}
+  .node .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .node .badge{
+    margin-left:auto;font-size:11px;color:var(--ink-3);
+    border:1px solid var(--line);border-radius:2px;padding:1px 5px;flex:none;
+  }
+  .empty{color:var(--ink-3);font-size:14px;padding:8px 2px}
+
+  /* --- форма --- */
+  fieldset{border:none;margin-bottom:22px}
+  legend{
+    font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;
+    color:var(--ink-2);padding-bottom:8px;margin-bottom:12px;
+    border-bottom:1px solid var(--line-2);width:100%;
+  }
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px 16px}
+
+  .field label{display:block;font-size:13px;color:var(--ink-2);margin-bottom:4px}
+  .field .hint{font-size:12px;color:var(--ink-3);margin-top:3px}
+  input[type=text],select{
+    width:100%;padding:7px 9px;font:inherit;color:var(--ink);
+    border:1px solid var(--line);border-radius:var(--radius);background:var(--panel);
+  }
+  input[type=text]:focus,select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+
+  .check{display:flex;align-items:flex-start;gap:9px;padding:9px 11px;border:1px solid var(--line);border-radius:var(--radius)}
+  .check input{margin-top:3px;flex:none;accent-color:var(--accent)}
+  .check .txt label{margin:0;color:var(--ink);font-size:14px}
+
+  /* --- таблицы-списки --- */
+  .tbl-wrap{border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{
+    background:var(--bg);font-weight:600;font-size:11px;text-transform:uppercase;
+    letter-spacing:.04em;color:var(--ink-2);text-align:left;
+    padding:8px 9px;border-bottom:1px solid var(--line);white-space:nowrap;
+  }
+  td{padding:5px 6px;border-bottom:1px solid var(--line-2);vertical-align:middle}
+  tbody tr:last-child td{border-bottom:none}
+  td input[type=text]{border-color:transparent;padding:5px 6px;background:transparent}
+  td input[type=text]:hover{border-color:var(--line)}
+  td input[type=text]:focus{background:var(--panel);border-color:var(--accent)}
+  td.num{text-align:center;color:var(--ink-3);width:34px;font-variant-numeric:tabular-nums}
+  td.act{width:34px;text-align:center}
+  td.chk{width:52px;text-align:center}
+  td.chk input{accent-color:var(--accent)}
+
+  .row-del{
+    border:none;background:none;color:var(--ink-3);cursor:pointer;
+    font-size:16px;line-height:1;padding:3px 6px;border-radius:2px;
+  }
+  .row-del:hover{color:var(--danger);background:#fbeceb}
+
+  .tbl-foot{padding:8px 9px;background:var(--bg);border-top:1px solid var(--line)}
+
+  /* --- кнопки --- */
+  button.btn{
+    font:inherit;padding:7px 13px;border-radius:var(--radius);cursor:pointer;
+    border:1px solid var(--line);background:var(--panel);color:var(--ink);
+  }
+  button.btn:hover{border-color:var(--ink-3)}
+  button.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:500}
+  button.btn.primary:hover{background:#194e73}
+  button.btn.small{padding:4px 9px;font-size:13px}
+  button.btn:disabled{opacity:.5;cursor:not-allowed}
+
+  /* --- подвал формы --- */
+  .actions{
+    position:sticky;bottom:0;background:var(--panel);
+    border-top:1px solid var(--line);padding:12px 16px;
+    display:flex;align-items:center;gap:12px;
+  }
+  .actions .spacer{flex:1}
+
+  /* --- сообщения --- */
+  .msg{padding:10px 13px;border-radius:var(--radius);font-size:13px;margin-bottom:14px;display:none}
+  .msg.err{background:#fbeceb;border:1px solid #eccbc8;color:var(--danger);display:block}
+  .msg.ok{background:#e9f4ee;border:1px solid #c5e2d1;color:var(--ok);display:block}
+
+  .loading{color:var(--ink-3);font-size:14px}
+
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="shell">
+    <h1>Генерация договоров</h1>
+    <span class="sub" id="hdr-sub">Медиа Лэнд</span>
+  </div>
+</header>
+
+<main class="shell">
+  <div class="msg" id="msg"></div>
+
+  <!-- Навигация по папкам -->
+  <section class="panel" id="browser">
+    <div class="panel-head">
+      <div class="crumbs" id="crumbs"></div>
+    </div>
+    <div class="panel-body">
+      <div id="browse-content" class="loading">Загрузка…</div>
+    </div>
+  </section>
+
+  <!-- Форма -->
+  <section class="panel" id="form-panel" hidden>
+    <div class="panel-head">
+      <h2 id="tpl-name"></h2>
+      <button class="btn small" id="btn-back">← К выбору шаблона</button>
+    </div>
+    <div class="panel-body">
+      <form id="form"></form>
+    </div>
+    <div class="actions">
+      <button class="btn primary" id="btn-gen">Сформировать документ</button>
+      <span class="spacer"></span>
+      <span class="loading" id="gen-status"></span>
+    </div>
+  </section>
+</main>
+
+<script>
+const API = '';            // тот же origin; при отдельном хосте — 'http://IP:8000'
+let currentTemplateId = null;
+let currentFields = [];
+
+// ---------- утилиты ----------
+const $ = s => document.querySelector(s);
+const el = (tag, attrs = {}, ...kids) => {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === 'class') n.className = v;
+    else if (k === 'html') n.innerHTML = v;
+    else if (k.startsWith('on')) n.addEventListener(k.slice(2), v);
+    else if (v !== null && v !== false) n.setAttribute(k, v);
+  }
+  kids.flat().forEach(c => n.append(c?.nodeType ? c : document.createTextNode(c)));
+  return n;
+};
+function showMsg(text, kind = 'err') {
+  const m = $('#msg');
+  m.className = 'msg ' + kind;
+  m.textContent = text;
+  if (kind === 'ok') setTimeout(() => { m.className = 'msg'; }, 4000);
+}
+function clearMsg() { $('#msg').className = 'msg'; }
+
+// ---------- навигация по папкам ----------
+let pathStack = [];        // [{id, name}]
+
+async function browse(folderId = null) {
+  clearMsg();
+  const box = $('#browse-content');
+  box.className = 'loading';
+  box.textContent = 'Загрузка…';
+
+  const url = folderId ? `${API}/folders?parent_id=${folderId}` : `${API}/folders`;
+  let data;
+  try {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(`${r.status}`);
+    data = await r.json();
+  } catch (e) {
+    box.className = '';
+    box.textContent = '';
+    showMsg('Не удалось загрузить список папок. Проверьте, что сервер запущен.');
+    return;
+  }
+
+  renderCrumbs(data.breadcrumb, folderId);
+
+  box.className = '';
+  box.textContent = '';
+
+  if (!data.folders.length && !data.templates.length) {
+    box.append(el('p', { class: 'empty' },
+      folderId ? 'Папка пуста.' : 'Папок пока нет. Создайте их через POST /folders.'));
+    return;
+  }
+
+  const grid = el('div', { class: 'browse' });
+
+  data.folders.forEach(f => grid.append(
+    el('button', { class: 'node', type: 'button', onclick: () => open(f) },
+      el('span', { class: 'icon' }, '📁'),
+      el('span', { class: 'nm' }, f.name))
+  ));
+
+  data.templates.forEach(t => {
+    const badge = { contract: 'договор', appendix: 'приложение', act: 'акт' }[t.doc_type];
+    grid.append(el('button', { class: 'node tpl', type: 'button', onclick: () => loadForm(t) },
+      el('span', { class: 'icon' }, '📄'),
+      el('span', { class: 'nm' }, t.name),
+      badge ? el('span', { class: 'badge' }, badge) : ''));
+  });
+
+  box.append(grid);
+}
+
+function open(folder) {
+  pathStack.push(folder);
+  browse(folder.id);
+}
+
+function renderCrumbs(breadcrumb, folderId) {
+  const c = $('#crumbs');
+  c.textContent = '';
+  c.append(el('button', { type: 'button', onclick: () => { pathStack = []; browse(null); } }, 'Все шаблоны'));
+
+  (breadcrumb || []).forEach((name, i) => {
+    c.append(el('span', { class: 'sep' }, '/'));
+    const isLast = i === breadcrumb.length - 1;
+    if (isLast) {
+      c.append(el('span', {}, name));
+    } else {
+      c.append(el('button', {
+        type: 'button',
+        onclick: () => { const f = pathStack[i]; pathStack = pathStack.slice(0, i + 1); browse(f.id); }
+      }, name));
+    }
+  });
+}
+
+// ---------- построение формы ----------
+async function loadForm(tpl) {
+  clearMsg();
+  let data;
+  try {
+    const r = await fetch(`${API}/templates/${tpl.id}/fields`);
+    if (!r.ok) throw new Error();
+    data = await r.json();
+  } catch {
+    showMsg('Не удалось загрузить поля шаблона.');
+    return;
+  }
+
+  currentTemplateId = tpl.id;
+  currentFields = data.fields;
+
+  $('#tpl-name').textContent = data.name;
+  $('#browser').hidden = true;
+  $('#form-panel').hidden = false;
+
+  renderForm(data.fields);
+  window.scrollTo(0, 0);
+}
+
+function renderForm(fields) {
+  const form = $('#form');
+  form.textContent = '';
+
+  // группируем, сохраняя порядок с сервера
+  const groups = [];
+  const byName = new Map();
+  fields.forEach(f => {
+    if (!byName.has(f.group)) { byName.set(f.group, []); groups.push(f.group); }
+    byName.get(f.group).push(f);
+  });
+
+  groups.forEach(g => {
+    const fs = el('fieldset', {}, el('legend', {}, g));
+    const lists = byName.get(g).filter(f => f.type === 'list');
+    const plain = byName.get(g).filter(f => f.type !== 'list');
+
+    if (plain.length) {
+      const grid = el('div', { class: 'grid' });
+      plain.forEach(f => grid.append(renderField(f)));
+      fs.append(grid);
+    }
+    lists.forEach(f => fs.append(renderList(f)));
+    form.append(fs);
+  });
+}
+
+function renderField(f) {
+  const wrap = el('div', { class: 'field' });
+
+  if (f.type === 'flag') {
+    const id = `f_${f.name}`;
+    wrap.className = 'field';
+    wrap.append(el('div', { class: 'check' },
+      el('input', { type: 'checkbox', id, 'data-name': f.name }),
+      el('div', { class: 'txt' },
+        el('label', { for: id }, f.label),
+        f.hint ? el('div', { class: 'hint' }, f.hint) : '')
+    ));
+    return wrap;
+  }
+
+  wrap.append(el('label', { for: `f_${f.name}` }, f.label));
+
+  if (f.type === 'choice') {
+    const sel = el('select', { id: `f_${f.name}`, 'data-name': f.name });
+    f.choices.forEach(c => sel.append(el('option', { value: c.value }, c.label)));
+    wrap.append(sel);
+  } else {
+    wrap.append(el('input', {
+      type: 'text', id: `f_${f.name}`, 'data-name': f.name,
+      placeholder: f.hint && !f.hint.includes(' ') ? f.hint : ''
+    }));
+  }
+
+  if (f.hint) wrap.append(el('div', { class: 'hint' }, f.hint));
+  return wrap;
+}
+
+// Таблицы: треки, клипы, исполнители
+function renderList(f) {
+  const wrap = el('div', { 'data-list': f.name });
+  wrap.append(el('label', { style: 'display:block;font-size:13px;color:var(--ink-2);margin-bottom:6px' }, f.label));
+
+  const cols = f.item_fields;
+  const isTracks = f.name === 'tracks';
+
+  const thead = el('tr', {}, el('th', {}, '№'));
+  cols.forEach(c => thead.append(el('th', {}, c.label)));
+  if (isTracks) thead.append(el('th', { title: 'Ненормативная лексика' }, 'НЛ'));
+  thead.append(el('th', {}, ''));
+
+  const tbody = el('tbody');
+
+  const table = el('table', {}, el('thead', {}, thead), tbody);
+  const tblWrap = el('div', { class: 'tbl-wrap' },
+    table,
+    el('div', { class: 'tbl-foot' },
+      el('button', {
+        class: 'btn small', type: 'button',
+        onclick: () => { addRow(tbody, cols, isTracks); renumber(tbody); }
+      }, '+ Добавить строку'))
+  );
+
+  wrap.append(tblWrap);
+  addRow(tbody, cols, isTracks);      // одна строка по умолчанию
+  renumber(tbody);
+  return wrap;
+}
+
+function addRow(tbody, cols, withProfanity) {
+  const tr = el('tr');
+  tr.append(el('td', { class: 'num' }, ''));
+  cols.forEach(c => tr.append(el('td', {},
+    el('input', { type: 'text', 'data-col': c.name }))));
+  if (withProfanity) tr.append(el('td', { class: 'chk' },
+    el('input', { type: 'checkbox', 'data-col': 'has_profanity' })));
+  tr.append(el('td', { class: 'act' },
+    el('button', {
+      class: 'row-del', type: 'button', title: 'Удалить строку',
+      onclick: e => {
+        const body = e.target.closest('tbody');
+        if (body.rows.length > 1) { e.target.closest('tr').remove(); renumber(body); }
+      }
+    }, '×')));
+  tbody.append(tr);
+}
+
+function renumber(tbody) {
+  [...tbody.rows].forEach((tr, i) => { tr.cells[0].textContent = i + 1; });
+}
+
+// ---------- сбор данных и отправка ----------
+function collect() {
+  const data = {};
+
+  currentFields.forEach(f => {
+    if (f.type === 'list') {
+      const wrap = document.querySelector(`[data-list="${f.name}"]`);
+      const rows = [...wrap.querySelectorAll('tbody tr')];
+      data[f.name] = rows.map(tr => {
+        const item = {};
+        tr.querySelectorAll('[data-col]').forEach(inp => {
+          item[inp.dataset.col] = inp.type === 'checkbox' ? inp.checked : inp.value.trim();
+        });
+        return item;
+      }).filter(item => Object.entries(item).some(([k, v]) => k !== 'has_profanity' && v));
+      return;
+    }
+    const inp = document.querySelector(`[data-name="${f.name}"]`);
+    if (!inp) return;
+    data[f.name] = inp.type === 'checkbox' ? inp.checked : inp.value.trim();
+  });
+
+  return data;
+}
+
+async function generate() {
+  clearMsg();
+  const btn = $('#btn-gen');
+  const status = $('#gen-status');
+  btn.disabled = true;
+  status.textContent = 'Формируем…';
+
+  try {
+    const r = await fetch(`${API}/templates/${currentTemplateId}/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(collect())
+    });
+
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      throw new Error(err.detail || `Ошибка ${r.status}`);
+    }
+
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = el('a', { href: url, download: `${$('#tpl-name').textContent}.docx` });
+    document.body.append(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+
+    showMsg('Документ сформирован и скачан.', 'ok');
+  } catch (e) {
+    showMsg(e.message);
+  } finally {
+    btn.disabled = false;
+    status.textContent = '';
+  }
+}
+
+// ---------- старт ----------
+$('#btn-gen').addEventListener('click', generate);
+$('#btn-back').addEventListener('click', () => {
+  $('#form-panel').hidden = true;
+  $('#browser').hidden = false;
+  clearMsg();
+});
+browse(null);
+</script>
+</body>
+</html>

@@ -1,49 +1,127 @@
 """
-Эндпоинты этапа 2 — работа с шаблонами и генерация документов.
+Эндпоинты работы с шаблонами и деревом папок.
 
-Всё проверяется через Swagger UI (http://<сервер>:8000/docs) — интерфейса
-пока нет, это сознательно (по роадмапу UI идёт этапом 3).
+Всё проверяется через Swagger UI (http://<сервер>:8000/docs).
 
-  POST /templates            — загрузить шаблон (.docx), метки просканируются автоматически
-  GET  /templates            — список загруженных шаблонов
-  GET  /templates/{id}/fields — какие поля нужно заполнить для этого шаблона
-  POST /templates/{id}/generate — сгенерировать документ по присланным данным
+  Папки:
+    GET  /folders?parent_id=          — содержимое папки: подпапки + шаблоны
+                                         (parent_id не передан = корень)
+    POST /folders                     — создать папку (name, parent_id)
+
+  Шаблоны:
+    POST /templates                   — загрузить шаблон в папку
+    GET  /templates/{id}/fields       — какие поля нужно заполнить
+    POST /templates/{id}/generate     — сгенерировать документ
 """
+import io
 import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
+from app.context_builder import build_context, find_missing_variables
 from app.db import get_session
 from app.generation import render_document, scan_placeholders
-from app.models import Template, TemplateField
+from app.models import Template, TemplateField, TemplateFolder, folder_path
 from app.storage import get_file, put_file
+from app.template_analysis import analyze_template, fields_to_dict
 
-router = APIRouter(prefix="/templates", tags=["templates"])
+folders_router = APIRouter(prefix="/folders", tags=["folders"])
+templates_router = APIRouter(prefix="/templates", tags=["templates"])
 
 
-@router.post("")
+# =====================================================================
+# ПАПКИ — навигация по дереву произвольной глубины
+# =====================================================================
+
+@folders_router.get("")
+def browse_folder(
+    parent_id: uuid.UUID | None = None,
+    db: Session = Depends(get_session),
+) -> dict:
+    """
+    Содержимое папки: список подпапок и список шаблонов в ней.
+    Без parent_id — содержимое корня (напр. РУ / КЗ).
+
+    Фронтенд вызывает это на каждый клик по папке — так строится
+    навигация любой глубины без знания структуры заранее.
+    """
+    subfolders = (
+        db.query(TemplateFolder)
+        .filter(TemplateFolder.parent_id == parent_id)
+        .order_by(TemplateFolder.name)
+        .all()
+    )
+    templates = (
+        db.query(Template)
+        .filter(Template.folder_id == parent_id)
+        .order_by(Template.name)
+        .all()
+        if parent_id is not None
+        else []
+        # у шаблонов в корне быть не должно, но проверка не помешает
+    )
+
+    breadcrumb = []
+    if parent_id is not None:
+        current = db.get(TemplateFolder, parent_id)
+        if current is None:
+            raise HTTPException(status_code=404, detail="Папка не найдена")
+        breadcrumb = folder_path(current)
+
+    return {
+        "breadcrumb": breadcrumb,
+        "folders": [{"id": str(f.id), "name": f.name} for f in subfolders],
+        "templates": [
+            {"id": str(t.id), "name": t.name, "doc_type": t.doc_type}
+            for t in templates
+        ],
+    }
+
+
+@folders_router.post("")
+def create_folder(
+    name: str = Form(...),
+    parent_id: uuid.UUID | None = Form(None),
+    db: Session = Depends(get_session),
+) -> dict:
+    """Создаёт папку. parent_id не задан — папка верхнего уровня."""
+    folder = TemplateFolder(name=name, parent_id=parent_id)
+    db.add(folder)
+    db.commit()
+    return {"id": str(folder.id), "name": name, "parent_id": str(parent_id) if parent_id else None}
+
+
+# =====================================================================
+# ШАБЛОНЫ
+# =====================================================================
+
+@templates_router.post("")
 def upload_template(
     name: str = Form(...),
-    branch: str = Form(...),      # 'РУ' | 'КЗ'
-    doc_type: str = Form(...),    # 'договор' | 'приложение' | 'акт'
+    folder_id: uuid.UUID = Form(...),
+    doc_type: str | None = Form(None),   # 'contract' | 'appendix' | 'act' | None
     file: UploadFile = File(...),
     db: Session = Depends(get_session),
 ) -> dict:
-    """Загружает шаблон, сканирует метки и сохраняет всё в БД + MinIO."""
+    """Загружает шаблон в указанную папку, сканирует метки."""
     if not file.filename.endswith(".docx"):
         raise HTTPException(status_code=400, detail="Ожидается файл .docx")
 
+    if db.get(TemplateFolder, folder_id) is None:
+        raise HTTPException(status_code=404, detail="Папка не найдена")
+
     content = file.file.read()
 
-    # сканируем метки ДО сохранения — если файл битый, упадём здесь и не оставим мусор
     try:
         placeholders = scan_placeholders(content)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Не удалось прочитать шаблон: {exc}")
 
     template_id = uuid.uuid4()
+    # ключ в MinIO НЕ зависит от пути в дереве папок — так переименование
+    # или перенос папки не требует переноса файла в хранилище
     storage_key = f"templates/{template_id}.docx"
     put_file(storage_key, content)
 
@@ -51,10 +129,9 @@ def upload_template(
         id=template_id,
         name=name,
         storage_key=storage_key,
-        branch=branch,
+        folder_id=folder_id,
         doc_type=doc_type,
     )
-    # каждую найденную метку заводим как поле; по умолчанию — ручной ввод
     template.fields = [TemplateField(placeholder=p, maps_to="manual") for p in placeholders]
 
     db.add(template)
@@ -63,68 +140,89 @@ def upload_template(
     return {
         "id": str(template_id),
         "name": name,
-        "branch": branch,
         "doc_type": doc_type,
         "fields_found": placeholders,
     }
 
 
-@router.get("")
-def list_templates(db: Session = Depends(get_session)) -> list[dict]:
-    """Список всех загруженных шаблонов."""
-    templates = db.query(Template).order_by(Template.created_at.desc()).all()
-    return [
-        {
-            "id": str(t.id),
-            "name": t.name,
-            "branch": t.branch,
-            "doc_type": t.doc_type,
-            "fields_count": len(t.fields),
-        }
-        for t in templates
-    ]
-
-
-@router.get("/{template_id}/fields")
+@templates_router.get("/{template_id}/fields")
 def get_template_fields(template_id: uuid.UUID, db: Session = Depends(get_session)) -> dict:
-    """Возвращает список полей шаблона — основа для будущей формы (этап 3)."""
+    """
+    Описание полей формы: тип, группа, подпись, подсказка.
+
+    Типы анализируются прямо из разметки шаблона (см. template_analysis),
+    поэтому форма перестраивается сама при изменении шаблона:
+      list   — таблица с добавлением строк (треки, клипы, исполнители)
+      flag   — галочка (edo, has_videoclip)
+      choice — выпадающий список (release_type)
+      text   — обычное поле ввода
+
+    Вычисляемые метки (contract, profanity_note, term_end...) не показываются —
+    их считает context_builder. Вместо них добавлены виртуальные поля, из
+    которых эти значения собираются (день/месяц договора, список исполнителей).
+    """
     template = db.get(Template, template_id)
     if template is None:
         raise HTTPException(status_code=404, detail="Шаблон не найден")
 
+    docx_bytes = get_file(template.storage_key)
+    form_fields = fields_to_dict(analyze_template(docx_bytes))
+
     return {
         "id": str(template.id),
         "name": template.name,
-        "fields": [
-            {"placeholder": f.placeholder, "maps_to": f.maps_to} for f in template.fields
-        ],
+        "doc_type": template.doc_type,
+        "path": folder_path(template.folder),
+        "fields": form_fields,
     }
 
 
-@router.post("/{template_id}/generate")
+@templates_router.post("/{template_id}/generate")
 def generate_document(
     template_id: uuid.UUID,
     data: dict,
     db: Session = Depends(get_session),
 ) -> StreamingResponse:
     """
-    Генерирует документ. В теле запроса — JSON {имя_метки: значение}.
-    Возвращает готовый .docx на скачивание.
+    Генерирует документ по данным формы.
 
-    На этапе 2 данные приходят прямо в запросе. На этапе 4 часть из них
-    будет автоматически подставляться из справочника контрагентов.
+    Тело запроса — «сырые» данные формы. Они проходят через build_context(),
+    который добавляет вычисляемые поля: номер договора собирается из
+    дня/месяца и инициалов ФИО, сноски — из галочек НЛ и списка исполнителей.
+
+    Перед рендерингом проверяем, что все метки шаблона заполнены, иначе
+    docxtpl молча подставит пустые строки и в договоре будет
+    «Дата рождения: » без значения.
     """
     template = db.get(Template, template_id)
     if template is None:
         raise HTTPException(status_code=404, detail="Шаблон не найден")
 
-    template_bytes = get_file(template.storage_key)
-    result_bytes = render_document(template_bytes, data)
+    docx_bytes = get_file(template.storage_key)
 
-    import io
-    filename = f"{template.name}_готовый.docx"
+    context = build_context(data)
+
+    # флаги приходят из формы как есть — build_context их не трогает
+    template_vars = set(scan_placeholders(docx_bytes))
+
+    # Необязательные метки: законно бывают пустыми.
+    # nickname — если у контрагента нет псевдонима (условие его скроет)
+    # release_* — если релиз это сингл
+    optional = {"nickname", "release_label", "release_name", "release_year"}
+    missing = [
+        m for m in find_missing_variables(template_vars, context)
+        if m not in optional
+    ]
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Не заполнены обязательные поля: {', '.join(missing)}",
+        )
+
+    result_bytes = render_document(docx_bytes, context)
+
     return StreamingResponse(
         io.BytesIO(result_bytes),
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        headers={"Content-Disposition": f'attachment; filename="document.docx"'},
+        headers={"Content-Disposition": 'attachment; filename="document.docx"'},
     )
