@@ -10,10 +10,11 @@
     PUT  /folders/{id}                — переименовать папку (name)
 
   Шаблоны:
-    POST /templates                   — загрузить НОВЫЙ шаблон в папку
-    PUT  /templates/{id}/file         — заменить файл у СУЩЕСТВУЮЩЕГО шаблона
-    GET  /templates/{id}/fields       — какие поля нужно заполнить
-    POST /templates/{id}/generate     — сгенерировать документ
+    POST   /templates                   — загрузить НОВЫЙ шаблон в папку
+    PUT    /templates/{id}/file         — заменить файл у СУЩЕСТВУЮЩЕГО шаблона
+    DELETE /templates/{id}              — удалить шаблон (файл + запись в БД)
+    GET    /templates/{id}/fields       — какие поля нужно заполнить
+    POST   /templates/{id}/generate     — сгенерировать документ
 """
 import io
 import uuid
@@ -26,7 +27,7 @@ from app.context_builder import build_context, find_missing_variables
 from app.db import get_session
 from app.generation import render_document, scan_placeholders
 from app.models import Template, TemplateField, TemplateFolder, folder_path
-from app.storage import get_file, put_file
+from app.storage import delete_file, get_file, put_file
 from app.template_analysis import analyze_template, fields_to_dict
 
 folders_router = APIRouter(prefix="/folders", tags=["folders"])
@@ -221,6 +222,30 @@ def replace_template_file(
         "version": template.version,
         "fields_found": placeholders,
     }
+
+
+@templates_router.delete("/{template_id}")
+def delete_template(template_id: uuid.UUID, db: Session = Depends(get_session)) -> dict:
+    """
+    Удаляет шаблон: файл из MinIO по storage_key + запись в БД. Связанные
+    template_fields удаляются каскадно (см. cascade="all, delete-orphan"
+    в models.py). Папку, где лежал шаблон, не трогает — удаляется только
+    сам шаблон, соседние шаблоны и подпапки не затрагиваются.
+
+    Пока нет таблицы generated_documents (появится на этапе 5-6), нет и
+    проверки «а не генерировали ли из этого шаблона документы» — когда
+    она появится, здесь нужно будет решить, что делать со старыми
+    ссылками (например, запрещать удаление или предупреждать).
+    """
+    template = db.get(Template, template_id)
+    if template is None:
+        raise HTTPException(status_code=404, detail="Шаблон не найден")
+
+    delete_file(template.storage_key)
+    db.delete(template)
+    db.commit()
+
+    return {"id": str(template_id), "deleted": True}
 
 
 @templates_router.get("/{template_id}/fields")

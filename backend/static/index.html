@@ -69,6 +69,7 @@
     color:var(--ink-3);
   }
   .rename-btn:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+  .rename-btn.danger:hover{border-color:var(--danger);color:var(--danger);background:#fbeceb}
   .node{
     display:flex;align-items:center;gap:9px;padding:10px 12px;
     border:1px solid var(--line);border-radius:var(--radius);
@@ -341,10 +342,16 @@ async function browse(folderId = null) {
 
   data.templates.forEach(t => {
     const badge = { contract: 'договор', appendix: 'приложение', act: 'акт' }[t.doc_type];
-    grid.append(el('button', { class: 'node tpl', type: 'button', onclick: () => loadForm(t) },
-      el('span', { class: 'icon' }, '📄'),
-      el('span', { class: 'nm' }, t.name),
-      badge ? el('span', { class: 'badge' }, badge) : ''));
+    grid.append(el('div', { class: 'node-row' },
+      el('button', { class: 'node tpl', type: 'button', onclick: () => loadForm(t) },
+        el('span', { class: 'icon' }, '📄'),
+        el('span', { class: 'nm' }, t.name),
+        badge ? el('span', { class: 'badge' }, badge) : ''),
+      el('button', {
+        class: 'rename-btn danger', type: 'button', title: 'Удалить шаблон',
+        onclick: e => { e.stopPropagation(); deleteTemplate(t, folderId); }
+      }, '✕'))
+    );
   });
 
   box.append(grid);
@@ -422,6 +429,8 @@ async function submitUpload() {
     btn.textContent = 'Загрузить';
   }
 }
+
+// Переименование папки: спрашивает новое имя, шлёт PUT /folders/{id},
 // перерисовывает текущий уровень. storage_key шаблонов от пути в дереве
 // не зависит (см. models.py), поэтому файлы в MinIO не трогаются —
 // меняется только имя папки.
@@ -438,6 +447,23 @@ async function renameFolder(folder, currentFolderId) {
     browse(currentFolderId);   // перерисовать список с новым именем
   } catch (e) {
     showMsg('Не удалось переименовать папку. Проверьте, что сервер запущен.');
+  }
+}
+
+// Удаление шаблона: подтверждение (действие необратимо — файл в MinIO
+// удаляется физически, не в корзину), затем DELETE /templates/{id}.
+// Соседние шаблоны и подпапки не затрагиваются.
+async function deleteTemplate(tpl, currentFolderId) {
+  const ok = confirm(`Удалить шаблон «${tpl.name}»? Это необратимо.`);
+  if (!ok) return;
+
+  try {
+    const r = await fetch(`${API}/templates/${tpl.id}`, { method: 'DELETE' });
+    if (!r.ok) throw new Error(`${r.status}`);
+    showMsg('Шаблон удалён.', 'ok');
+    browse(currentFolderId);
+  } catch (e) {
+    showMsg('Не удалось удалить шаблон. Проверьте, что сервер запущен.');
   }
 }
 

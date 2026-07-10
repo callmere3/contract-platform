@@ -40,6 +40,15 @@ def get_file(key: str) -> bytes:
     return obj["Body"].read()
 
 
+def delete_file(key: str) -> None:
+    """
+    Удаляет файл из MinIO по ключу. Не бросает ошибку, если ключа уже
+    нет (delete_object в S3-совместимом API идемпотентен) — так удаление
+    шаблона не падает, даже если файл в хранилище уже отсутствовал.
+    """
+    s3_client.delete_object(Bucket=settings.minio_bucket, Key=key)
+
+
 # --- healthcheck-функции этапа 1 (оставлены для /health/storage) ---
 
 def upload_test_file(key: str, content: bytes) -> None:
