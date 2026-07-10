@@ -143,6 +143,30 @@ def parse_day_month(c_date: str) -> tuple[str, str] | None:
     return (parsed[0], parsed[1]) if parsed else None
 
 
+def contract_date_iso(contract: str) -> str:
+    """
+    Извлекает дату договора из его номера в формате
+    'МЛ-ДД/ММ/ГГ-ИИИ/СГ' (см. build_contract_number) и возвращает
+    её в ISO ('2026-03-15'), чтобы прогнать дальше через
+    parse_date()/format_date_ru() как обычную дату.
+
+    Год в номере — две цифры; все договоры заключены в 2000+ году,
+    поэтому 'ГГ' -> '20ГГ' без дополнительных уточнений.
+
+    Используется для Приложения/Акта: номер договора вводится вручную
+    (см. build_context), а дата ЭТОГО договора в нём уже зашита — вводить
+    её отдельно не нужно, только повод для расхождения между номером
+    и датой в тексте документа.
+
+    '' , если номер не в ожидаемом формате (например, ещё не введён).
+    """
+    m = re.search(r"(\d{2})/(\d{2})/(\d{2})", contract or "")
+    if not m:
+        return ""
+    day, month, yy = m.groups()
+    return f"20{yy}-{month}-{day}"
+
+
 def build_profanity_note(tracks: list[dict]) -> str:
     """
     Формирует текст сноски про ненормативную лексику.
@@ -403,16 +427,18 @@ def build_context(raw: dict, doc_type: str | None = None) -> dict:
 
       doc_type in ('appendix', 'act') — отдельный файл Приложения/Акта,
         привязанный к УЖЕ СУЩЕСТВУЮЩЕМУ договору. Базы контрагентов пока
-        нет (этап 4 не начат), поэтому номер и дата этого договора
-        вводятся вручную, а не вычисляются:
+        нет (этап 4 не начат), поэтому номер вводится вручную — но дату
+        того договора вводить второй раз не нужно, она уже зашита в
+        номере (ДД/ММ/ГГ) и извлекается оттуда (contract_date_iso):
           - contract — номер существующего договора, вводится вручную
-          - c_date   — дата существующего договора, вводится вручную
+          - c_date   — дата существующего договора, ВЫЧИСЛЯЕТСЯ из
+                        номера (не поле формы, скрыто из формы)
           - date     — дата САМОГО Приложения/Акта, отдельное поле,
-                        может не совпадать ни с c_date, ни с сегодняшней
+                        вводится оператором, может не совпадать с c_date
 
     Ожидаемый вход (raw):
-        name, inn, nickname, c_date, date (для appendix/act), contract
-        (для appendix/act)
+        name, inn, nickname, contract (для appendix/act), c_date (для
+        комбинированного Договора), date (для appendix/act)
 
         name_short — если не задано, собирается из name ('И.И. Иванов')
 
@@ -447,43 +473,51 @@ def build_context(raw: dict, doc_type: str | None = None) -> dict:
     release_labels = {"album": "Альбом", "ep": "ЕР", "none": ""}
 
     # Приложение/Акт — отдельный файл, привязанный к уже существующему
-    # договору. Без базы контрагентов (этап 4) номер и дату этого
-    # договора взять неоткуда, кроме как спросить оператора напрямую.
+    # договору. Без базы контрагентов (этап 4) номер этого договора
+    # взять неоткуда, кроме как спросить оператора напрямую — но ДАТУ
+    # того договора спрашивать второй раз не нужно: она уже зашита в
+    # номере (ДД/ММ/ГГ), парсим её оттуда (contract_date_iso).
     is_linked_doc = doc_type in ("appendix", "act")
 
-    # --- Даты ---
-    c_date_raw = raw.get("c_date", "")
-    date_raw = raw.get("date", "")
-
-    parsed_c_date = parse_date(c_date_raw)
-
-    # Номер договора.
+    # --- Номер договора ---
     #   doc_type='contract' (или не задан) — комбинированный Договор:
     #     вычисляется из даты (c_date) + инициалов ФИО, если не передан
     #     явно готовой строкой (contract).
     #   doc_type='appendix'/'act' — номер УЖЕ существующего договора,
-    #     вводится вручную, автовычисление здесь неуместно: дата этого
-    #     Приложения/Акта (date) не имеет отношения к дате того договора.
+    #     вводится вручную. Дата этого номера ≠ дата самого Приложения/
+    #     Акта (date) — поэтому не пересчитываем.
     contract = str(raw.get("contract") or "").strip()
-    if not contract and not is_linked_doc:
-        if parsed_c_date:
-            day, month, year_full = parsed_c_date
-            year = year_full[-2:]           # 2026 -> 26
-        else:
-            day = raw.get("contract_day", "01")
-            month = raw.get("contract_month", "01")
-            year = raw.get("contract_year", "26")
 
-        contract = build_contract_number(
-            day=day,
-            month=month,
-            year=year,
-            full_name=full_name,
-            doc_kind=raw.get("doc_kind", "СГ"),
-        )
-    # doc_type='appendix'/'act' и contract пуст — оставляем пустым.
-    # find_missing_variables поймает это как незаполненное обязательное
-    # поле, вместо того чтобы молча посчитать неверный номер.
+    if is_linked_doc:
+        # дата САМОГО договора — не вводится, извлекается из его номера
+        c_date_raw = contract_date_iso(contract)
+    else:
+        c_date_raw = raw.get("c_date", "")
+        parsed_c_date = parse_date(c_date_raw)
+        if not contract:
+            if parsed_c_date:
+                day, month, year_full = parsed_c_date
+                year = year_full[-2:]           # 2026 -> 26
+            else:
+                day = raw.get("contract_day", "01")
+                month = raw.get("contract_month", "01")
+                year = raw.get("contract_year", "26")
+
+            contract = build_contract_number(
+                day=day,
+                month=month,
+                year=year,
+                full_name=full_name,
+                doc_kind=raw.get("doc_kind", "СГ"),
+            )
+    # doc_type='appendix'/'act' и contract пуст (или не в ожидаемом
+    # формате) — c_date_raw останется пустым, find_missing_variables
+    # поймает это как незаполненное обязательное поле, вместо того
+    # чтобы молча подставить пустую дату в документ.
+
+    # дата САМОГО документа (Приложения/Акта) — только для linked_doc,
+    # для комбинированного Договора date дублирует c_date (см. ниже)
+    date_raw = raw.get("date", "")
 
     # Краткое имя для подписи — тоже из ФИО
     name_short = raw.get("name_short") or build_name_short(full_name)
@@ -502,9 +536,11 @@ def build_context(raw: dict, doc_type: str | None = None) -> dict:
         "name_short": name_short,
 
         # даты — в документ печатается русский формат, а не ISO из календаря.
-        #   contract-пакет: date дублирует c_date (единая дата пакета).
-        #   appendix/act: date — отдельная дата САМОГО документа, не связана
-        #   с c_date (датой уже существующего договора).
+        #   contract-пакет: оператор вводит c_date, date дублирует его
+        #   (единая дата пакета).
+        #   appendix/act: c_date вычислена из номера (contract_date_iso,
+        #   см. выше) — дата уже существующего договора; date — отдельная
+        #   дата САМОГО документа (Приложения/Акта), вводится оператором.
         "c_date": format_date_ru(c_date_raw),
         "date": format_date_ru(date_raw) if is_linked_doc else format_date_ru(c_date_raw),
 

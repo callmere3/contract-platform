@@ -48,9 +48,17 @@ LINKED_DOC_TYPES = {"appendix", "act"}
 
 
 def computed_fields_for(doc_type: str | None) -> set[str]:
-    """COMPUTED_FIELDS с поправкой на doc_type шаблона."""
+    """
+    COMPUTED_FIELDS с поправкой на doc_type шаблона.
+
+    Для Приложения/Акта (LINKED_DOC_TYPES): contract и date, наоборот,
+    становятся обычными полями ввода (убираем из вычисляемых), а c_date,
+    наоборот, добавляется в вычисляемые — дата того договора парсится
+    прямо из его номера (contract_date_iso в context_builder.py), вводить
+    её отдельно не нужно.
+    """
     if doc_type in LINKED_DOC_TYPES:
-        return COMPUTED_FIELDS - {"contract", "date"}
+        return (COMPUTED_FIELDS - {"contract", "date"}) | {"c_date"}
     return COMPUTED_FIELDS
 
 # Служебные переменные Jinja, не являющиеся полями
@@ -123,9 +131,7 @@ FIELD_META = {
 # точечно здесь — по аналогии с LIST_ITEM_LABEL_OVERRIDES для клипа/треков.
 LINKED_DOC_FIELD_META = {
     "contract": ("Документ", "Номер договора",
-                 "номер уже существующего договора — вводится вручную, пока нет базы контрагентов"),
-    "c_date":   ("Документ", "Дата договора",
-                 "дата уже существующего договора, НЕ дата этого документа"),
+                 "формат МЛ-ДД/ММ/ГГ-ИИИ/СГ — дата договора возьмётся из номера автоматически"),
     "date":     ("Документ", "Дата документа",
                  "дата этого Приложения/Акта — может отличаться от даты договора"),
 }
