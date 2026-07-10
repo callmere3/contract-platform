@@ -238,13 +238,21 @@ def get_template_fields(template_id: uuid.UUID, db: Session = Depends(get_sessio
     Вычисляемые метки (contract, profanity_note, term_end...) не показываются —
     их считает context_builder. Вместо них добавлены виртуальные поля, из
     которых эти значения собираются (день/месяц договора, список исполнителей).
+
+    Для отдельных Приложения/Акта (template.doc_type) contract и date —
+    НЕ вычисляемые, а обычные поля ввода (номер и дата уже существующего
+    договора вводятся вручную, пока нет базы контрагентов) — см.
+    LINKED_DOC_TYPES в template_analysis.py.
     """
     template = db.get(Template, template_id)
     if template is None:
         raise HTTPException(status_code=404, detail="Шаблон не найден")
 
     docx_bytes = get_file(template.storage_key)
-    form_fields = fields_to_dict(analyze_template(docx_bytes))
+    form_fields = fields_to_dict(
+        analyze_template(docx_bytes, doc_type=template.doc_type),
+        doc_type=template.doc_type,
+    )
 
     return {
         "id": str(template.id),
@@ -279,7 +287,7 @@ def generate_document(
     docx_bytes = get_file(template.storage_key)
 
     try:
-        context = build_context(data)
+        context = build_context(data, doc_type=template.doc_type)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 

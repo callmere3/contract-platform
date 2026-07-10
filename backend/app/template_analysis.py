@@ -25,16 +25,33 @@ from dataclasses import dataclass, field
 
 # Поля, которые вычисляет context_builder — в форме не показываются.
 # Синхронизировано с context_builder.build_context()
+#
+# contract и date — вычисляемые ТОЛЬКО для комбинированного Договора
+# (doc_type='contract'). Для отдельных Приложения/Акта (doc_type in
+# 'appendix'/'act') они, наоборот, обычные поля ввода — см.
+# computed_fields_for() ниже, которая убирает их из этого множества.
 COMPUTED_FIELDS = {
-    "contract",         # собирается из даты + инициалов ФИО
+    "contract",         # комбинированный Договор: из даты + инициалов ФИО
     "name_short",       # из ФИО
     "profanity_note",   # из галочек НЛ у треков
     "performer_note",   # из списка исполнителей
     "term_end",         # из квартала и года
     "release_label",    # из release_type
-    "date",             # дублирует c_date — единая дата, вводится один раз
+    "date",             # комбинированный Договор: дублирует c_date
     "royalty_text",     # числительное прописью из royalty (числа)
 }
+
+# Приложение/Акт — отдельный файл, привязанный к уже существующему
+# договору. Базы контрагентов пока нет (этап 4), поэтому номер и дату
+# этого договора вводит оператор вручную — здесь их нельзя вычислить.
+LINKED_DOC_TYPES = {"appendix", "act"}
+
+
+def computed_fields_for(doc_type: str | None) -> set[str]:
+    """COMPUTED_FIELDS с поправкой на doc_type шаблона."""
+    if doc_type in LINKED_DOC_TYPES:
+        return COMPUTED_FIELDS - {"contract", "date"}
+    return COMPUTED_FIELDS
 
 # Служебные переменные Jinja, не являющиеся полями
 JINJA_BUILTINS = {"loop"}
@@ -99,6 +116,27 @@ FIELD_META = {
     "videoclips": ("Видеоклипы", "Список видеоклипов", ""),
 }
 
+# Приложение/Акт — отдельный файл, привязанный к уже существующему
+# договору (см. LINKED_DOC_TYPES выше). У contract/c_date/date там другой
+# смысл, чем в комбинированном Договоре, поэтому подпись/подсказка тоже
+# другие. FIELD_META общий на все doc_type, поэтому переопределяется
+# точечно здесь — по аналогии с LIST_ITEM_LABEL_OVERRIDES для клипа/треков.
+LINKED_DOC_FIELD_META = {
+    "contract": ("Документ", "Номер договора",
+                 "номер уже существующего договора — вводится вручную, пока нет базы контрагентов"),
+    "c_date":   ("Документ", "Дата договора",
+                 "дата уже существующего договора, НЕ дата этого документа"),
+    "date":     ("Документ", "Дата документа",
+                 "дата этого Приложения/Акта — может отличаться от даты договора"),
+}
+
+
+def field_meta_for(name: str, doc_type: str | None) -> tuple[str, str, str]:
+    """FIELD_META с поправкой на doc_type (см. LINKED_DOC_FIELD_META)."""
+    if doc_type in LINKED_DOC_TYPES and name in LINKED_DOC_FIELD_META:
+        return LINKED_DOC_FIELD_META[name]
+    return FIELD_META.get(name, ("Прочее", name, ""))
+
 # Подписи к колонкам таблиц
 ITEM_FIELD_LABELS = {
     "title":         "Название",
@@ -154,7 +192,7 @@ ITEM_FIELD_ORDER = [
 # а не алфавит: Серия -> Номер -> Кем выдан -> Дата -> КП.
 FIELD_ORDER = [
     # Документ
-    "c_date", "appendix_no", "edo", "royalty",
+    "contract", "c_date", "date", "appendix_no", "edo", "royalty",
     "term_quarter", "term_year",
     # Контрагент
     "name", "inn", "nickname", "npd", "birthday",
@@ -179,12 +217,20 @@ GROUP_ORDER = [
 # Поля, которые вводятся календарём (<input type="date">) и приходят
 # в ISO-формате 2026-03-15. Backend сам превращает их в «15» марта 2026 г.
 #
-# Только c_date — оператор вводит дату один раз. Поле date (дата документа
-# для приложения/акта) больше не вводится отдельно: context_builder
-# заполняет его тем же значением, что и c_date (см. COMPUTED_FIELDS).
+# c_date — всегда календарь. date — календарь ТОЛЬКО для Приложения/Акта
+# (LINKED_DOC_TYPES), там это отдельная дата самого документа. Для
+# комбинированного Договора date — вычисляемое поле (см. COMPUTED_FIELDS),
+# в форме не показывается вовсе, поэтому в базовый набор не входит.
 # birthday и pas_date остаются обычными текстовыми полями — в документе
 # они выводятся как есть, в формате 01.01.1990.
 DATE_FIELDS = {"c_date"}
+
+
+def date_fields_for(doc_type: str | None) -> set[str]:
+    """DATE_FIELDS с поправкой на doc_type."""
+    if doc_type in LINKED_DOC_TYPES:
+        return DATE_FIELDS | {"date"}
+    return DATE_FIELDS
 
 # Поля, которых НЕТ в шаблоне, но которые нужны context_builder.
 # Например, срок действия вычисляется из квартала и года.
@@ -242,9 +288,14 @@ def _extract_text(docx_bytes: bytes) -> str:
     return re.sub(r"<[^>]+>", "", raw)
 
 
-def analyze_template(docx_bytes: bytes) -> list[FormField]:
+def analyze_template(docx_bytes: bytes, doc_type: str | None = None) -> list[FormField]:
     """
     Возвращает описание полей формы, выведенное из разметки шаблона.
+
+    doc_type шаблона ('contract' | 'appendix' | 'act' | None) влияет на
+    трактовку contract/c_date/date — см. computed_fields_for() и
+    date_fields_for() выше: для отдельных Приложения/Акта (LINKED_DOC_TYPES)
+    contract и date становятся обычными полями ввода вместо вычисляемых.
 
     Порядок определения типа (важен — от специфичного к общему):
       1. list   — переменная участвует в {% for x in ЭТО %}
@@ -253,6 +304,8 @@ def analyze_template(docx_bytes: bytes) -> list[FormField]:
       4. text   — всё остальное
     """
     text = _extract_text(docx_bytes)
+    computed = computed_fields_for(doc_type)
+    date_fields = date_fields_for(doc_type)
 
     # --- 1. Списки и колонки их элементов ---
     # {%tr for t in tracks %} / {%p for %} / {% for %}
@@ -296,14 +349,14 @@ def analyze_template(docx_bytes: bytes) -> list[FormField]:
 
     # все переменные шаблона (для решения, какие виртуальные поля нужны)
     all_vars = printed | in_conditions | set(lists)
-    computed_present = all_vars & COMPUTED_FIELDS
+    computed_present = all_vars & computed
 
     # списки
     for name, item_fields in sorted(lists.items()):
         fields.append(FormField(name=name, type="list", item_fields=item_fields))
 
     # остальные переменные
-    others = (printed | in_conditions) - set(lists) - COMPUTED_FIELDS - JINJA_BUILTINS
+    others = (printed | in_conditions) - set(lists) - computed - JINJA_BUILTINS
     for name in sorted(others):
         if name in KNOWN_CHOICES:
             # полный список вариантов задан явно (шаблон знает не все)
@@ -319,7 +372,7 @@ def analyze_template(docx_bytes: bytes) -> list[FormField]:
         elif name in in_conditions and name not in printed:
             # используется только в {% if %}, нигде не выводится -> флаг
             fields.append(FormField(name=name, type="flag"))
-        elif name in DATE_FIELDS:
+        elif name in date_fields:
             # календарь: ISO на входе, русский текст в документе
             fields.append(FormField(name=name, type="date"))
         else:
@@ -343,10 +396,13 @@ def analyze_template(docx_bytes: bytes) -> list[FormField]:
     return fields
 
 
-def fields_to_dict(fields: list[FormField]) -> list[dict]:
+def fields_to_dict(fields: list[FormField], doc_type: str | None = None) -> list[dict]:
     """
     Приводит к JSON-виду для фронтенда: добавляет группу, подпись, подсказку.
     Поля отсортированы по порядку групп (GROUP_ORDER).
+
+    doc_type пробрасывается в field_meta_for() — для contract/c_date/date
+    подпись и подсказка зависят от типа шаблона (см. LINKED_DOC_FIELD_META).
     """
     out = []
     virtual_meta = {v[0]: (v[2], v[3], v[4]) for v in VIRTUAL_FIELDS}
@@ -355,7 +411,7 @@ def fields_to_dict(fields: list[FormField]) -> list[dict]:
         if f.name in virtual_meta:
             group, label, hint = virtual_meta[f.name]
         else:
-            group, label, hint = FIELD_META.get(f.name, ("Прочее", f.name, ""))
+            group, label, hint = field_meta_for(f.name, doc_type)
 
         item = {
             "name": f.name,
