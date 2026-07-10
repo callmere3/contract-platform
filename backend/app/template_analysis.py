@@ -167,7 +167,7 @@ FIELD_ORDER = [
     # Релиз
     "release_type", "release_name", "release_year", "has_videoclip",
     # Таблицы
-    "tracks", "performers", "group_name", "videoclips",
+    "tracks", "performers", "is_group", "videoclips",
 ]
 
 # Порядок групп в форме
@@ -198,10 +198,11 @@ VIRTUAL_FIELDS = [
     ("term_quarter",   "choice", "Документ", "Срок до конца квартала", "", "term_end"),
     ("term_year",      "text", "Документ", "Год окончания срока", "2027", "term_end"),
     ("performers",     "list", "Треки", "Исполнители (для сноски)",
-     "впишите тех же исполнителей никнеймом в колонку «Исполнитель» таблицы треков выше",
+     "предзаполняется уникальными исполнителями из таблицы треков — впишите ФИО каждому",
      "performer_note"),
-    ("group_name",     "text", "Треки", "Название группы",
-     "если исполнители — участники группы", "performer_note"),
+    ("is_group",       "flag", "Треки", "Исполнитель — группа",
+     "название группы берётся из никнейма в колонке «Исполнитель», ниже перечислите ФИО участников",
+     "performer_note"),
 ]
 
 VIRTUAL_CHOICES = {

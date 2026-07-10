@@ -170,50 +170,85 @@ def build_profanity_note(tracks: list[dict]) -> str:
     return ", ".join(parts)
 
 
-def _normalize_performers(raw_performers) -> list[dict]:
+def _normalize_performers(raw_performers, is_group: bool = False) -> list[dict]:
     """
-    Приводит исполнителей к списку {'nickname': ..., 'fio': ...}.
+    Приводит исполнителей к списку {'nickname': ..., 'fio': ...},
+    убирая дубли.
 
     Форма присылает list-поля как список объектов:
         [{"nickname": "IVAN", "fio": "Иванов И.И."}, ...]
     Поддерживается и старый вид (только ФИО строкой) — для обратной
     совместимости с кодом/тестами, где никнейм не передавали.
+
+    Дедупликация: если у нескольких треков один и тот же исполнитель,
+    в сноске он должен встретиться один раз.
+      - обычный режим: ключ — никнейм (регистронезависимо), иначе ФИО.
+        «2 трека одного исполнителя» дают одну запись.
+      - режим группы (is_group=True): у всех участников никнейм общий
+        (название группы), различаются они по ФИО — поэтому ключ здесь
+        ФИО, иначе участники схлопнулись бы в одного.
+    Сохраняется первое вхождение, порядок не меняется.
     """
     if not raw_performers:
         return []
     result = []
+    seen = set()
     for p in raw_performers:
         if isinstance(p, dict):
             nickname = str(p.get("nickname", "")).strip()
             fio = str(p.get("fio", "")).strip()
-            if nickname or fio:
-                result.append({"nickname": nickname, "fio": fio})
         elif p:
-            result.append({"nickname": "", "fio": str(p).strip()})
+            nickname, fio = "", str(p).strip()
+        else:
+            continue
+        if not (nickname or fio):
+            continue
+        if is_group:
+            key = fio.casefold() if fio else nickname.casefold()
+        else:
+            key = nickname.casefold() if nickname else fio.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append({"nickname": nickname, "fio": fio})
     return result
 
 
 def build_performer_note(
     performers: list[dict],
     nickname: str | None = None,
-    group_name: str | None = None,
+    is_group: bool = False,
 ) -> str:
     """
     Формирует сноску про исполнителей (всегда присутствует).
-    Формат: "никнейм - ФИО" — для КАЖДОГО исполнителя, без буквенных
-    обозначений (буквы в колонке таблицы треков были ошибкой первой
-    версии — юрист имел в виду именно никнейм-ФИО построчно).
 
-      - один исполнитель            -> "Исполнитель: IVAN - Иванов И.И."
-      - группа (указано group_name) -> "Исполнители в составе группы «X»: Иванов И.И., Петров П.П."
-      - несколько без группы         -> "Исполнители: IVAN - Иванов И.И.; PETROV - Петров П.П."
+    performers — список словарей {'nickname', 'fio'} (см. _normalize_performers),
+    уже без дублей. Заполняется из уникальных исполнителей таблицы треков
+    (колонка «Исполнитель» = никнейм), ФИО оператор дописывает вручную.
 
-    performers — список словарей {'nickname', 'fio'} (см. _normalize_performers).
-    Каждая пара соответствует одному треку — колонка «Исполнитель» в
-    таблице треков теперь заполняется никнеймом напрямую, а не буквой.
+    Обычный режим (is_group=False) — формат "никнейм - ФИО" построчно:
+      - один исполнитель      -> "Исполнитель: IVAN - Иванов И.И."
+      - несколько             -> "Исполнители: IVAN - Иванов И.И.; PETROV - Петров П.П."
+
+    Режим группы (is_group=True) — название группы берётся из никнейма
+    (тот же столбец «Исполнитель» в треках), ФИО участников перечисляются:
+      - "Исполнители в составе группы «THE X»: Иванов И.И., Петров П.П."
     """
     if not performers:
         return "Исполнитель: —"
+
+    if is_group:
+        # Название группы — из никнейма (столбец «Исполнитель» в треках).
+        # У группы он общий, после дедупликации остаётся один; берём первый
+        # непустой на случай, если оператор ввёл его не в каждой строке.
+        group_name = next(
+            (p["nickname"] for p in performers if p["nickname"]),
+            nickname or "",
+        )
+        fios = ", ".join(p["fio"] for p in performers if p["fio"])
+        if group_name:
+            return f"Исполнители в составе группы «{group_name}»: {fios}"
+        return f"Исполнители в составе группы: {fios}"
 
     if len(performers) == 1:
         p = performers[0]
@@ -222,10 +257,6 @@ def build_performer_note(
         if nick:
             return f"Исполнитель: {nick} - {fio}"
         return f"Исполнитель: {fio}"
-
-    if group_name:
-        fios = ", ".join(p["fio"] for p in performers)
-        return f"Исполнители в составе группы «{group_name}»: {fios}"
 
     pairs = [f"{p['nickname'] or '—'} - {p['fio']}" for p in performers]
     return f"Исполнители: {'; '.join(pairs)}"
@@ -367,8 +398,9 @@ def build_context(raw: dict) -> dict:
         has_videoclip: bool
         videoclips: [{title, director, music_author, performer,
                       production, producer, share}]
-        performers: ['Иванов И.И.', ...]
-        group_name: str | None   (если исполнители — группа)
+        performers: [{nickname, fio}, ...]  (уникальные, из таблицы треков)
+        is_group: bool   (True — исполнители образуют группу; её название
+                          берётся из никнейма в столбце «Исполнитель»)
         term_quarter: 1..4
         term_year: int
 
@@ -379,7 +411,7 @@ def build_context(raw: dict) -> dict:
     # Всё остальное из raw попадёт в контекст как есть.
     SERVICE_KEYS = {
         "contract_day", "contract_month", "contract_year", "doc_kind",
-        "performers", "group_name",
+        "performers", "is_group",
         "term_quarter", "term_year",
     }
 
@@ -465,9 +497,11 @@ def build_context(raw: dict) -> dict:
         # вычисляемые сноски
         "profanity_note": build_profanity_note(tracks),
         "performer_note": build_performer_note(
-            _normalize_performers(raw.get("performers")),
+            _normalize_performers(
+                raw.get("performers"), bool(raw.get("is_group"))
+            ),
             raw.get("nickname"),
-            raw.get("group_name"),
+            bool(raw.get("is_group")),
         ),
 
         # срок действия

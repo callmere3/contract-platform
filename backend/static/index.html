@@ -335,7 +335,10 @@ function renderForm(fields) {
   groups.forEach(g => {
     const fs = el('fieldset', {}, el('legend', {}, g));
     const lists = byName.get(g).filter(f => f.type === 'list');
-    const plain = byName.get(g).filter(f => f.type !== 'list');
+    // is_group — флаг, но должен стоять ПОД таблицей исполнителей,
+    // а не среди обычных полей сверху. Выносим его из plain отдельно.
+    const isGroupField = byName.get(g).find(f => f.name === 'is_group');
+    const plain = byName.get(g).filter(f => f.type !== 'list' && f.name !== 'is_group');
 
     if (plain.length) {
       const grid = el('div', { class: 'grid' });
@@ -343,12 +346,76 @@ function renderForm(fields) {
       fs.append(grid);
     }
     lists.forEach(f => fs.append(renderList(f)));
+
+    // Чекбокс «Исполнитель — группа» — сразу под таблицей исполнителей.
+    if (isGroupField) {
+      const box = renderField(isGroupField);
+      box.style.marginTop = '10px';
+      fs.append(box);
+    }
     form.append(fs);
   });
+
+  // Автозаполнение таблицы «Исполнители (для сноски)» уникальными
+  // исполнителями из столбца «Исполнитель» таблицы треков.
+  wireupPerformerAutofill();
 
   // Дата документа (date) больше не отдельное поле формы — сервер сам
   // заполняет её тем же значением, что и дату договора (c_date).
   // См. COMPUTED_FIELDS в template_analysis.py и context_builder.py.
+}
+
+// Синхронизирует таблицу исполнителей со столбцом «Исполнитель» треков.
+// Никнеймы предзаполняются автоматически (только уникальные), ФИО
+// оператор дописывает вручную и они сохраняются между обновлениями.
+function wireupPerformerAutofill() {
+  const tracksWrap = document.querySelector('[data-list="tracks"]');
+  const perfWrap = document.querySelector('[data-list="performers"]');
+  if (!tracksWrap || !perfWrap) return;
+
+  const syncPerformers = () => {
+    // уникальные никнеймы из столбца «Исполнитель» треков, в порядке ввода
+    const nicks = [];
+    const seen = new Set();
+    tracksWrap.querySelectorAll('tbody tr').forEach(tr => {
+      const inp = tr.querySelector('[data-col="performer"]');
+      const v = inp ? inp.value.trim() : '';
+      if (v && !seen.has(v.toLowerCase())) { seen.add(v.toLowerCase()); nicks.push(v); }
+    });
+
+    // уже введённые ФИО — сохраняем по никнейму, чтобы не терять при пересборке
+    const perfBody = perfWrap.querySelector('tbody');
+    const savedFio = new Map();
+    perfBody.querySelectorAll('tr').forEach(tr => {
+      const nk = tr.querySelector('[data-col="nickname"]');
+      const fio = tr.querySelector('[data-col="fio"]');
+      if (nk && nk.value.trim()) savedFio.set(nk.value.trim().toLowerCase(), fio ? fio.value : '');
+    });
+
+    const cols = currentFields.find(f => f.name === 'performers').item_fields;
+    perfBody.textContent = '';
+    if (!nicks.length) { addRow(perfBody, cols, false); renumber(perfBody); return; }
+    nicks.forEach(nick => {
+      addRow(perfBody, cols, false);
+      const tr = perfBody.lastElementChild;
+      const nk = tr.querySelector('[data-col="nickname"]');
+      const fio = tr.querySelector('[data-col="fio"]');
+      if (nk) nk.value = nick;
+      if (fio) fio.value = savedFio.get(nick.toLowerCase()) || '';
+    });
+    renumber(perfBody);
+  };
+
+  // слушаем ввод в столбце «Исполнитель» треков (делегированием — строки
+  // добавляются динамически) и первичное добавление/удаление строк
+  tracksWrap.addEventListener('input', e => {
+    if (e.target.matches('[data-col="performer"]')) syncPerformers();
+  });
+  tracksWrap.addEventListener('click', e => {
+    // добавление/удаление строки трека — пересинхронизируем на след. тик
+    if (e.target.matches('.btn.small, .row-del')) setTimeout(syncPerformers, 0);
+  });
+  syncPerformers();  // первичное заполнение
 }
 
 function renderField(f) {
