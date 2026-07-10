@@ -7,6 +7,7 @@
     GET  /folders?parent_id=          — содержимое папки: подпапки + шаблоны
                                          (parent_id не передан = корень)
     POST /folders                     — создать папку (name, parent_id)
+    PUT  /folders/{id}                — переименовать папку (name)
 
   Шаблоны:
     POST /templates                   — загрузить НОВЫЙ шаблон в папку
@@ -92,6 +93,28 @@ def create_folder(
     db.add(folder)
     db.commit()
     return {"id": str(folder.id), "name": name, "parent_id": str(parent_id) if parent_id else None}
+
+
+@folders_router.put("/{folder_id}")
+def rename_folder(
+    folder_id: uuid.UUID,
+    name: str = Form(...),
+    db: Session = Depends(get_session),
+) -> dict:
+    """
+    Переименовывает папку. Только смена name — id, parent_id, содержимое
+    (подпапки, шаблоны) не трогаются.
+
+    Безопасно в любой момент: storage_key шаблонов не зависит от пути
+    в дереве папок (см. models.py), так что переименование папки не
+    требует переноса файлов в MinIO — просто меняется одна колонка.
+    """
+    folder = db.get(TemplateFolder, folder_id)
+    if folder is None:
+        raise HTTPException(status_code=404, detail="Папка не найдена")
+    folder.name = name
+    db.commit()
+    return {"id": str(folder.id), "name": folder.name}
 
 
 # =====================================================================

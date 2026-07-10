@@ -61,6 +61,14 @@
   .crumbs .sep{color:var(--line)}
 
   .browse{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px}
+  .node-row{display:flex;align-items:stretch;gap:4px}
+  .node-row .node{flex:1;min-width:0}
+  .rename-btn{
+    flex:none;border:1px solid var(--line);border-radius:var(--radius);
+    background:var(--panel);cursor:pointer;font-size:13px;padding:0 9px;
+    color:var(--ink-3);
+  }
+  .rename-btn:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
   .node{
     display:flex;align-items:center;gap:9px;padding:10px 12px;
     border:1px solid var(--line);border-radius:var(--radius);
@@ -256,9 +264,14 @@ async function browse(folderId = null) {
   const grid = el('div', { class: 'browse' });
 
   data.folders.forEach(f => grid.append(
-    el('button', { class: 'node', type: 'button', onclick: () => open(f) },
-      el('span', { class: 'icon' }, '📁'),
-      el('span', { class: 'nm' }, f.name))
+    el('div', { class: 'node-row' },
+      el('button', { class: 'node', type: 'button', onclick: () => open(f) },
+        el('span', { class: 'icon' }, '📁'),
+        el('span', { class: 'nm' }, f.name)),
+      el('button', {
+        class: 'rename-btn', type: 'button', title: 'Переименовать папку',
+        onclick: e => { e.stopPropagation(); renameFolder(f, folderId); }
+      }, '✎'))
   ));
 
   data.templates.forEach(t => {
@@ -275,6 +288,26 @@ async function browse(folderId = null) {
 function open(folder) {
   pathStack.push(folder);
   browse(folder.id);
+}
+
+// Переименование папки: спрашивает новое имя, шлёт PUT /folders/{id},
+// перерисовывает текущий уровень. storage_key шаблонов от пути в дереве
+// не зависит (см. models.py), поэтому файлы в MinIO не трогаются —
+// меняется только имя папки.
+async function renameFolder(folder, currentFolderId) {
+  const name = prompt('Новое название папки:', folder.name);
+  if (name === null) return;                       // отмена
+  const trimmed = name.trim();
+  if (!trimmed || trimmed === folder.name) return;  // без изменений
+
+  try {
+    const body = new URLSearchParams({ name: trimmed });
+    const r = await fetch(`${API}/folders/${folder.id}`, { method: 'PUT', body });
+    if (!r.ok) throw new Error(`${r.status}`);
+    browse(currentFolderId);   // перерисовать список с новым именем
+  } catch (e) {
+    showMsg('Не удалось переименовать папку. Проверьте, что сервер запущен.');
+  }
 }
 
 function renderCrumbs(breadcrumb, folderId) {
