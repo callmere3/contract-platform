@@ -255,7 +255,10 @@ def generate_document(
 
     docx_bytes = get_file(template.storage_key)
 
-    context = build_context(data)
+    try:
+        context = build_context(data)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
     # флаги приходят из формы как есть — build_context их не трогает
     template_vars = set(scan_placeholders(docx_bytes))

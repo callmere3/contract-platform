@@ -241,6 +241,85 @@ QUARTER_ENDS = {
 }
 
 
+# --- Роялти прописью ---
+# Менеджер вводит только процент числом (royalty, 0..100 целых).
+# Текст прописью (royalty_text) вычисляется отсюда — раньше вводился
+# отдельным полем вручную, теперь это computed-поле (см. COMPUTED_FIELDS
+# в template_analysis.py), риск разойтись с числом исключён.
+
+_UNITS_RU = ["ноль", "один", "два", "три", "четыре",
+             "пять", "шесть", "семь", "восемь", "девять"]
+_TEENS_RU = ["десять", "одиннадцать", "двенадцать", "тринадцать", "четырнадцать",
+             "пятнадцать", "шестнадцать", "семнадцать", "восемнадцать", "девятнадцать"]
+_TENS_RU = {
+    2: "двадцать", 3: "тридцать", 4: "сорок", 5: "пятьдесят",
+    6: "шестьдесят", 7: "семьдесят", 8: "восемьдесят", 9: "девяносто",
+}
+
+
+def num_to_words_ru(n: int) -> str:
+    """
+    Целое число 0..100 -> числительное прописью, мужской род
+    ('один', 'два' — не 'одна'/'две'), т.к. согласуется со словом
+    'процент' (м.р.): 21 -> 'двадцать один'.
+    """
+    if not (0 <= n <= 100):
+        raise ValueError("num_to_words_ru принимает только 0..100")
+    if n == 0:
+        return _UNITS_RU[0]
+    if n == 100:
+        return "сто"
+    if n < 10:
+        return _UNITS_RU[n]
+    if n < 20:
+        return _TEENS_RU[n - 10]
+    tens, unit = divmod(n, 10)
+    word = _TENS_RU[tens]
+    if unit:
+        word += " " + _UNITS_RU[unit]
+    return word
+
+
+def percent_word_ru(n: int) -> str:
+    """
+    Падеж слова 'процент' после числительного n:
+        1, 21, 31...   -> 'процент'
+        2-4, 22-24...  -> 'процента'
+        0, 5-20, 25...  -> 'процентов'
+    """
+    if 11 <= n % 100 <= 14:
+        return "процентов"
+    last = n % 10
+    if last == 1:
+        return "процент"
+    if 2 <= last <= 4:
+        return "процента"
+    return "процентов"
+
+
+def build_royalty_text(royalty_raw) -> str:
+    """
+    '50' -> 'пятьдесят процентов', '1' -> 'один процент', '22' -> 'двадцать два процента'.
+
+    Пустое значение -> '' (стандартная проверка обязательных полей перед
+    рендерингом сама поймает незаполненный royalty — не дублируем ошибку тут).
+    Некорректное значение (не целое 0..100) -> ValueError с понятным текстом,
+    роутер превращает его в HTTP 400.
+    """
+    if royalty_raw is None or str(royalty_raw).strip() == "":
+        return ""
+    raw_str = str(royalty_raw).strip()
+    try:
+        n = int(raw_str)
+    except ValueError:
+        raise ValueError(
+            f"Роялти должно быть целым числом от 0 до 100, получено: «{raw_str}»"
+        )
+    if not (0 <= n <= 100):
+        raise ValueError(f"Роялти должно быть от 0 до 100, получено: {n}")
+    return f"{num_to_words_ru(n)} {percent_word_ru(n)}"
+
+
 def build_term_end(quarter, year) -> str:
     """
     Возвращает дату окончания Срока, напр. '31 декабря 2027 г.'
@@ -354,9 +433,9 @@ def build_context(raw: dict) -> dict:
     # ШАГ 1. Пропускаем все пользовательские поля как есть.
     # Это важно: договор содержит десятки простых меток (npd, birthday,
     # serial, number, pas_place, pas_date, kp, adress, phone, mail,
-    # rs, bank, ks, bik, royalty, royalty_text ...). Перечислять их
-    # вручную нельзя — при добавлении новой метки в шаблон её легко
-    # забыть, и она молча подставится пустой строкой.
+    # rs, bank, ks, bik, royalty ...). Перечислять их вручную нельзя —
+    # при добавлении новой метки в шаблон её легко забыть, и она молча
+    # подставится пустой строкой.
     context = {k: v for k, v in raw.items() if k not in SERVICE_KEYS}
 
     # ШАГ 2. Поверх кладём вычисляемые значения.
@@ -374,6 +453,9 @@ def build_context(raw: dict) -> dict:
         "release_label": release_labels.get(release_type, ""),
         "release_name": raw.get("release_name", ""),
         "release_year": raw.get("release_year", ""),
+
+        # роялти прописью — из числа (royalty), не вводится отдельно
+        "royalty_text": build_royalty_text(raw.get("royalty")),
 
         # таблицы
         "tracks": tracks,
