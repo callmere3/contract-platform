@@ -360,6 +360,10 @@ function renderForm(fields) {
   // исполнителями из столбца «Исполнитель» таблицы треков.
   wireupPerformerAutofill();
 
+  // Показ/скрытие полей релиза и таблицы клипа в зависимости от
+  // типа релиза и чекбокса «Есть видеоклип».
+  wireupReleaseVisibility();
+
   // Дата документа (date) больше не отдельное поле формы — сервер сам
   // заполняет её тем же значением, что и дату договора (c_date).
   // См. COMPUTED_FIELDS в template_analysis.py и context_builder.py.
@@ -418,8 +422,38 @@ function wireupPerformerAutofill() {
   syncPerformers();  // первичное заполнение
 }
 
+// Показ/скрытие зависимых полей релиза.
+//   - тип релиза «Сингл» (none) -> прячем «Название релиза» и «Год выпуска»
+//   - чекбокс «Есть видеоклип» снят -> прячем таблицу клипа
+// Это только про ВИДИМОСТЬ в форме. На бэкенд поля всё равно уходят
+// (collect() их соберёт), но при синге шаблон их не печатает — метки
+// release_* стоят под {%p if release_type != 'none' %}, а таблица клипа —
+// под {% if has_videoclip %}, поэтому пустые/скрытые значения ни на что
+// не влияют.
+function wireupReleaseVisibility() {
+  const relType = document.querySelector('[data-name="release_type"]');
+  const hasClip = document.querySelector('[data-name="has_videoclip"]');
+
+  const setHidden = (node, hidden) => { if (node) node.style.display = hidden ? 'none' : ''; };
+
+  const syncRelease = () => {
+    const isSingle = relType && relType.value === 'none';
+    setHidden(document.querySelector('[data-field="release_name"]'), isSingle);
+    setHidden(document.querySelector('[data-field="release_year"]'), isSingle);
+  };
+  const syncClip = () => {
+    const on = hasClip && hasClip.checked;
+    setHidden(document.querySelector('[data-list="videoclips"]'), !on);
+  };
+
+  if (relType) relType.addEventListener('change', syncRelease);
+  if (hasClip) hasClip.addEventListener('change', syncClip);
+  syncRelease();  // начальное состояние
+  syncClip();
+}
+
 function renderField(f) {
-  const wrap = el('div', { class: 'field' });
+  const wrap = el('div', { class: 'field', 'data-field': f.name });
 
   if (f.type === 'flag') {
     const id = `f_${f.name}`;
