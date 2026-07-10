@@ -158,6 +158,30 @@
   .msg.err{background:#fbeceb;border:1px solid #eccbc8;color:var(--danger);display:block}
   .msg.ok{background:#e9f4ee;border:1px solid #c5e2d1;color:var(--ok);display:block}
 
+  .toolbar{display:flex;gap:6px;flex:none}
+
+  /* --- модалка создания шаблона --- */
+  .modal-backdrop{
+    position:fixed;inset:0;background:rgba(20,27,38,.35);
+    display:flex;align-items:center;justify-content:center;z-index:50;
+  }
+  .modal-backdrop[hidden]{display:none}
+  .modal{
+    background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    padding:18px;width:360px;max-width:calc(100vw - 32px);
+    box-shadow:0 8px 28px rgba(20,27,38,.18);
+  }
+  .modal h3{font-size:14px;font-weight:600;margin-bottom:14px}
+  .modal .field{margin-bottom:12px}
+  .modal .field label{display:block;font-size:13px;color:var(--ink-2);margin-bottom:4px}
+  .modal .field input[type=text],.modal .field select{
+    width:100%;padding:7px 9px;font:inherit;color:var(--ink);
+    border:1px solid var(--line);border-radius:var(--radius);background:var(--panel);
+  }
+  .modal .field input[type=file]{font-size:13px;width:100%}
+  .modal .field .hint{font-size:12px;color:var(--ink-3);margin-top:3px}
+  .modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+
   .loading{color:var(--ink-3);font-size:14px}
 
   @media (prefers-reduced-motion:reduce){*{transition:none!important}}
@@ -179,11 +203,44 @@
   <section class="panel" id="browser">
     <div class="panel-head">
       <div class="crumbs" id="crumbs"></div>
+      <div class="toolbar">
+        <button class="btn small" type="button" id="btn-new-folder">+ Папка</button>
+        <button class="btn small" type="button" id="btn-new-template">+ Шаблон</button>
+      </div>
     </div>
     <div class="panel-body">
       <div id="browse-content" class="loading">Загрузка…</div>
     </div>
   </section>
+
+  <!-- Модалка: новый шаблон -->
+  <div class="modal-backdrop" id="upload-backdrop" hidden>
+    <div class="modal">
+      <h3>Новый шаблон</h3>
+      <div class="field">
+        <label for="new-tpl-name">Название</label>
+        <input type="text" id="new-tpl-name" placeholder="напр. Договор СГ">
+      </div>
+      <div class="field">
+        <label for="new-tpl-doctype">Тип документа</label>
+        <select id="new-tpl-doctype">
+          <option value="">— не задан —</option>
+          <option value="contract">Договор</option>
+          <option value="appendix">Приложение</option>
+          <option value="act">Акт</option>
+        </select>
+        <div class="hint">нужен для будущей автосвязки с контрагентом, можно оставить пустым</div>
+      </div>
+      <div class="field">
+        <label for="new-tpl-file">Файл .docx</label>
+        <input type="file" id="new-tpl-file" accept=".docx">
+      </div>
+      <div class="modal-actions">
+        <button class="btn" type="button" id="btn-tpl-cancel">Отмена</button>
+        <button class="btn primary" type="button" id="btn-tpl-submit">Загрузить</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Форма -->
   <section class="panel" id="form-panel" hidden>
@@ -230,8 +287,16 @@ function clearMsg() { $('#msg').className = 'msg'; }
 
 // ---------- навигация по папкам ----------
 let pathStack = [];        // [{id, name}]
+let currentFolderId = null;
 
 async function browse(folderId = null) {
+  currentFolderId = folderId;
+  // Шаблон можно добавить только внутри какой-то папки (folder_id
+  // обязателен у Template) — на самом верхнем уровне (список папок РУ/КЗ)
+  // добавлять шаблон некуда, пока не зайдёшь внутрь одной из них.
+  const tplBtn = $('#btn-new-template');
+  if (tplBtn) tplBtn.disabled = folderId === null;
+
   clearMsg();
   const box = $('#browse-content');
   box.className = 'loading';
@@ -290,7 +355,73 @@ function open(folder) {
   browse(folder.id);
 }
 
-// Переименование папки: спрашивает новое имя, шлёт PUT /folders/{id},
+// Создание новой папки. parent_id = текущая открытая папка (null — папка
+// верхнего уровня, как РУ/КЗ).
+async function createFolder() {
+  const name = prompt('Название новой папки:');
+  if (name === null) return;               // отмена
+  const trimmed = name.trim();
+  if (!trimmed) return;
+
+  try {
+    const body = new URLSearchParams({ name: trimmed });
+    if (currentFolderId) body.append('parent_id', currentFolderId);
+    const r = await fetch(`${API}/folders`, { method: 'POST', body });
+    if (!r.ok) throw new Error(`${r.status}`);
+    browse(currentFolderId);
+  } catch (e) {
+    showMsg('Не удалось создать папку. Проверьте, что сервер запущен.');
+  }
+}
+
+// ---------- модалка «новый шаблон» ----------
+function openUploadModal() {
+  if (currentFolderId === null) return;   // кнопка и так задизейблена, но на всякий случай
+  $('#new-tpl-name').value = '';
+  $('#new-tpl-doctype').value = '';
+  $('#new-tpl-file').value = '';
+  $('#upload-backdrop').hidden = false;
+}
+function closeUploadModal() {
+  $('#upload-backdrop').hidden = true;
+}
+
+async function submitUpload() {
+  const name = $('#new-tpl-name').value.trim();
+  const doc_type = $('#new-tpl-doctype').value;
+  const fileInput = $('#new-tpl-file');
+  const file = fileInput.files[0];
+
+  if (!name) { showMsg('Укажите название шаблона.'); return; }
+  if (!file) { showMsg('Выберите файл .docx.'); return; }
+  if (!file.name.endsWith('.docx')) { showMsg('Ожидается файл .docx.'); return; }
+
+  const btn = $('#btn-tpl-submit');
+  btn.disabled = true;
+  btn.textContent = 'Загружаем…';
+
+  try {
+    const fd = new FormData();
+    fd.append('name', name);
+    fd.append('folder_id', currentFolderId);
+    if (doc_type) fd.append('doc_type', doc_type);
+    fd.append('file', file);
+
+    const r = await fetch(`${API}/templates`, { method: 'POST', body: fd });
+    if (!r.ok) {
+      const detail = await r.json().catch(() => null);
+      throw new Error(detail?.detail || `${r.status}`);
+    }
+    closeUploadModal();
+    showMsg('Шаблон загружен.', 'ok');
+    browse(currentFolderId);
+  } catch (e) {
+    showMsg(`Не удалось загрузить шаблон: ${e.message}`);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Загрузить';
+  }
+}
 // перерисовывает текущий уровень. storage_key шаблонов от пути в дереве
 // не зависит (см. models.py), поэтому файлы в MinIO не трогаются —
 // меняется только имя папки.
@@ -675,6 +806,13 @@ $('#btn-back').addEventListener('click', () => {
   $('#form-panel').hidden = true;
   $('#browser').hidden = false;
   clearMsg();
+});
+$('#btn-new-folder').addEventListener('click', createFolder);
+$('#btn-new-template').addEventListener('click', openUploadModal);
+$('#btn-tpl-cancel').addEventListener('click', closeUploadModal);
+$('#btn-tpl-submit').addEventListener('click', submitUpload);
+$('#upload-backdrop').addEventListener('click', e => {
+  if (e.target.id === 'upload-backdrop') closeUploadModal();  // клик по фону — закрыть
 });
 browse(null);
 </script>
