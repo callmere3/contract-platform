@@ -377,13 +377,18 @@ function syncPerformers() {
   const perfWrap = document.querySelector('[data-list="performers"]');
   if (!tracksWrap || !perfWrap) return;
 
-  // уникальные никнеймы из столбца «Исполнитель» треков, в порядке ввода
+  // уникальные никнеймы из столбца «Исполнитель» треков, в порядке ввода.
+  // В одной ячейке может быть несколько исполнителей через запятую
+  // («IVAN, PETROV») — разбиваем их на отдельные никнеймы.
   const nicks = [];
   const seen = new Set();
   tracksWrap.querySelectorAll('tbody tr').forEach(tr => {
     const inp = tr.querySelector('[data-col="performer"]');
-    const v = inp ? inp.value.trim() : '';
-    if (v && !seen.has(v.toLowerCase())) { seen.add(v.toLowerCase()); nicks.push(v); }
+    const raw = inp ? inp.value : '';
+    raw.split(',').forEach(part => {
+      const v = part.trim();
+      if (v && !seen.has(v.toLowerCase())) { seen.add(v.toLowerCase()); nicks.push(v); }
+    });
   });
 
   // уже введённые ФИО — сохраняем по никнейму, чтобы не терять при пересборке

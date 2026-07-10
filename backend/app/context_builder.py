@@ -180,6 +180,13 @@ def _normalize_performers(raw_performers, is_group: bool = False) -> list[dict]:
     Поддерживается и старый вид (только ФИО строкой) — для обратной
     совместимости с кодом/тестами, где никнейм не передавали.
 
+    Составной никнейм: в столбце «Исполнитель» таблицы треков запятая —
+    всегда разделитель исполнителей («IVAN, PETROV» = два исполнителя),
+    имён с запятой внутри не бывает. Обычно фронтенд уже расщепляет их
+    по строкам, но если составной никнейм всё же дошёл сюда (например,
+    из API напрямую), расщепляем его и здесь — каждый получает то же ФИО.
+    В режиме группы никнейм — это название группы, его не расщепляем.
+
     Дедупликация: если у нескольких треков один и тот же исполнитель,
     в сноске он должен встретиться один раз.
       - обычный режим: ключ — никнейм (регистронезависимо), иначе ФИО.
@@ -191,8 +198,9 @@ def _normalize_performers(raw_performers, is_group: bool = False) -> list[dict]:
     """
     if not raw_performers:
         return []
-    result = []
-    seen = set()
+
+    # разворачиваем составные никнеймы в отдельные записи (обычный режим)
+    expanded = []
     for p in raw_performers:
         if isinstance(p, dict):
             nickname = str(p.get("nickname", "")).strip()
@@ -201,6 +209,17 @@ def _normalize_performers(raw_performers, is_group: bool = False) -> list[dict]:
             nickname, fio = "", str(p).strip()
         else:
             continue
+        if not is_group and "," in nickname:
+            for part in nickname.split(","):
+                part = part.strip()
+                if part:
+                    expanded.append((part, fio))
+        else:
+            expanded.append((nickname, fio))
+
+    result = []
+    seen = set()
+    for nickname, fio in expanded:
         if not (nickname or fio):
             continue
         if is_group:
