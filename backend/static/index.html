@@ -333,7 +333,7 @@ function renderForm(fields) {
   });
 
   groups.forEach(g => {
-    const fs = el('fieldset', {}, el('legend', {}, g));
+    const fs = el('fieldset', { 'data-group': g }, el('legend', {}, g));
     const lists = byName.get(g).filter(f => f.type === 'list');
     // is_group — флаг, но должен стоять ПОД таблицей исполнителей,
     // а не среди обычных полей сверху. Выносим его из plain отдельно.
@@ -372,43 +372,47 @@ function renderForm(fields) {
 // Синхронизирует таблицу исполнителей со столбцом «Исполнитель» треков.
 // Никнеймы предзаполняются автоматически (только уникальные), ФИО
 // оператор дописывает вручную и они сохраняются между обновлениями.
-function wireupPerformerAutofill() {
+function syncPerformers() {
   const tracksWrap = document.querySelector('[data-list="tracks"]');
   const perfWrap = document.querySelector('[data-list="performers"]');
   if (!tracksWrap || !perfWrap) return;
 
-  const syncPerformers = () => {
-    // уникальные никнеймы из столбца «Исполнитель» треков, в порядке ввода
-    const nicks = [];
-    const seen = new Set();
-    tracksWrap.querySelectorAll('tbody tr').forEach(tr => {
-      const inp = tr.querySelector('[data-col="performer"]');
-      const v = inp ? inp.value.trim() : '';
-      if (v && !seen.has(v.toLowerCase())) { seen.add(v.toLowerCase()); nicks.push(v); }
-    });
+  // уникальные никнеймы из столбца «Исполнитель» треков, в порядке ввода
+  const nicks = [];
+  const seen = new Set();
+  tracksWrap.querySelectorAll('tbody tr').forEach(tr => {
+    const inp = tr.querySelector('[data-col="performer"]');
+    const v = inp ? inp.value.trim() : '';
+    if (v && !seen.has(v.toLowerCase())) { seen.add(v.toLowerCase()); nicks.push(v); }
+  });
 
-    // уже введённые ФИО — сохраняем по никнейму, чтобы не терять при пересборке
-    const perfBody = perfWrap.querySelector('tbody');
-    const savedFio = new Map();
-    perfBody.querySelectorAll('tr').forEach(tr => {
-      const nk = tr.querySelector('[data-col="nickname"]');
-      const fio = tr.querySelector('[data-col="fio"]');
-      if (nk && nk.value.trim()) savedFio.set(nk.value.trim().toLowerCase(), fio ? fio.value : '');
-    });
+  // уже введённые ФИО — сохраняем по никнейму, чтобы не терять при пересборке
+  const perfBody = perfWrap.querySelector('tbody');
+  const savedFio = new Map();
+  perfBody.querySelectorAll('tr').forEach(tr => {
+    const nk = tr.querySelector('[data-col="nickname"]');
+    const fio = tr.querySelector('[data-col="fio"]');
+    if (nk && nk.value.trim()) savedFio.set(nk.value.trim().toLowerCase(), fio ? fio.value : '');
+  });
 
-    const cols = currentFields.find(f => f.name === 'performers').item_fields;
-    perfBody.textContent = '';
-    if (!nicks.length) { addRow(perfBody, cols, false); renumber(perfBody); return; }
-    nicks.forEach(nick => {
-      addRow(perfBody, cols, false);
-      const tr = perfBody.lastElementChild;
-      const nk = tr.querySelector('[data-col="nickname"]');
-      const fio = tr.querySelector('[data-col="fio"]');
-      if (nk) nk.value = nick;
-      if (fio) fio.value = savedFio.get(nick.toLowerCase()) || '';
-    });
-    renumber(perfBody);
-  };
+  const cols = currentFields.find(f => f.name === 'performers').item_fields;
+  perfBody.textContent = '';
+  if (!nicks.length) { addRow(perfBody, cols, false); renumber(perfBody); return; }
+  nicks.forEach(nick => {
+    addRow(perfBody, cols, false);
+    const tr = perfBody.lastElementChild;
+    const nk = tr.querySelector('[data-col="nickname"]');
+    const fio = tr.querySelector('[data-col="fio"]');
+    if (nk) nk.value = nick;
+    if (fio) fio.value = savedFio.get(nick.toLowerCase()) || '';
+  });
+  renumber(perfBody);
+}
+
+function wireupPerformerAutofill() {
+  const tracksWrap = document.querySelector('[data-list="tracks"]');
+  const perfWrap = document.querySelector('[data-list="performers"]');
+  if (!tracksWrap || !perfWrap) return;
 
   // слушаем ввод в столбце «Исполнитель» треков (делегированием — строки
   // добавляются динамически) и первичное добавление/удаление строк
@@ -423,13 +427,16 @@ function wireupPerformerAutofill() {
 }
 
 // Показ/скрытие зависимых полей релиза.
-//   - тип релиза «Сингл» (none) -> прячем «Название релиза» и «Год выпуска»
-//   - чекбокс «Есть видеоклип» снят -> прячем таблицу клипа
-// Это только про ВИДИМОСТЬ в форме. На бэкенд поля всё равно уходят
-// (collect() их соберёт), но при синге шаблон их не печатает — метки
-// release_* стоят под {%p if release_type != 'none' %}, а таблица клипа —
-// под {% if has_videoclip %}, поэтому пустые/скрытые значения ни на что
-// не влияют.
+//   - тип релиза «Сингл» (none):
+//       * прячем «Название релиза» и «Год выпуска»
+//       * запрещаем добавлять треки (сингл — это один трек), лишние
+//         строки убираем. Исполнителей при этом может быть несколько,
+//         поэтому таблицу исполнителей НЕ ограничиваем.
+//   - чекбокс «Есть видеоклип» снят -> прячем ВЕСЬ раздел «Видеоклипы»
+//     (не только таблицу, иначе остаётся пустой fieldset с легендой).
+// Это только про форму. В шаблоне release_* под {%p if release_type
+// != 'none' %}, а таблица клипа под {% if has_videoclip %}, поэтому
+// скрытые/пустые значения в документ не попадут.
 function wireupReleaseVisibility() {
   const relType = document.querySelector('[data-name="release_type"]');
   const hasClip = document.querySelector('[data-name="has_videoclip"]');
@@ -440,16 +447,40 @@ function wireupReleaseVisibility() {
     const isSingle = relType && relType.value === 'none';
     setHidden(document.querySelector('[data-field="release_name"]'), isSingle);
     setHidden(document.querySelector('[data-field="release_year"]'), isSingle);
+    limitTracksForSingle(isSingle);
   };
   const syncClip = () => {
     const on = hasClip && hasClip.checked;
-    setHidden(document.querySelector('[data-list="videoclips"]'), !on);
+    // прячем весь раздел (fieldset) «Видеоклипы», а не только таблицу
+    const clipList = document.querySelector('[data-list="videoclips"]');
+    const clipSection = clipList ? clipList.closest('fieldset') : null;
+    setHidden(clipSection, !on);
   };
 
   if (relType) relType.addEventListener('change', syncRelease);
   if (hasClip) hasClip.addEventListener('change', syncClip);
   syncRelease();  // начальное состояние
   syncClip();
+}
+
+// Для сингла таблица треков ограничена одной строкой: прячем кнопку
+// «+ Добавить строку» и схлопываем лишние строки до первой. Для
+// альбома/ЕР — возвращаем всё как было.
+function limitTracksForSingle(isSingle) {
+  const tracksWrap = document.querySelector('[data-list="tracks"]');
+  if (!tracksWrap) return;
+
+  const addBtn = tracksWrap.querySelector('.tbl-foot .btn.small');
+  if (addBtn) addBtn.style.display = isSingle ? 'none' : '';
+
+  if (isSingle) {
+    const tbody = tracksWrap.querySelector('tbody');
+    // оставляем только первую строку
+    while (tbody.rows.length > 1) tbody.deleteRow(1);
+    renumber(tbody);
+    // после удаления лишних треков пересинхронизируем исполнителей
+    syncPerformers();
+  }
 }
 
 function renderField(f) {
