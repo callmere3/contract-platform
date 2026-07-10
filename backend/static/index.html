@@ -346,17 +346,9 @@ function renderForm(fields) {
     form.append(fs);
   });
 
-  // Договор, приложение и акт обычно подписываются одной датой.
-  // Подставляем дату договора в дату документа, пока оператор
-  // не изменил её вручную — тогда связь разрывается.
-  const cDate = document.querySelector('[data-name="c_date"]');
-  const dDate = document.querySelector('[data-name="date"]');
-  if (cDate && dDate) {
-    dDate.addEventListener('input', () => { dDate.dataset.touched = '1'; });
-    cDate.addEventListener('input', () => {
-      if (!dDate.dataset.touched) dDate.value = cDate.value;
-    });
-  }
+  // Дата документа (date) больше не отдельное поле формы — сервер сам
+  // заполняет её тем же значением, что и дату договора (c_date).
+  // См. COMPUTED_FIELDS в template_analysis.py и context_builder.py.
 }
 
 function renderField(f) {
