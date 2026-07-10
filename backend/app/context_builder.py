@@ -73,33 +73,74 @@ MONTHS_RU = {
 }
 
 
-def parse_day_month(c_date: str) -> tuple[str, str] | None:
+MONTHS_RU_GENITIVE = [
+    "января", "февраля", "марта", "апреля", "мая", "июня",
+    "июля", "августа", "сентября", "октября", "ноября", "декабря",
+]
+
+
+def parse_date(value: str) -> tuple[str, str, str] | None:
     """
-    Извлекает день и месяц из даты договора для сборки его номера.
+    Разбирает дату в любом из поддерживаемых форматов.
+    Возвращает (день, месяц, год) строками с ведущими нулями: ('15','03','2026').
 
-        '«15» марта 2026 г.' -> ('15', '03')
-        '15.03.2026'          -> ('15', '03')
+        '2026-03-15'          -> ('15','03','2026')   # из <input type="date">
+        '«15» марта 2026 г.'  -> ('15','03','2026')
+        '15.03.2026'           -> ('15','03','2026')
 
-    Нужно, чтобы номер договора не разошёлся с его датой.
+    Дата — единственный источник правды: из неё выводятся и номер договора
+    (день/месяц/год), и текстовое представление в документе. Так они
+    не могут разойтись.
+
     Возвращает None, если распознать не удалось.
     """
-    if not c_date:
+    if not value:
         return None
+    value = value.strip()
 
-    # формат «15» марта 2026 г.
-    m = re.search(r"«?(\d{1,2})»?\s+([а-яё]+)", c_date, re.IGNORECASE)
+    # ISO: 2026-03-15 (то, что присылает <input type="date">)
+    m = re.fullmatch(r"(\d{4})-(\d{2})-(\d{2})", value)
     if m:
-        day = m.group(1).zfill(2)
+        return m.group(3), m.group(2), m.group(1)
+
+    # «15» марта 2026 г.
+    m = re.search(r"«?(\d{1,2})»?\s+([а-яё]+)\s+(\d{4})", value, re.IGNORECASE)
+    if m:
         month = MONTHS_RU.get(m.group(2).lower())
         if month:
-            return day, month
+            return m.group(1).zfill(2), month, m.group(3)
 
-    # формат 15.03.2026 или 15/03/2026
-    m = re.search(r"\b(\d{1,2})[./](\d{1,2})[./]\d{2,4}\b", c_date)
+    # 15.03.2026 или 15/03/2026
+    m = re.search(r"\b(\d{1,2})[./](\d{1,2})[./](\d{4})\b", value)
     if m:
-        return m.group(1).zfill(2), m.group(2).zfill(2)
+        return m.group(1).zfill(2), m.group(2).zfill(2), m.group(3)
 
     return None
+
+
+def format_date_ru(value: str) -> str:
+    """
+    Приводит дату к виду, который печатается в документе:
+        '2026-03-15' -> '«15» марта 2026 г.'
+
+    Если дата не распознана, возвращает исходную строку как есть —
+    чтобы оператор мог вписать нестандартный текст вручную.
+    """
+    parsed = parse_date(value)
+    if not parsed:
+        return value
+    day, month, year = parsed
+    month_name = MONTHS_RU_GENITIVE[int(month) - 1]
+    return f"«{day}» {month_name} {year} г."
+
+
+def parse_day_month(c_date: str) -> tuple[str, str] | None:
+    """
+    Совместимость: извлекает только день и месяц.
+    Новый код должен использовать parse_date().
+    """
+    parsed = parse_date(c_date)
+    return (parsed[0], parsed[1]) if parsed else None
 
 
 def build_profanity_note(tracks: list[dict]) -> str:
@@ -269,27 +310,37 @@ def build_context(raw: dict) -> dict:
     release_type = raw.get("release_type", "none")
     release_labels = {"album": "Альбом", "ep": "ЕР", "none": ""}
 
+    # --- Даты ---
+    # Оператор вводит дату ОДИН раз (календарём, в ISO-формате 2026-03-15).
+    # Из неё выводится всё остальное:
+    #   - день/месяц/год для номера договора
+    #   - текстовое представление «15» марта 2026 г. для печати в документе
+    # Так номер договора не может разойтись с его же датой в тексте.
+    c_date_raw = raw.get("c_date", "")
+    date_raw = raw.get("date", "")
+
+    parsed_c_date = parse_date(c_date_raw)
+
     # Номер договора. Три источника, в порядке приоритета:
     #   1. contract — готовая строка (для приложений/актов: берётся из
     #      договора контрагента; когда появится справочник — подтянется оттуда)
-    #   2. contract_day + contract_month — ручной ввод дня и месяца
-    #   3. извлечение дня/месяца из даты договора c_date (запасной вариант)
+    #   2. день/месяц/год из даты договора c_date
+    #   3. явно переданные contract_day/month/year (обратная совместимость)
     # Инициалы всегда вычисляются из ФИО.
     contract = raw.get("contract")
     if not contract:
-        day = raw.get("contract_day")
-        month = raw.get("contract_month")
-
-        if not (day and month):
-            # пробуем достать день/месяц из даты договора
-            parsed = parse_day_month(raw.get("c_date", ""))
-            if parsed:
-                day, month = parsed
+        if parsed_c_date:
+            day, month, year_full = parsed_c_date
+            year = year_full[-2:]           # 2026 -> 26
+        else:
+            day = raw.get("contract_day", "01")
+            month = raw.get("contract_month", "01")
+            year = raw.get("contract_year", "26")
 
         contract = build_contract_number(
-            day=day or "01",
-            month=month or "01",
-            year=raw.get("contract_year", "26"),
+            day=day,
+            month=month,
+            year=year,
             full_name=full_name,
             doc_kind=raw.get("doc_kind", "СГ"),
         )
@@ -309,6 +360,10 @@ def build_context(raw: dict) -> dict:
     context.update({
         "contract": contract,
         "name_short": name_short,
+
+        # даты — в документ печатается русский формат, а не ISO из календаря
+        "c_date": format_date_ru(c_date_raw),
+        "date": format_date_ru(date_raw),
 
         # тип релиза
         "release_type": release_type,
