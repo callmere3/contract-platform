@@ -115,11 +115,38 @@ ITEM_FIELD_LABELS = {
     "fio":           "ФИО",
 }
 
+# Некоторые имена полей (music_author, producer) переиспользуются и в
+# таблице треков, и в таблице видеоклипов, но означают там разное —
+# см. Таблицу №1 и Таблицу №2 в оригинале договора от юриста:
+#
+#   Треки:  ... Автор музыки | Автор текста | ... | Изготовитель Фонограммы/хронометраж | Доля
+#   Клип:   ... Режиссёр/Автор Сценария | Автор музыки/текста | ... | Страна/год/хронометраж/возраст | Изготовитель Видеоклипа | Доля
+#
+# В клипе это ОДНА колонка "Автор музыки/текста" (без отдельного автора
+# текста), а "Изготовитель" — без хронометража (тот в колонке production).
+# Общие ITEM_FIELD_LABELS/ITEM_FIELD_ORDER этого не различают (ключ один
+# и тот же), поэтому для списка videoclips подписи переопределяются здесь.
+LIST_ITEM_LABEL_OVERRIDES = {
+    "videoclips": {
+        "music_author": "Автор музыки/текста",
+        "producer":     "Изготовитель видеоклипа",
+    },
+}
+
 # Порядок колонок в таблицах. Без этого они идут по алфавиту,
 # и «Название» оказывается последним, что неудобно для ввода.
+#
+# Общий список рассчитан так, чтобы правильно сортировать ОБЕ таблицы
+# одновременно (для каждой таблицы берутся только присутствующие в ней
+# колонки, остальные просто выпадают из сортировки):
+#   Треки:  title, music_author, lyrics_author, performer, producer, share_author, share_related
+#   Клип:   title, director, music_author, performer, production, producer, share
+# Отсюда director стоит ПЕРЕД music_author (для клипа), а production —
+# ПЕРЕД producer (для клипа); на треки это не влияет, т.к. в них нет
+# полей director/production.
 ITEM_FIELD_ORDER = [
-    "title", "music_author", "lyrics_author", "director", "performer",
-    "producer", "production", "share_author", "share_related", "share",
+    "title", "director", "music_author", "lyrics_author", "performer",
+    "production", "producer", "share_author", "share_related", "share",
     "nickname", "fio",
 ]
 
@@ -340,8 +367,10 @@ def fields_to_dict(fields: list[FormField]) -> list[dict]:
             # колонки в осмысленном порядке, а не по алфавиту
             col_order = {c: i for i, c in enumerate(ITEM_FIELD_ORDER)}
             cols = sorted(f.item_fields, key=lambda c: col_order.get(c, 999))
+            overrides = LIST_ITEM_LABEL_OVERRIDES.get(f.name, {})
             item["item_fields"] = [
-                {"name": c, "label": ITEM_FIELD_LABELS.get(c, c)} for c in cols
+                {"name": c, "label": overrides.get(c, ITEM_FIELD_LABELS.get(c, c))}
+                for c in cols
             ]
         if f.type == "choice":
             item["choices"] = [
