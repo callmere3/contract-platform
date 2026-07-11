@@ -635,6 +635,7 @@ function wireupPerformerAutofill() {
 function wireupReleaseVisibility() {
   const relType = document.querySelector('[data-name="release_type"]');
   const hasClip = document.querySelector('[data-name="has_videoclip"]');
+  const marketing = document.querySelector('[data-name="marketing"]');
 
   const setHidden = (node, hidden) => { if (node) node.style.display = hidden ? 'none' : ''; };
 
@@ -651,11 +652,19 @@ function wireupReleaseVisibility() {
     const clipSection = clipList ? clipList.closest('fieldset') : null;
     setHidden(clipSection, !on);
   };
+  const syncMarketing = () => {
+    // поле «Сумма на SMM» показываем только при включённой галочке
+    // «Маркетинговая кампания» (шаблон СГ_аванс, пункт 2.1.2)
+    const on = marketing && marketing.checked;
+    setHidden(document.querySelector('[data-field="smm"]'), !on);
+  };
 
   if (relType) relType.addEventListener('change', syncRelease);
   if (hasClip) hasClip.addEventListener('change', syncClip);
+  if (marketing) marketing.addEventListener('change', syncMarketing);
   syncRelease();  // начальное состояние
   syncClip();
+  syncMarketing();
 }
 
 // Для сингла таблица треков ограничена одной строкой: прячем кнопку

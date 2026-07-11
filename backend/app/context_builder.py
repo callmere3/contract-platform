@@ -394,6 +394,118 @@ def build_royalty_text(royalty_raw) -> str:
     return f"{num_to_words_ru(n)} {percent_word_ru(n)}"
 
 
+# --- Суммы прописью (аванс, SMM) ---
+# Оператор вводит полную сумму в рублях (напр. 150000). В договоре она
+# печатается как «150 000» (разряды через пробел, build_amount_spaced)
+# плюс пропись «сто пятьдесят тысяч» (build_amount_text). Слова «рублей»
+# и «00 копеек» уже в тексте шаблона — здесь только число и его пропись.
+
+# женский род для тысяч: «одна тысяча», «две тысячи»
+_UNITS_F_RU = ["ноль", "одна", "две", "три", "четыре",
+               "пять", "шесть", "семь", "восемь", "девять"]
+_HUNDREDS_RU = {
+    1: "сто", 2: "двести", 3: "триста", 4: "четыреста", 5: "пятьсот",
+    6: "шестьсот", 7: "семьсот", 8: "восемьсот", 9: "девятьсот",
+}
+
+
+def _triple_to_words(n: int, feminine: bool = False) -> str:
+    """Число 0..999 прописью. feminine — женский род единиц (для тысяч)."""
+    units = _UNITS_F_RU if feminine else _UNITS_RU
+    words = []
+    h, rest = divmod(n, 100)
+    if h:
+        words.append(_HUNDREDS_RU[h])
+    if rest:
+        if rest < 10:
+            words.append(units[rest])
+        elif rest < 20:
+            words.append(_TEENS_RU[rest - 10])
+        else:
+            tens, unit = divmod(rest, 10)
+            words.append(_TENS_RU[tens])
+            if unit:
+                words.append(units[unit])
+    return " ".join(words)
+
+
+def _plural_ru(n: int, one: str, few: str, many: str) -> str:
+    """Русское склонение по числу: 1 тысяча / 2 тысячи / 5 тысяч."""
+    if 11 <= n % 100 <= 14:
+        return many
+    last = n % 10
+    if last == 1:
+        return one
+    if 2 <= last <= 4:
+        return few
+    return many
+
+
+def amount_to_words_ru(n: int) -> str:
+    """
+    Целое 0..999_999_999 -> сумма прописью, напр.
+        150000  -> 'сто пятьдесят тысяч'
+        1000000 -> 'один миллион'
+        2500    -> 'две тысячи пятьсот'
+    Без слова «рублей» — оно уже в тексте шаблона.
+    """
+    if n == 0:
+        return "ноль"
+    if not (0 < n <= 999_999_999):
+        raise ValueError("amount_to_words_ru: поддерживается 0..999 999 999")
+
+    parts = []
+    millions, rest = divmod(n, 1_000_000)
+    thousands, units = divmod(rest, 1_000)
+
+    if millions:
+        parts.append(_triple_to_words(millions))
+        parts.append(_plural_ru(millions, "миллион", "миллиона", "миллионов"))
+    if thousands:
+        parts.append(_triple_to_words(thousands, feminine=True))
+        parts.append(_plural_ru(thousands, "тысяча", "тысячи", "тысяч"))
+    if units:
+        parts.append(_triple_to_words(units))
+
+    return " ".join(parts)
+
+
+def build_amount_spaced(amount_raw) -> str:
+    """
+    '150000' -> '150 000' (разряды через неразрывный пробел \\u00a0, чтобы
+    Word не переносил число). '' -> ''.
+    """
+    if amount_raw is None or str(amount_raw).strip() == "":
+        return ""
+    n = _parse_amount(amount_raw)
+    return f"{n:,}".replace(",", "\u00a0")
+
+
+def build_amount_text(amount_raw) -> str:
+    """
+    '150000' -> 'сто пятьдесят тысяч'. '' -> ''.
+    Первая буква строчная — в тексте договора идёт в скобках после числа.
+    """
+    if amount_raw is None or str(amount_raw).strip() == "":
+        return ""
+    n = _parse_amount(amount_raw)
+    return amount_to_words_ru(n)
+
+
+def _parse_amount(amount_raw) -> int:
+    """Парсит сумму: убирает пробелы-разделители, проверяет целое >= 0."""
+    s = str(amount_raw).strip().replace(" ", "").replace("\u00a0", "")
+    try:
+        n = int(s)
+    except ValueError:
+        raise ValueError(f"Сумма должна быть целым числом, получено: «{amount_raw}»")
+    if n < 0:
+        raise ValueError(f"Сумма не может быть отрицательной, получено: {n}")
+    if n > 999_999_999:
+        raise ValueError(f"Слишком большая сумма: {n}")
+    return n
+
+
 def build_term_end(quarter, year) -> str:
     """
     Возвращает дату окончания Срока, напр. '31 декабря 2027 г.'
@@ -552,6 +664,14 @@ def build_context(raw: dict, doc_type: str | None = None) -> dict:
 
         # роялти прописью — из числа (royalty), не вводится отдельно
         "royalty_text": build_royalty_text(raw.get("royalty")),
+
+        # суммы аванса и SMM (шаблон СГ_аванс): число с пробелом-разделителем
+        # + пропись. advance — сумма аванса (п.2.1.1), smm — сумма на SMM
+        # мероприятия (п.2.1.2, показывается только при marketing=True).
+        "advance": build_amount_spaced(raw.get("advance")),
+        "advance_text": build_amount_text(raw.get("advance")),
+        "smm": build_amount_spaced(raw.get("smm")),
+        "smm_text": build_amount_text(raw.get("smm")),
 
         # таблицы
         "tracks": tracks,
