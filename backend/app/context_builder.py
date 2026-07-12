@@ -561,6 +561,43 @@ def build_advance_days_text(advance_days_raw) -> str:
     return num_to_words_ru_genitive(n)
 
 
+def resolve_penalty_raw(raw: dict) -> str:
+    """
+    Штраф за непереданный трек (шаблон СГ_аванс с обязательством на
+    будущие треки, п.2.1.3).
+
+    Если оператор вписал сумму в поле penalty явно — используем её как
+    есть (ручной override, как и с advance_days). Если поле пустое —
+    считаем по умолчанию как «сумма аванса / количество треков»
+    (округление до целого рубля, обычное арифметическое) — логика в том,
+    что штраф за один непереданный трек соразмерен доле аванса,
+    приходящейся на этот трек. Оператор в любой момент может поправить
+    вручную, если по факту согласована другая сумма.
+
+    Пустая строка, если не заполнены advance/count (и то, и другое нужно
+    для расчёта) — тогда find_missing_variables поймает penalty как
+    незаполненное обязательное поле, а не молча подставит 0.
+    """
+    explicit = str(raw.get("penalty") or "").strip()
+    if explicit:
+        return explicit
+
+    advance_raw = str(raw.get("advance") or "").strip()
+    count_raw = str(raw.get("count") or "").strip()
+    if not advance_raw or not count_raw:
+        return ""
+
+    try:
+        advance_n = _parse_amount(advance_raw)
+        count_n = _parse_amount(count_raw)
+    except ValueError:
+        return ""  # некорректный ввод в advance/count — не наше дело здесь,
+                   # это поймает своя собственная валидация этих полей
+    if count_n == 0:
+        return ""
+    return str(round(advance_n / count_n))
+
+
 def _parse_amount(amount_raw) -> int:
     """Парсит сумму: убирает пробелы-разделители, проверяет целое >= 0."""
     s = str(amount_raw).strip().replace(" ", "").replace("\u00a0", "")
@@ -759,9 +796,11 @@ def build_context(raw: dict, doc_type: str | None = None) -> dict:
         "smm_text": build_amount_text(raw.get("smm")),
 
         # штраф за непереданный трек (шаблон СГ_аванс с обязательством на
-        # будущие треки, п.2.1.3) — та же схема: сумма + пропись
-        "penalty": build_amount_spaced(raw.get("penalty")),
-        "penalty_text": build_amount_text(raw.get("penalty")),
+        # будущие треки, п.2.1.3) — по умолчанию считается как
+        # advance/count (см. resolve_penalty_raw), оператор может
+        # переопределить вручную
+        "penalty": build_amount_spaced(resolve_penalty_raw(raw)),
+        "penalty_text": build_amount_text(resolve_penalty_raw(raw)),
 
         # количество будущих треков/объектов прописью (тот же шаблон,
         # п.1.1 и п.2) — используем ту же функцию числительных, что и для

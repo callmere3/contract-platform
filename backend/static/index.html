@@ -580,6 +580,10 @@ function renderForm(fields) {
   // Предзаполнение срока действия (term_end) от даты документа —
   // оператор может поправить вручную, автозаполнение это не блокирует.
   wireupTermEndAutofill();
+
+  // Предзаполнение штрафа за непереданный трек (advance / count) —
+  // оператор может поправить вручную, автозаполнение это не блокирует.
+  wireupPenaltyAutofill();
 }
 
 // Синхронизирует таблицу исполнителей со столбцом «Исполнитель» треков.
@@ -696,6 +700,31 @@ function wireupTermEndAutofill() {
   };
   driver.addEventListener('input', sync);
   sync();  // предзаполнение при открытии формы, если дата уже введена
+}
+
+// Предзаполняет «Штраф за непереданный трек» как «Сумма аванса / Кол-во
+// треков», округляя до целого рубля — та же формула, что и в backend
+// (context_builder.resolve_penalty_raw). Как только оператор тронет поле
+// сам — автозаполнение перестаёт его перезаписывать (см. wireupTermEndAutofill,
+// тот же паттерн). Финальное значение backend всё равно пересчитывает
+// сам при пустом поле — это только подсказка в форме, не источник истины.
+function wireupPenaltyAutofill() {
+  const penalty = document.querySelector('[data-name="penalty"]');
+  const advance = document.querySelector('[data-name="advance"]');
+  const count = document.querySelector('[data-name="count"]');
+  if (!penalty || !advance || !count) return;
+
+  penalty.addEventListener('input', () => { penalty.dataset.touched = '1'; });
+  const sync = () => {
+    if (penalty.dataset.touched) return;
+    const a = Number(advance.value.replace(/\s/g, ''));
+    const c = Number(count.value);
+    if (!a || !c) return;  // не введены оба — не подставляем
+    penalty.value = String(Math.round(a / c));
+  };
+  advance.addEventListener('input', sync);
+  count.addEventListener('input', sync);
+  sync();  // предзаполнение при открытии формы, если оба поля уже введены
 }
 
 // Показ/скрытие зависимых полей релиза.
