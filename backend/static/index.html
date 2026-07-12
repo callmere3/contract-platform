@@ -154,6 +154,16 @@
     display:flex;align-items:center;gap:12px;
   }
   .actions .spacer{flex:1}
+  .spacer{flex:1}
+
+  .mode-tabs{display:flex;gap:4px;margin-bottom:14px;border-bottom:1px solid var(--line-2)}
+  .mode-tab{
+    border:none;background:none;cursor:pointer;font:inherit;font-size:13px;
+    color:var(--ink-3);padding:8px 4px;margin-bottom:-1px;
+    border-bottom:2px solid transparent;
+  }
+  .mode-tab:hover{color:var(--ink-2)}
+  .mode-tab.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:600}
 
   /* --- сообщения --- */
   .msg{padding:10px 13px;border-radius:var(--radius);font-size:13px;margin-bottom:14px;display:none}
@@ -201,19 +211,116 @@
 <main class="shell">
   <div class="msg" id="msg"></div>
 
-  <!-- Навигация по папкам -->
-  <section class="panel" id="browser">
-    <div class="panel-head">
-      <div class="crumbs" id="crumbs"></div>
-      <div class="toolbar">
-        <button class="btn small" type="button" id="btn-new-folder">+ Папка</button>
-        <button class="btn small" type="button" id="btn-new-template">+ Шаблон</button>
+  <div class="mode-tabs">
+    <button class="mode-tab" type="button" id="tab-contragents">Контрагенты</button>
+    <button class="mode-tab" type="button" id="tab-folders">Папки</button>
+  </div>
+
+  <!-- ===================== РЕЖИМ: ПАПКИ (владелец сервиса, CRUD шаблонов) ===================== -->
+  <div id="mode-folders">
+    <section class="panel" id="browser">
+      <div class="panel-head">
+        <div class="crumbs" id="crumbs"></div>
+        <div class="toolbar">
+          <button class="btn small" type="button" id="btn-new-folder">+ Папка</button>
+          <button class="btn small" type="button" id="btn-new-template">+ Шаблон</button>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div id="browse-content" class="loading">Загрузка…</div>
+      </div>
+    </section>
+  </div>
+
+  <!-- ===================== РЕЖИМ: КОНТРАГЕНТЫ (основной рабочий режим) ===================== -->
+  <div id="mode-contragents">
+
+    <!-- Экран 1: поиск/создание контрагента -->
+    <section class="panel" id="contragent-search">
+      <div class="panel-head">
+        <div class="toolbar" style="flex:1">
+          <input type="text" id="contragent-q" placeholder="Поиск по названию или псевдониму…" style="flex:1;max-width:360px">
+          <button class="btn small" type="button" id="btn-new-contragent">+ Новый контрагент</button>
+          <span class="spacer"></span>
+          <button class="btn small" type="button" id="btn-open-import-export">Импорт/экспорт</button>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div id="contragent-results" class="loading">Загрузка…</div>
+      </div>
+    </section>
+
+    <!-- Экран 2: документы выбранного контрагента -->
+    <section class="panel" id="contragent-docs" hidden>
+      <div class="panel-head">
+        <div>
+          <h2 id="cdocs-title" style="margin:0"></h2>
+          <span class="sub" id="cdocs-meta"></span>
+        </div>
+        <button class="btn small" id="btn-cdocs-back">← К поиску контрагентов</button>
+      </div>
+      <div class="panel-body">
+        <div id="cdocs-content" class="loading">Загрузка…</div>
+      </div>
+    </section>
+
+    <!-- Экран 3: импорт/экспорт -->
+    <section class="panel" id="contragent-import-export" hidden>
+      <div class="panel-head">
+        <h2 style="margin:0">Импорт / экспорт контрагентов</h2>
+        <button class="btn small" id="btn-ie-back">← К поиску контрагентов</button>
+      </div>
+      <div class="panel-body">
+        <div class="field">
+          <a class="btn" id="btn-export-contragents" href="#" download>Скачать экспорт (.xlsx)</a>
+        </div>
+        <div class="field">
+          <label for="import-file">Загрузить .xlsx</label>
+          <input type="file" id="import-file" accept=".xlsx">
+        </div>
+        <div class="field">
+          <button class="btn primary" type="button" id="btn-import-submit">Импортировать</button>
+        </div>
+        <div id="import-report"></div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Модалка: новый контрагент -->
+  <div class="modal-backdrop" id="contragent-backdrop" hidden>
+    <div class="modal">
+      <h3>Новый контрагент</h3>
+      <div class="field">
+        <label for="new-c-name">ФИО / название</label>
+        <input type="text" id="new-c-name" placeholder="Иванов Иван Иванович">
+        <div id="new-c-duplicates" class="hint"></div>
+      </div>
+      <div class="field">
+        <label for="new-c-country">Страна</label>
+        <select id="new-c-country"></select>
+      </div>
+      <div class="field">
+        <label for="new-c-contragent-type">Тип контрагента</label>
+        <select id="new-c-contragent-type"></select>
+      </div>
+      <div class="field">
+        <label for="new-c-contract-family">Тип договора</label>
+        <select id="new-c-contract-family"></select>
+      </div>
+      <div class="field">
+        <label for="new-c-date">Дата договора</label>
+        <input type="date" id="new-c-date">
+      </div>
+      <div class="field">
+        <label for="new-c-royalty">Роялти %</label>
+        <input type="text" id="new-c-royalty" placeholder="70">
+      </div>
+      <div class="modal-actions">
+        <button class="btn" type="button" id="btn-c-cancel">Отмена</button>
+        <button class="btn primary" type="button" id="btn-c-submit">Создать</button>
       </div>
     </div>
-    <div class="panel-body">
-      <div id="browse-content" class="loading">Загрузка…</div>
-    </div>
-  </section>
+  </div>
 
   <!-- Модалка: новый шаблон -->
   <div class="modal-backdrop" id="upload-backdrop" hidden>
@@ -306,6 +413,8 @@
 const API = '';            // тот же origin; при отдельном хосте — 'http://IP:8000'
 let currentTemplateId = null;
 let currentFields = [];
+let currentFormOrigin = 'folders';   // 'folders' | 'contragent-docs' — куда возвращает btn-back
+let currentContragent = null;
 
 // ---------- утилиты ----------
 const $ = s => document.querySelector(s);
@@ -338,6 +447,11 @@ function fillTagSelect(select, values) {
   select.append(el('option', { value: '' }, '— не задано —'));
   values.forEach(v => select.append(el('option', { value: v }, v)));
 }
+function fillRequiredSelect(select, values) {
+  select.innerHTML = '';
+  select.append(el('option', { value: '', disabled: true, selected: true }, '— выберите —'));
+  values.forEach(v => select.append(el('option', { value: v }, v)));
+}
 
 async function loadTagOptions() {
   try {
@@ -356,6 +470,19 @@ async function loadTagOptions() {
     ['#edit-tpl-contragent-type', tagOptions.contragent_types],
     ['#edit-tpl-contract-family', tagOptions.contract_families],
   ].forEach(([sel, values]) => fillTagSelect($(sel), values));
+  [
+    ['#new-c-country', tagOptions.countries],
+    ['#new-c-contragent-type', tagOptions.contragent_types],
+    ['#new-c-contract-family', tagOptions.contract_families],
+  ].forEach(([sel, values]) => fillRequiredSelect($(sel), values));
+}
+
+function debounce(fn, ms) {
+  let t;
+  return (...args) => {
+    clearTimeout(t);
+    t = setTimeout(() => fn(...args), ms);
+  };
 }
 
 // ---------- навигация по папкам ----------
@@ -441,6 +568,248 @@ async function browse(folderId = null) {
 function open(folder) {
   pathStack.push(folder);
   browse(folder.id);
+}
+
+// ---------- переключение режимов (Контрагенты / Папки) ----------
+function switchMode(mode) {
+  $('#tab-contragents').classList.toggle('active', mode === 'contragents');
+  $('#tab-folders').classList.toggle('active', mode === 'folders');
+  $('#mode-contragents').hidden = mode !== 'contragents';
+  $('#mode-folders').hidden = mode !== 'folders';
+  $('#form-panel').hidden = true;
+  clearMsg();
+  if (mode === 'folders') {
+    browse(null);
+  } else {
+    $('#contragent-docs').hidden = true;
+    $('#contragent-import-export').hidden = true;
+    $('#contragent-search').hidden = false;
+    searchContragents();
+  }
+}
+
+// ---------- контрагенты: поиск ----------
+async function searchContragents() {
+  const box = $('#contragent-results');
+  box.className = 'loading';
+  box.textContent = 'Загрузка…';
+  const q = $('#contragent-q').value.trim();
+  let data;
+  try {
+    const url = q ? `${API}/contragents?q=${encodeURIComponent(q)}` : `${API}/contragents`;
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(`${r.status}`);
+    data = await r.json();
+  } catch (e) {
+    box.className = '';
+    box.textContent = '';
+    showMsg('Не удалось загрузить список контрагентов. Проверьте, что сервер запущен.');
+    return;
+  }
+  box.className = '';
+  box.textContent = '';
+  if (!data.contragents.length) {
+    box.append(el('p', { class: 'empty' }, q ? 'Ничего не найдено.' : 'Контрагентов пока нет.'));
+    return;
+  }
+  const grid = el('div', { class: 'browse' });
+  data.contragents.forEach(c => {
+    const tagsSet = c.country && c.type && c.contract_family;
+    const tagsLabel = tagsSet ? `${c.country}/${c.type}/${c.contract_family}` : 'теги не проставлены';
+    grid.append(el('div', { class: 'node-row' },
+      el('button', { class: 'node tpl', type: 'button', onclick: () => openContragentDocs(c) },
+        el('span', { class: 'icon' }, '◆'),
+        el('span', {},
+          el('span', { class: 'nm', style: 'display:block' }, c.title),
+          c.nicknames.length
+            ? el('span', { style: 'display:block;font-size:12px;color:var(--ink-3)' }, c.nicknames.join(', '))
+            : ''),
+        el('span', { class: 'badge' + (tagsSet ? '' : ' badge-warn') }, tagsLabel))
+    ));
+  });
+  box.append(grid);
+}
+
+// ---------- контрагенты: создание (модалка) ----------
+function openContragentModal() {
+  $('#new-c-name').value = '';
+  $('#new-c-country').selectedIndex = 0;
+  $('#new-c-contragent-type').selectedIndex = 0;
+  $('#new-c-contract-family').selectedIndex = 0;
+  $('#new-c-date').value = new Date().toISOString().slice(0, 10);
+  $('#new-c-royalty').value = '';
+  $('#new-c-duplicates').textContent = '';
+  $('#contragent-backdrop').hidden = false;
+}
+function closeContragentModal() {
+  $('#contragent-backdrop').hidden = true;
+}
+
+// Мягкая проверка дублей на лету (см. брейншторм) — не блокирует
+// создание, только предупреждает, если находятся похожие title/nickname.
+async function checkContragentDuplicates() {
+  const name = $('#new-c-name').value.trim();
+  const box = $('#new-c-duplicates');
+  if (!name) { box.textContent = ''; return; }
+  try {
+    const r = await fetch(`${API}/contragents?q=${encodeURIComponent(name)}`);
+    if (!r.ok) throw new Error();
+    const data = await r.json();
+    box.textContent = data.contragents.length
+      ? `Похожие уже есть: ${data.contragents.map(c => c.title).join(', ')}`
+      : '';
+  } catch { /* мягкая проверка — молча пропускаем сбой сети */ }
+}
+
+async function submitContragent() {
+  const name = $('#new-c-name').value.trim();
+  const country = $('#new-c-country').value;
+  const contragentType = $('#new-c-contragent-type').value;
+  const contractFamily = $('#new-c-contract-family').value;
+  const date = $('#new-c-date').value;
+  const royalty = $('#new-c-royalty').value.trim();
+
+  if (!name) { showMsg('Укажите ФИО/название.'); return; }
+  if (!country || !contragentType || !contractFamily) {
+    showMsg('Заполните страну, тип контрагента и тип договора.'); return;
+  }
+  if (!date) { showMsg('Укажите дату договора.'); return; }
+  if (!royalty) { showMsg('Укажите роялти %.'); return; }
+
+  const btn = $('#btn-c-submit');
+  btn.disabled = true;
+  btn.textContent = 'Создаём…';
+  try {
+    const body = new URLSearchParams({
+      name, country, contragent_type: contragentType, contract_family: contractFamily,
+      contract_date: date, royalty_percent: royalty,
+    });
+    const r = await fetch(`${API}/contragents`, { method: 'POST', body });
+    if (!r.ok) {
+      const detail = await r.json().catch(() => null);
+      throw new Error(detail?.detail || `${r.status}`);
+    }
+    closeContragentModal();
+    showMsg('Контрагент создан.', 'ok');
+    searchContragents();
+  } catch (e) {
+    showMsg(`Не удалось создать контрагента: ${e.message}`);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Создать';
+  }
+}
+
+// ---------- контрагенты: документы конкретного контрагента ----------
+async function openContragentDocs(c) {
+  currentContragent = c;
+  $('#contragent-search').hidden = true;
+  $('#contragent-docs').hidden = false;
+  $('#cdocs-title').textContent = c.title;
+
+  const content = $('#cdocs-content');
+  content.className = 'loading';
+  content.textContent = 'Загрузка…';
+  $('#cdocs-meta').textContent = '';
+
+  let detail, docsData;
+  try {
+    const [rDetail, rDocs] = await Promise.all([
+      fetch(`${API}/contragents/${c.id}`),
+      fetch(`${API}/contragents/${c.id}/templates`),
+    ]);
+    if (!rDetail.ok || !rDocs.ok) throw new Error();
+    detail = await rDetail.json();
+    docsData = await rDocs.json();
+  } catch {
+    content.className = '';
+    content.textContent = '';
+    showMsg('Не удалось загрузить данные контрагента.');
+    return;
+  }
+
+  // дата/номер договора и роялти — только ОТОБРАЖАЮТСЯ здесь (см. брейншторм,
+  // "contract_date фиксируется один раз и не пересчитывается"); в саму форму
+  // генерации автоподстановка этих полей — отдельный следующий шаг, пока
+  // форма заполняется как обычно, вручную.
+  const metaParts = [];
+  if (detail.contract_number) metaParts.push(detail.contract_number);
+  if (detail.contract_date) metaParts.push(detail.contract_date);
+  if (detail.royalty_percent != null) metaParts.push(`роялти ${detail.royalty_percent}%`);
+  $('#cdocs-meta').textContent = metaParts.join(' · ');
+
+  content.className = '';
+  content.textContent = '';
+
+  if (!docsData.templates.length) {
+    content.append(el('p', { class: 'empty' },
+      'Для этого контрагента нет совместимых документов — проверьте, что у него и у нужных шаблонов совпадают страна/тип/тип договора.'));
+    return;
+  }
+
+  const grid = el('div', { class: 'browse' });
+  docsData.templates.forEach(t => {
+    const badge = { contract: 'договор', appendix: 'приложение', act: 'акт' }[t.doc_type];
+    grid.append(el('div', { class: 'node-row' },
+      el('button', { class: 'node tpl', type: 'button', onclick: () => loadForm(t, 'contragent-docs') },
+        el('span', { class: 'icon' }, '📄'),
+        el('span', { class: 'nm' }, t.name),
+        badge ? el('span', { class: 'badge' }, badge) : '')
+    ));
+  });
+  content.append(grid);
+}
+
+// ---------- контрагенты: импорт/экспорт ----------
+function openImportExport() {
+  $('#contragent-search').hidden = true;
+  $('#contragent-import-export').hidden = false;
+  $('#btn-export-contragents').href = `${API}/contragents/export`;
+  $('#import-report').textContent = '';
+  $('#import-file').value = '';
+}
+function closeImportExport() {
+  $('#contragent-import-export').hidden = true;
+  $('#contragent-search').hidden = false;
+}
+
+async function submitImport() {
+  const file = $('#import-file').files[0];
+  if (!file) { showMsg('Выберите файл .xlsx.'); return; }
+
+  const btn = $('#btn-import-submit');
+  btn.disabled = true;
+  btn.textContent = 'Импортируем…';
+  try {
+    const fd = new FormData();
+    fd.append('file', file);
+    const r = await fetch(`${API}/contragents/import`, { method: 'POST', body: fd });
+    if (!r.ok) {
+      const detail = await r.json().catch(() => null);
+      throw new Error(detail?.detail || `${r.status}`);
+    }
+    const report = await r.json();
+    const box = $('#import-report');
+    box.textContent = '';
+    box.append(el('p', {},
+      `Создано: ${report.created} · Обновлено: ${report.updated} · Пропущено: ${report.skipped}`));
+    if (report.details && report.details.length) {
+      const details = el('ul', { style: 'font-size:12px;color:var(--ink-3);max-height:240px;overflow:auto' });
+      report.details.forEach(d => {
+        let line = `строка ${d.row}: ${d.status}${d.title ? ' — ' + d.title : ''}`;
+        if (d.reason) line += ` (${d.reason})`;
+        if (d.warnings && d.warnings.length) line += ` [предупреждения: ${d.warnings.join('; ')}]`;
+        details.append(el('li', {}, line));
+      });
+      box.append(details);
+    }
+    showMsg('Импорт завершён.', 'ok');
+  } catch (e) {
+    showMsg(`Не удалось импортировать файл: ${e.message}`);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Импортировать';
+  }
 }
 
 // Создание новой папки. parent_id = текущая открытая папка (null — папка
@@ -632,7 +1001,7 @@ function renderCrumbs(breadcrumb, folderId) {
 }
 
 // ---------- построение формы ----------
-async function loadForm(tpl) {
+async function loadForm(tpl, origin = 'folders') {
   clearMsg();
   let data;
   try {
@@ -646,9 +1015,11 @@ async function loadForm(tpl) {
 
   currentTemplateId = tpl.id;
   currentFields = data.fields;
+  currentFormOrigin = origin;
 
   $('#tpl-name').textContent = data.name;
-  $('#browser').hidden = true;
+  $('#mode-folders').hidden = true;
+  $('#mode-contragents').hidden = true;
   $('#form-panel').hidden = false;
 
   renderForm(data.fields);
@@ -1073,7 +1444,12 @@ async function generate() {
 $('#btn-gen').addEventListener('click', generate);
 $('#btn-back').addEventListener('click', () => {
   $('#form-panel').hidden = true;
-  $('#browser').hidden = false;
+  if (currentFormOrigin === 'contragent-docs' && currentContragent) {
+    $('#mode-contragents').hidden = false;
+    $('#contragent-docs').hidden = false;
+  } else {
+    $('#mode-folders').hidden = false;
+  }
   clearMsg();
 });
 $('#btn-new-folder').addEventListener('click', createFolder);
@@ -1088,8 +1464,28 @@ $('#btn-edit-tpl-submit').addEventListener('click', submitEditTemplate);
 $('#edit-tpl-backdrop').addEventListener('click', e => {
   if (e.target.id === 'edit-tpl-backdrop') closeEditModal();  // клик по фону — закрыть
 });
+
+$('#tab-contragents').addEventListener('click', () => switchMode('contragents'));
+$('#tab-folders').addEventListener('click', () => switchMode('folders'));
+$('#contragent-q').addEventListener('input', debounce(searchContragents, 300));
+$('#btn-new-contragent').addEventListener('click', openContragentModal);
+$('#btn-c-cancel').addEventListener('click', closeContragentModal);
+$('#btn-c-submit').addEventListener('click', submitContragent);
+$('#new-c-name').addEventListener('input', debounce(checkContragentDuplicates, 400));
+$('#contragent-backdrop').addEventListener('click', e => {
+  if (e.target.id === 'contragent-backdrop') closeContragentModal();  // клик по фону — закрыть
+});
+$('#btn-cdocs-back').addEventListener('click', () => {
+  $('#contragent-docs').hidden = true;
+  $('#contragent-search').hidden = false;
+  searchContragents();   // список мог устареть, пока смотрели документы
+});
+$('#btn-open-import-export').addEventListener('click', openImportExport);
+$('#btn-ie-back').addEventListener('click', closeImportExport);
+$('#btn-import-submit').addEventListener('click', submitImport);
+
 loadTagOptions();
-browse(null);
+switchMode('contragents');
 </script>
 </body>
 </html>
