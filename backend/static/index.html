@@ -1364,27 +1364,35 @@ function renderList(f) {
     el('div', { class: 'tbl-foot' },
       el('button', {
         class: 'btn small', type: 'button',
-        onclick: () => { addRow(tbody, cols, isTracks); renumber(tbody); }
+        onclick: () => { addRow(tbody, cols, isTracks, f.name); renumber(tbody); }
       }, '+ Добавить строку'))
   );
 
   wrap.append(tblWrap);
-  addRow(tbody, cols, isTracks);      // одна строка по умолчанию
+  addRow(tbody, cols, isTracks, f.name);      // одна строка по умолчанию
   renumber(tbody);
   return wrap;
 }
 
-function addRow(tbody, cols, withProfanity) {
+// В каких таблицах и в какой колонке лежит "исполнитель" — берём оттуда
+// значение текущего выбранного псевдонима по умолчанию (см. addRow).
+// tracks.performer — колонка в таблице треков; performers.nickname —
+// та же суть в отдельном списке "Исполнители (для сноски)", просто
+// колонка называется иначе (см. VIRTUAL_LIST_ITEMS в template_analysis.py).
+const PERFORMER_COLUMN_BY_LIST = { tracks: 'performer', performers: 'nickname' };
+
+function addRow(tbody, cols, withProfanity, listName) {
   const tr = el('tr');
   tr.append(el('td', { class: 'num' }, ''));
+  const performerCol = PERFORMER_COLUMN_BY_LIST[listName];
   cols.forEach(c => {
-    // Для таблицы треков (withProfanity=true — только у неё есть колонка
-    // НЛ) столбец "Исполнитель" по умолчанию берёт текущее значение поля
-    // "Псевдоним" — так каждая новая строка не заполняется вручную заново
-    // для типового случая одного исполнителя. Поле всё равно остаётся
-    // обычным текстовым input — редактируется как угодно.
+    // Столбец "исполнитель" (см. PERFORMER_COLUMN_BY_LIST) по умолчанию
+    // берёт текущее значение поля "Псевдоним" — так каждая новая строка
+    // не заполняется вручную заново для типового случая одного
+    // исполнителя. Поле всё равно остаётся обычным текстовым input —
+    // редактируется как угодно.
     let defaultVal = '';
-    if (withProfanity && c.name === 'performer') {
+    if (performerCol && c.name === performerCol) {
       const nickEl = document.querySelector('[data-name="nickname"]');
       if (nickEl && nickEl.value) defaultVal = nickEl.value;
     }
@@ -1454,13 +1462,17 @@ function applyContragentPrefill(docType) {
     nickInput.replaceWith(sel);
   }
 
-  // Столбец "Исполнитель" в таблице треков — подставляем выбранный
-  // псевдоним в уже существующие строки (обычно там уже есть одна пустая
-  // строка по умолчанию). Строки, добавленные позже кнопкой "+ Добавить
-  // строку", подхватывают то же значение сами — см. addRow(). Поле
-  // остаётся редактируемым — это только стартовое значение, не блокировка.
+  // Столбец "исполнитель" в обеих таблицах (см. PERFORMER_COLUMN_BY_LIST
+  // выше) — подставляем выбранный псевдоним в уже существующие строки
+  // (обычно там уже есть одна пустая строка по умолчанию). Строки,
+  // добавленные позже кнопкой "+ Добавить строку", подхватывают то же
+  // значение сами — см. addRow(). Поле остаётся редактируемым — это
+  // только стартовое значение, не блокировка.
   if (nicknameValue) {
     document.querySelectorAll('[data-list="tracks"] [data-col="performer"]').forEach(inp => {
+      if (!inp.value) inp.value = nicknameValue;
+    });
+    document.querySelectorAll('[data-list="performers"] [data-col="nickname"]').forEach(inp => {
       if (!inp.value) inp.value = nicknameValue;
     });
   }
