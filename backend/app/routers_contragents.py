@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from app.context_builder import build_contract_number, build_contragent_title, parse_date
 from app.db import get_session
 from app.models import Contragent, ContragentNickname
+from app.tags import COUNTRIES, CONTRACT_FAMILIES, CONTRAGENT_TYPES, normalize_tag
 
 contragents_router = APIRouter(prefix="/contragents", tags=["contragents"])
 
@@ -100,7 +101,16 @@ def create_contragent(
     записями (только title/nickname) — отдельный будущий эндпоинт (шаг 5
     плана, работает по другим правилам: title берётся из файла как есть,
     без пересчёта).
+
+    country/contragent_type/contract_family нормализуются к каноническому
+    регистру (см. app/tags.py) — без этого 'ру' и 'РУ' в БД считались бы
+    разными значениями, и подбор документов по тегам (шаг 4) молча не
+    находил бы шаблоны для контрагента, введённого не в том регистре.
     """
+    country = normalize_tag(country, COUNTRIES, "country")
+    contragent_type = normalize_tag(contragent_type, CONTRAGENT_TYPES, "contragent_type")
+    contract_family = normalize_tag(contract_family, CONTRACT_FAMILIES, "contract_family")
+
     parsed = parse_date(contract_date)
     if not parsed:
         raise HTTPException(
