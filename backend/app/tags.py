@@ -40,3 +40,18 @@ def normalize_tag(value: str, allowed: list[str], field_name: str) -> str:
             f"Допустимые значения: {', '.join(allowed)}"
         ),
     )
+
+
+def normalize_optional_tag(value: str | None, allowed: list[str], field_name: str) -> str | None:
+    """
+    Как normalize_tag(), но для полей, которые законно бывают пустыми —
+    теги на Template можно дозаполнить позже (см. models.py: "8 текущих
+    шаблонов дозаполняются тегами вручную ПОСЛЕ миграции"), в отличие от
+    полей контрагента, где все три тега обязательны при создании через UI.
+
+    Пустая строка или None -> None (тег не задан). Непустое значение,
+    которого нет в allowed, -> та же явная ошибка 400, что и в normalize_tag.
+    """
+    if not value or not value.strip():
+        return None
+    return normalize_tag(value, allowed, field_name)

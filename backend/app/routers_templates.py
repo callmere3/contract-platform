@@ -29,6 +29,7 @@ from app.db import get_session
 from app.generation import render_document, scan_placeholders
 from app.models import Template, TemplateField, TemplateFolder, folder_path
 from app.storage import delete_file, get_file, put_file
+from app.tags import CONTRAGENT_TYPES, CONTRACT_FAMILIES, COUNTRIES, normalize_optional_tag
 from app.template_analysis import analyze_template, fields_to_dict
 
 folders_router = APIRouter(prefix="/folders", tags=["folders"])
@@ -78,7 +79,14 @@ def browse_folder(
         "breadcrumb": breadcrumb,
         "folders": [{"id": str(f.id), "name": f.name} for f in subfolders],
         "templates": [
-            {"id": str(t.id), "name": t.name, "doc_type": t.doc_type}
+            {
+                "id": str(t.id),
+                "name": t.name,
+                "doc_type": t.doc_type,
+                "country": t.country,
+                "contragent_type": t.contragent_type,
+                "contract_family": t.contract_family,
+            }
             for t in templates
         ],
     }
@@ -128,15 +136,31 @@ def upload_template(
     name: str = Form(...),
     folder_id: uuid.UUID = Form(...),
     doc_type: str | None = Form(None),   # 'contract' | 'appendix' | 'act' | None
+    country: str | None = Form(None),           # 'РУ' | 'КЗ'
+    contragent_type: str | None = Form(None),   # 'СГ' | 'ИП' | 'ООО'
+    contract_family: str | None = Form(None),   # 'РОЯЛТИ' | 'АВАНС' | 'АВАНС_ОБЯЗАТЕЛЬСТВО'
     file: UploadFile = File(...),
     db: Session = Depends(get_session),
 ) -> dict:
-    """Загружает шаблон в указанную папку, сканирует метки."""
+    """
+    Загружает шаблон в указанную папку, сканирует метки.
+
+    country/contragent_type/contract_family — теги для подбора документов
+    через контрагента (см. GET /contragents/{id}/templates). Необязательны
+    здесь же при загрузке (можно дозаполнить позже через PATCH) — но если
+    переданы, валидируются и нормализуются к каноническому регистру
+    (см. app/tags.py), иначе 400 с понятной ошибкой сразу при загрузке,
+    а не тихое несовпадение при подборе документов позже.
+    """
     if not file.filename.endswith(".docx"):
         raise HTTPException(status_code=400, detail="Ожидается файл .docx")
 
     if db.get(TemplateFolder, folder_id) is None:
         raise HTTPException(status_code=404, detail="Папка не найдена")
+
+    country = normalize_optional_tag(country, COUNTRIES, "country")
+    contragent_type = normalize_optional_tag(contragent_type, CONTRAGENT_TYPES, "contragent_type")
+    contract_family = normalize_optional_tag(contract_family, CONTRACT_FAMILIES, "contract_family")
 
     content = file.file.read()
 
@@ -157,6 +181,9 @@ def upload_template(
         storage_key=storage_key,
         folder_id=folder_id,
         doc_type=doc_type,
+        country=country,
+        contragent_type=contragent_type,
+        contract_family=contract_family,
     )
     template.fields = [TemplateField(placeholder=p, maps_to="manual") for p in placeholders]
 
@@ -167,6 +194,9 @@ def upload_template(
         "id": str(template_id),
         "name": name,
         "doc_type": doc_type,
+        "country": country,
+        "contragent_type": contragent_type,
+        "contract_family": contract_family,
         "fields_found": placeholders,
     }
 
@@ -226,24 +256,57 @@ def replace_template_file(
 
 
 @templates_router.patch("/{template_id}")
-def rename_template(
+def update_template(
     template_id: uuid.UUID,
     name: str = Form(...),
+    country: str | None = Form(None),
+    contragent_type: str | None = Form(None),
+    contract_family: str | None = Form(None),
     db: Session = Depends(get_session),
 ) -> dict:
     """
-    Переименовывает шаблон. Только смена name — id, folder_id, doc_type,
-    storage_key, version, template_fields не трогаются.
+    Обновляет метаданные шаблона: название и/или теги подбора документов.
+    id, folder_id, doc_type, storage_key, version, template_fields не трогает.
 
     PATCH, а не PUT: PUT /templates/{id}/file уже занят под замену файла
-    (другая семантика — там меняется содержимое, тут только название).
+    (другая семантика — там меняется содержимое, тут только метаданные).
+
+    Семантика тегов — "если поле передано, значит его и правим":
+      - параметр НЕ передан в форме (Form(None) -> None)  -> не трогаем,
+        значение в БД остаётся прежним;
+      - передана пустая строка                             -> тег очищается
+        (снова None) — способ явно снять уже проставленный тег;
+      - передано непустое значение                          -> валидируется
+        и нормализуется (см. app/tags.py), 400 при недопустимом значении.
+    Так один и тот же вызов годится и для простого переименования (только
+    name), и для дозаполнения/правки тегов у уже загруженного шаблона —
+    включая исходные 8 шаблонов, которым теги проставлялись вручную через
+    SQL при миграции.
     """
     template = db.get(Template, template_id)
     if template is None:
         raise HTTPException(status_code=404, detail="Шаблон не найден")
+
     template.name = name
+    if country is not None:
+        template.country = normalize_optional_tag(country, COUNTRIES, "country")
+    if contragent_type is not None:
+        template.contragent_type = normalize_optional_tag(
+            contragent_type, CONTRAGENT_TYPES, "contragent_type"
+        )
+    if contract_family is not None:
+        template.contract_family = normalize_optional_tag(
+            contract_family, CONTRACT_FAMILIES, "contract_family"
+        )
+
     db.commit()
-    return {"id": str(template.id), "name": template.name}
+    return {
+        "id": str(template.id),
+        "name": template.name,
+        "country": template.country,
+        "contragent_type": template.contragent_type,
+        "contract_family": template.contract_family,
+    }
 
 
 @templates_router.delete("/{template_id}")

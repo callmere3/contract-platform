@@ -85,6 +85,7 @@
     margin-left:auto;font-size:11px;color:var(--ink-3);
     border:1px solid var(--line);border-radius:2px;padding:1px 5px;flex:none;
   }
+  .node .badge-warn{color:var(--danger);border-color:var(--danger)}
   .empty{color:var(--ink-3);font-size:14px;padding:8px 2px}
 
   /* --- форма --- */
@@ -233,12 +234,53 @@
         <div class="hint">нужен для будущей автосвязки с контрагентом, можно оставить пустым</div>
       </div>
       <div class="field">
+        <label for="new-tpl-country">Страна</label>
+        <select id="new-tpl-country"></select>
+      </div>
+      <div class="field">
+        <label for="new-tpl-contragent-type">Тип контрагента</label>
+        <select id="new-tpl-contragent-type"></select>
+      </div>
+      <div class="field">
+        <label for="new-tpl-contract-family">Тип договора</label>
+        <select id="new-tpl-contract-family"></select>
+        <div class="hint">теги подбора документов через контрагента — можно оставить «— не задано —» и дозаполнить позже (кнопка ✎)</div>
+      </div>
+      <div class="field">
         <label for="new-tpl-file">Файл .docx</label>
         <input type="file" id="new-tpl-file" accept=".docx">
       </div>
       <div class="modal-actions">
         <button class="btn" type="button" id="btn-tpl-cancel">Отмена</button>
         <button class="btn primary" type="button" id="btn-tpl-submit">Загрузить</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Модалка: редактирование шаблона (название + теги) -->
+  <div class="modal-backdrop" id="edit-tpl-backdrop" hidden>
+    <div class="modal">
+      <h3>Редактировать шаблон</h3>
+      <div class="field">
+        <label for="edit-tpl-name">Название</label>
+        <input type="text" id="edit-tpl-name">
+      </div>
+      <div class="field">
+        <label for="edit-tpl-country">Страна</label>
+        <select id="edit-tpl-country"></select>
+      </div>
+      <div class="field">
+        <label for="edit-tpl-contragent-type">Тип контрагента</label>
+        <select id="edit-tpl-contragent-type"></select>
+      </div>
+      <div class="field">
+        <label for="edit-tpl-contract-family">Тип договора</label>
+        <select id="edit-tpl-contract-family"></select>
+        <div class="hint">«— не задано —» очищает тег, если он был проставлен раньше</div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" type="button" id="btn-edit-tpl-cancel">Отмена</button>
+        <button class="btn primary" type="button" id="btn-edit-tpl-submit">Сохранить</button>
       </div>
     </div>
   </div>
@@ -285,6 +327,36 @@ function showMsg(text, kind = 'err') {
   if (kind === 'ok') setTimeout(() => { m.className = 'msg'; }, 4000);
 }
 function clearMsg() { $('#msg').className = 'msg'; }
+
+// ---------- теги подбора документов (country/contragent_type/contract_family) ----------
+// Единственный источник правды — GET /tags (то же самое, что валидирует
+// бэкенд при сохранении, см. app/tags.py) — селекты не хранят список сами.
+let tagOptions = { countries: [], contragent_types: [], contract_families: [] };
+
+function fillTagSelect(select, values) {
+  select.innerHTML = '';
+  select.append(el('option', { value: '' }, '— не задано —'));
+  values.forEach(v => select.append(el('option', { value: v }, v)));
+}
+
+async function loadTagOptions() {
+  try {
+    const r = await fetch(`${API}/tags`);
+    if (!r.ok) throw new Error(`${r.status}`);
+    tagOptions = await r.json();
+  } catch (e) {
+    showMsg('Не удалось загрузить список тегов (страна/тип контрагента/тип договора).');
+    return;
+  }
+  [
+    ['#new-tpl-country', tagOptions.countries],
+    ['#new-tpl-contragent-type', tagOptions.contragent_types],
+    ['#new-tpl-contract-family', tagOptions.contract_families],
+    ['#edit-tpl-country', tagOptions.countries],
+    ['#edit-tpl-contragent-type', tagOptions.contragent_types],
+    ['#edit-tpl-contract-family', tagOptions.contract_families],
+  ].forEach(([sel, values]) => fillTagSelect($(sel), values));
+}
 
 // ---------- навигация по папкам ----------
 let pathStack = [];        // [{id, name}]
@@ -342,14 +414,19 @@ async function browse(folderId = null) {
 
   data.templates.forEach(t => {
     const badge = { contract: 'договор', appendix: 'приложение', act: 'акт' }[t.doc_type];
+    const tagsSet = t.country && t.contragent_type && t.contract_family;
+    const tagsLabel = tagsSet
+      ? `${t.country}/${t.contragent_type}/${t.contract_family}`
+      : 'теги не проставлены';
     grid.append(el('div', { class: 'node-row' },
       el('button', { class: 'node tpl', type: 'button', onclick: () => loadForm(t) },
         el('span', { class: 'icon' }, '📄'),
         el('span', { class: 'nm' }, t.name),
-        badge ? el('span', { class: 'badge' }, badge) : ''),
+        badge ? el('span', { class: 'badge' }, badge) : '',
+        el('span', { class: 'badge' + (tagsSet ? '' : ' badge-warn') }, tagsLabel)),
       el('button', {
-        class: 'rename-btn', type: 'button', title: 'Переименовать шаблон',
-        onclick: e => { e.stopPropagation(); renameTemplate(t, folderId); }
+        class: 'rename-btn', type: 'button', title: 'Редактировать название и теги',
+        onclick: e => { e.stopPropagation(); openEditModal(t, folderId); }
       }, '✎'),
       el('button', {
         class: 'rename-btn danger', type: 'button', title: 'Удалить шаблон',
@@ -390,6 +467,9 @@ function openUploadModal() {
   if (currentFolderId === null) return;   // кнопка и так задизейблена, но на всякий случай
   $('#new-tpl-name').value = '';
   $('#new-tpl-doctype').value = '';
+  $('#new-tpl-country').value = '';
+  $('#new-tpl-contragent-type').value = '';
+  $('#new-tpl-contract-family').value = '';
   $('#new-tpl-file').value = '';
   $('#upload-backdrop').hidden = false;
 }
@@ -416,6 +496,12 @@ async function submitUpload() {
     fd.append('name', name);
     fd.append('folder_id', currentFolderId);
     if (doc_type) fd.append('doc_type', doc_type);
+    const country = $('#new-tpl-country').value;
+    const contragentType = $('#new-tpl-contragent-type').value;
+    const contractFamily = $('#new-tpl-contract-family').value;
+    if (country) fd.append('country', country);
+    if (contragentType) fd.append('contragent_type', contragentType);
+    if (contractFamily) fd.append('contract_family', contractFamily);
     fd.append('file', file);
 
     const r = await fetch(`${API}/templates`, { method: 'POST', body: fd });
@@ -454,22 +540,58 @@ async function renameFolder(folder, currentFolderId) {
   }
 }
 
-// Переименование шаблона: спрашивает новое имя, шлёт PATCH /templates/{id},
-// перерисовывает текущий уровень. Файл в MinIO не трогается — меняется
-// только колонка name.
-async function renameTemplate(tpl, currentFolderId) {
-  const name = prompt('Новое название шаблона:', tpl.name);
-  if (name === null) return;                       // отмена
-  const trimmed = name.trim();
-  if (!trimmed || trimmed === tpl.name) return;      // без изменений
+// Редактирование шаблона: модалка с названием + тремя тегами, шлёт
+// PATCH /templates/{id}. Файл в MinIO не трогается. Пустой тег в селекте
+// («— не задано —») отправляется как пустая строка — бэкенд трактует это
+// как явную команду очистить тег, а не «не менять» (см. update_template
+// в routers_templates.py) — так можно и проставить теги впервые, и снять
+// уже стоящие, одной и той же формой.
+let editingTemplate = null;
+let editingFolderId = null;
+
+function openEditModal(tpl, folderId) {
+  editingTemplate = tpl;
+  editingFolderId = folderId;
+  $('#edit-tpl-name').value = tpl.name;
+  $('#edit-tpl-country').value = tpl.country || '';
+  $('#edit-tpl-contragent-type').value = tpl.contragent_type || '';
+  $('#edit-tpl-contract-family').value = tpl.contract_family || '';
+  $('#edit-tpl-backdrop').hidden = false;
+}
+function closeEditModal() {
+  $('#edit-tpl-backdrop').hidden = true;
+  editingTemplate = null;
+}
+
+async function submitEditTemplate() {
+  if (!editingTemplate) return;
+  const name = $('#edit-tpl-name').value.trim();
+  if (!name) { showMsg('Укажите название шаблона.'); return; }
+
+  const btn = $('#btn-edit-tpl-submit');
+  btn.disabled = true;
+  btn.textContent = 'Сохраняем…';
 
   try {
-    const body = new URLSearchParams({ name: trimmed });
-    const r = await fetch(`${API}/templates/${tpl.id}`, { method: 'PATCH', body });
-    if (!r.ok) throw new Error(`${r.status}`);
-    browse(currentFolderId);   // перерисовать список с новым именем
+    const body = new URLSearchParams({
+      name,
+      country: $('#edit-tpl-country').value,
+      contragent_type: $('#edit-tpl-contragent-type').value,
+      contract_family: $('#edit-tpl-contract-family').value,
+    });
+    const r = await fetch(`${API}/templates/${editingTemplate.id}`, { method: 'PATCH', body });
+    if (!r.ok) {
+      const detail = await r.json().catch(() => null);
+      throw new Error(detail?.detail || `${r.status}`);
+    }
+    closeEditModal();
+    showMsg('Шаблон обновлён.', 'ok');
+    browse(editingFolderId);
   } catch (e) {
-    showMsg('Не удалось переименовать шаблон. Проверьте, что сервер запущен.');
+    showMsg(`Не удалось сохранить шаблон: ${e.message}`);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Сохранить';
   }
 }
 
@@ -961,6 +1083,12 @@ $('#btn-tpl-submit').addEventListener('click', submitUpload);
 $('#upload-backdrop').addEventListener('click', e => {
   if (e.target.id === 'upload-backdrop') closeUploadModal();  // клик по фону — закрыть
 });
+$('#btn-edit-tpl-cancel').addEventListener('click', closeEditModal);
+$('#btn-edit-tpl-submit').addEventListener('click', submitEditTemplate);
+$('#edit-tpl-backdrop').addEventListener('click', e => {
+  if (e.target.id === 'edit-tpl-backdrop') closeEditModal();  // клик по фону — закрыть
+});
+loadTagOptions();
 browse(null);
 </script>
 </body>
