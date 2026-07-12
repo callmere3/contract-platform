@@ -3,9 +3,17 @@
 
 Этап 1: health-эндпоинты (проверка связи с БД и MinIO).
 Этап 2: подключены роутеры /folders (дерево папок произвольной глубины)
-и /templates (загрузка шаблонов и генерация), на старте создаются таблицы БД.
+и /templates (загрузка шаблонов и генерация).
 Этап 3: раздача HTML-интерфейса на корневом пути `/`.
 Basic Auth поверх всего сервиса (app/auth.py) — список пользователей в .env.
+
+Схема БД версионируется через Alembic (backend/alembic/) — на старте
+приложение больше НЕ вызывает create_all(). Раньше вызывало, и это стало
+причиной реального инцидента: при рестарте контейнера create_all() тихо
+создал таблицы contragents/contragent_nicknames по свежим models.py ещё
+ДО ручного запуска `alembic upgrade head`, из-за чего миграция упала на
+"relation already exists". Накатывать схему теперь только командой
+`docker compose exec api alembic upgrade head`.
 """
 from pathlib import Path
 
@@ -13,7 +21,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 
 from app.auth import BasicAuthMiddleware
-from app.db import check_db_connection, init_db
+from app.db import check_db_connection
 from app.routers_templates import folders_router, templates_router
 from app.storage import download_test_file, ensure_bucket_exists, upload_test_file
 
@@ -40,7 +48,6 @@ def index() -> FileResponse:
 @app.on_event("startup")
 def on_startup() -> None:
     ensure_bucket_exists()
-    init_db()  # создаёт таблицы templates и template_fields, если их ещё нет
 
 
 @app.get("/health")
