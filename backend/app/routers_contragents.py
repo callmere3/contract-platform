@@ -6,10 +6,11 @@
   GET  /contragents?q=...              — поиск по title/nickname (ILIKE, регистронезависимо).
                                           Без q — весь список (для стартового экрана/отладки).
   GET  /contragents/{id}               — карточка контрагента целиком
+  GET  /contragents/{id}/templates     — подбор документов, совместимых с контрагентом
+                                          по тегам (country/contragent_type/contract_family)
   POST /contragents/{id}/nicknames     — добавить псевдоним контрагенту
 
 Дальнейшие шаги (см. «Брейншторм — база контрагентов.md»):
-  GET /contragents/{id}/templates      — подбор совместимых документов по тегам (следующий шаг)
   импорт/экспорт Excel                 — отдельный шаг, там будет свой роутер/эндпоинты
 """
 import uuid
@@ -21,7 +22,7 @@ from sqlalchemy.orm import Session
 
 from app.context_builder import build_contract_number, build_contragent_title, parse_date
 from app.db import get_session
-from app.models import Contragent, ContragentNickname
+from app.models import Contragent, ContragentNickname, Template
 from app.tags import COUNTRIES, CONTRACT_FAMILIES, CONTRAGENT_TYPES, normalize_tag
 
 contragents_router = APIRouter(prefix="/contragents", tags=["contragents"])
@@ -170,6 +171,53 @@ def get_contragent(contragent_id: uuid.UUID, db: Session = Depends(get_session))
             float(contragent.royalty_percent) if contragent.royalty_percent is not None else None
         ),
         "nicknames": [n.nickname for n in contragent.nicknames],
+    }
+
+
+@contragents_router.get("/{contragent_id}/templates")
+def list_contragent_templates(
+    contragent_id: uuid.UUID,
+    db: Session = Depends(get_session),
+) -> dict:
+    """
+    Подбор документов для контрагента (см. брейншторм, "После выбора
+    контрагента: список документов, отфильтрованный по (country,
+    contragent_type, contract_family) контрагента").
+
+    Сравнение — строгое равенство трёх тегов, поэтому оно надёжно только
+    благодаря нормализации регистра при создании контрагента (см.
+    app/tags.py) и при ручном тегировании шаблонов — если где-то закрадётся
+    несовпадающий регистр, документ просто не найдётся здесь без явной
+    ошибки, это стоит держать в голове при отладке.
+
+    Если у контрагента не заполнены country/type/contract_family
+    (например, "неполная" карточка из будущего мягкого импорта, см.
+    брейншторм) — возвращает пустой список, а не ошибку: карточка валидна,
+    просто пока не участвует в подборе документов.
+    """
+    contragent = db.get(Contragent, contragent_id)
+    if contragent is None:
+        raise HTTPException(status_code=404, detail="Контрагент не найден")
+
+    if not (contragent.country and contragent.type and contragent.contract_family):
+        return {"contragent_id": str(contragent_id), "templates": []}
+
+    templates = (
+        db.query(Template)
+        .filter(
+            Template.country == contragent.country,
+            Template.contragent_type == contragent.type,
+            Template.contract_family == contragent.contract_family,
+        )
+        .order_by(Template.name)
+        .all()
+    )
+
+    return {
+        "contragent_id": str(contragent_id),
+        "templates": [
+            {"id": str(t.id), "name": t.name, "doc_type": t.doc_type} for t in templates
+        ],
     }
 
 
