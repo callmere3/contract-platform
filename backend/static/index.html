@@ -728,14 +728,12 @@ async function openContragentDocs(c) {
     return;
   }
 
-  // дата/номер договора и роялти — только ОТОБРАЖАЮТСЯ здесь (см. брейншторм,
-  // "contract_date фиксируется один раз и не пересчитывается"); в саму форму
-  // генерации автоподстановка этих полей — отдельный следующий шаг, пока
-  // форма заполняется как обычно, вручную.
+  // По просьбе — в шапке только никнейм(ы) и номер договора; дата и
+  // роялти здесь не нужны (номер договора — то же самое поле, что
+  // потом появится как contract при генерации Приложения/Акта).
   const metaParts = [];
+  if (detail.nicknames && detail.nicknames.length) metaParts.push(detail.nicknames.join(', '));
   if (detail.contract_number) metaParts.push(detail.contract_number);
-  if (detail.contract_date) metaParts.push(detail.contract_date);
-  if (detail.royalty_percent != null) metaParts.push(`роялти ${detail.royalty_percent}%`);
   $('#cdocs-meta').textContent = metaParts.join(' · ');
 
   content.className = '';
