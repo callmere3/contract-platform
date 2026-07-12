@@ -113,6 +113,7 @@ FIELD_META = {
     "c_date":     ("Документ", "Дата",
                    "единая дата для договора и документа — номер договора соберётся из неё автоматически"),
     "appendix_no":("Документ", "Номер приложения", "1"),
+    "act_no":     ("Документ", "Номер акта", "1"),
     "edo":        ("Документ", "Подписание через ЭДО",
                    "в нижнем колонтитуле останется только номер страницы"),
     "royalty":    ("Документ", "Роялти, %", "целое число 0-100, напр. 50"),
@@ -239,7 +240,7 @@ ITEM_FIELD_ORDER = [
 # а не алфавит: Серия -> Номер -> Кем выдан -> Дата -> КП.
 FIELD_ORDER = [
     # Документ
-    "contract", "c_date", "date", "appendix_no", "edo", "royalty",
+    "contract", "c_date", "date", "appendix_no", "act_no", "edo", "royalty",
     "advance", "marketing", "smm", "term_end",
     # Контрагент
     "name", "inn", "nickname", "npd", "birthday",
@@ -338,7 +339,15 @@ def _extract_text(docx_bytes: bytes) -> str:
         ]
         raw = "".join(z.read(p).decode("utf-8", "ignore") for p in parts)
     # вырезаем XML-теги: остаётся чистый текст с метками Jinja
-    return re.sub(r"<[^>]+>", "", raw)
+    text = re.sub(r"<[^>]+>", "", raw)
+    # XML-сущности (&gt; &lt; &amp;) — если в условии шаблона встретился
+    # символ > (напр. "{% if tracks|length > 1 %}"), Word при сохранении
+    # экранирует его как "&gt;". Не разэкранировав, регексы ниже видят
+    # только часть условия и по ошибке принимают обрывок ("gt") за
+    # отдельную переменную — этот баг уже случался. Разэкранируем сразу,
+    # чтобы анализ работал с тем же текстом, что видит Jinja при рендере.
+    text = text.replace("&gt;", ">").replace("&lt;", "<").replace("&amp;", "&")
+    return text
 
 
 def analyze_template(docx_bytes: bytes, doc_type: str | None = None) -> list[FormField]:
