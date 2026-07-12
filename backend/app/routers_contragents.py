@@ -201,6 +201,12 @@ def create_contragent(
     contragent_type = normalize_tag(contragent_type, CONTRAGENT_TYPES, "contragent_type")
     contract_family = normalize_tag(contract_family, CONTRACT_FAMILIES, "contract_family")
 
+    if not (0 <= royalty_percent <= 100):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Роялти должно быть числом от 0 до 100, получено: {royalty_percent}",
+        )
+
     parsed = parse_date(contract_date)
     if not parsed:
         raise HTTPException(

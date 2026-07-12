@@ -642,7 +642,7 @@ function openContragentModal() {
   $('#new-c-contragent-type').selectedIndex = 0;
   $('#new-c-contract-family').selectedIndex = 0;
   $('#new-c-date').value = new Date().toISOString().slice(0, 10);
-  $('#new-c-royalty').value = '';
+  $('#new-c-royalty').value = '70';
   $('#new-c-nicknames').value = '';
   $('#new-c-duplicates').textContent = '';
   $('#contragent-backdrop').hidden = false;
@@ -682,6 +682,10 @@ async function submitContragent() {
   }
   if (!date) { showMsg('Укажите дату договора.'); return; }
   if (!royalty) { showMsg('Укажите роялти %.'); return; }
+  const royaltyNum = parseFloat(royalty.replace(',', '.'));
+  if (isNaN(royaltyNum) || royaltyNum < 0 || royaltyNum > 100) {
+    showMsg('Роялти должно быть числом от 0 до 100.'); return;
+  }
 
   const btn = $('#btn-c-submit');
   btn.disabled = true;
@@ -689,7 +693,7 @@ async function submitContragent() {
   try {
     const body = new URLSearchParams({
       name, country, contragent_type: contragentType, contract_family: contractFamily,
-      contract_date: date, royalty_percent: royalty,
+      contract_date: date, royalty_percent: String(royaltyNum),
     });
     if (nicknames) body.append('nicknames', nicknames);
     const r = await fetch(`${API}/contragents`, { method: 'POST', body });
