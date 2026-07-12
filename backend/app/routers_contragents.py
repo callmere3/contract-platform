@@ -41,7 +41,13 @@ from sqlalchemy.orm import Session
 from app.context_builder import build_contract_number, build_contragent_title, parse_date
 from app.db import get_session
 from app.models import Contragent, ContragentNickname, Template
-from app.tags import COUNTRIES, CONTRACT_FAMILIES, CONTRAGENT_TYPES, normalize_tag
+from app.tags import (
+    COUNTRIES,
+    CONTRACT_FAMILIES,
+    CONTRAGENT_TYPES,
+    normalize_optional_tag,
+    normalize_tag,
+)
 
 contragents_router = APIRouter(prefix="/contragents", tags=["contragents"])
 
