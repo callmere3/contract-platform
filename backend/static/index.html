@@ -792,7 +792,8 @@ function renderField(f) {
   } else {
     wrap.append(el('input', {
       type: 'text', id: `f_${f.name}`, 'data-name': f.name,
-      placeholder: f.hint && !f.hint.includes(' ') ? f.hint : ''
+      placeholder: f.hint && !f.hint.includes(' ') ? f.hint : '',
+      value: f.default || ''
     }));
   }
 
