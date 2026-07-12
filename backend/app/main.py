@@ -22,6 +22,7 @@ from fastapi.responses import FileResponse
 
 from app.auth import BasicAuthMiddleware
 from app.db import check_db_connection
+from app.routers_contragents import contragents_router
 from app.routers_templates import folders_router, templates_router
 from app.storage import download_test_file, ensure_bucket_exists, upload_test_file
 
@@ -34,6 +35,7 @@ app.add_middleware(BasicAuthMiddleware)
 
 app.include_router(folders_router)
 app.include_router(templates_router)
+app.include_router(contragents_router)
 
 # статика лежит рядом с пакетом app: backend/static/index.html
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"

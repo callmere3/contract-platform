@@ -67,6 +67,38 @@ def build_name_short(full_name: str) -> str:
     return f"{inits}. {surname}"
 
 
+def build_contragent_title(name: str, contragent_type: str) -> str:
+    """
+    Вычисляет title контрагента при создании карточки (этап 4, база
+    контрагентов) — не путать с build_name_short() выше: другой порядок
+    и другое назначение (title — для поиска и списков, name_short — для
+    строки подписи в документе).
+
+        build_contragent_title('Иванов Иван Иванович', 'СГ')
+            -> 'Иванов И. И. (СГ)'
+        build_contragent_title('ООО «Рога и копыта»', 'ООО')
+            -> 'ООО «Рога и копыта» (ООО)'
+
+    Для ООО ожидается, что name уже содержит полное название с "ООО"
+    (см. models.py, докстринг Contragent.name) — title его не переформатирует,
+    только добавляет тег типа в скобках.
+
+    ВАЖНО: title вычисляется ОДИН раз при создании через UI и дальше не
+    редактируется в форме (см. брейншторм). Ручная правка — только
+    напрямую в БД, для владельца сервиса.
+    """
+    if contragent_type == "ООО":
+        return f"{name} ({contragent_type})"
+
+    parts = [p for p in name.split() if p]
+    if not parts:
+        return f"({contragent_type})"
+    surname = parts[0]
+    initials = " ".join(f"{p[0].upper()}." for p in parts[1:])
+    label = f"{surname} {initials}".strip()
+    return f"{label} ({contragent_type})"
+
+
 MONTHS_RU = {
     "января": "01", "февраля": "02", "марта": "03", "апреля": "04",
     "мая": "05", "июня": "06", "июля": "07", "августа": "08",
