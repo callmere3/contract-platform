@@ -60,7 +60,7 @@
   .crumbs button:hover{background:var(--accent-soft)}
   .crumbs .sep{color:var(--line)}
 
-  .browse{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px}
+  .browse{display:flex;flex-direction:column;gap:8px}
   .node-row{display:flex;align-items:stretch;gap:4px}
   .node-row .node{flex:1;min-width:0}
   .rename-btn{
@@ -80,7 +80,7 @@
   .node:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
   .node .icon{flex:none;color:var(--ink-3);font-size:15px}
   .node.tpl .icon{color:var(--accent)}
-  .node .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .node .nm{overflow-wrap:anywhere;white-space:normal}
   .node .badge{
     margin-left:auto;font-size:11px;color:var(--ink-3);
     border:1px solid var(--line);border-radius:2px;padding:1px 5px;flex:none;
