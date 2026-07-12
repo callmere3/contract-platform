@@ -7,4 +7,5 @@ boto3==1.35.0
 pydantic-settings==2.6.1
 python-dotenv==1.0.1
 docxtpl==0.18.0
+openpyxl==3.1.5
 python-multipart==0.0.12

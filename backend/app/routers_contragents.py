@@ -5,18 +5,31 @@
                                           вычисляются автоматически, см. брейншторм)
   GET  /contragents?q=...              — поиск по title/nickname (ILIKE, регистронезависимо).
                                           Без q — весь список (для стартового экрана/отладки).
+  POST /contragents/import             — массовый импорт из .xlsx (мягкая валидация,
+                                          дубли по title обновляются, а не дублируются)
+  GET  /contragents/export             — выгрузка всех контрагентов в .xlsx (тот же
+                                          формат колонок, что и импорт — файл можно
+                                          поправить руками и залить обратно)
   GET  /contragents/{id}               — карточка контрагента целиком
   GET  /contragents/{id}/templates     — подбор документов, совместимых с контрагентом
                                           по тегам (country/contragent_type/contract_family)
   POST /contragents/{id}/nicknames     — добавить псевдоним контрагенту
 
-Дальнейшие шаги (см. «Брейншторм — база контрагентов.md»):
-  импорт/экспорт Excel                 — отдельный шаг, там будет свой роутер/эндпоинты
+ВАЖНО про порядок маршрутов: /import и /export зарегистрированы РАНЬШЕ
+/{contragent_id} — иначе FastAPI попытался бы распарсить 'import'/'export'
+как uuid.UUID и вернул бы 422 вместо реального обработчика (порядок
+регистрации маршрутов в Starlette имеет значение для статических путей
+против путей с параметром).
 """
+import io
 import uuid
 from datetime import date as _date
+from datetime import datetime as _datetime
+from decimal import Decimal, InvalidOperation
 
-from fastapi import APIRouter, Depends, Form, HTTPException
+import openpyxl
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
@@ -26,6 +39,15 @@ from app.models import Contragent, ContragentNickname, Template
 from app.tags import COUNTRIES, CONTRACT_FAMILIES, CONTRAGENT_TYPES, normalize_tag
 
 contragents_router = APIRouter(prefix="/contragents", tags=["contragents"])
+
+# Порядок колонок общий для импорта и экспорта (см. брейншторм, раздел
+# "Импорт/экспорт (Excel)") — человекочитаемые русские заголовки, файл
+# симметричен в обе стороны: экспортировал -> поправил руками -> залил
+# обратно тем же импортом.
+EXCEL_COLUMNS = [
+    "Название", "Никнеймы", "Тип", "Страна",
+    "Тип договора", "Номер договора", "Дата договора", "Роялти %",
+]
 
 
 def _contragent_summary(c: Contragent) -> dict:
@@ -38,6 +60,60 @@ def _contragent_summary(c: Contragent) -> dict:
         "type": c.type,
         "contract_family": c.contract_family,
     }
+
+
+def _parse_excel_date(value) -> _date | None:
+    """
+    Ячейка "Дата договора" — Excel сам отдаёт datetime/date для ячеек с
+    форматом даты (openpyxl, data_only=True), но допускаем и текст на
+    случай, если колонку сохранили как обычный текст — тогда используем
+    тот же parse_date(), что и в остальном проекте (ISO/русский/точечный
+    форматы), чтобы не заводить третий парсер дат в одном сервисе.
+    """
+    if value in (None, ""):
+        return None
+    if isinstance(value, _datetime):
+        return value.date()
+    if isinstance(value, _date):
+        return value
+    parsed = parse_date(str(value))
+    if not parsed:
+        return None
+    day, month, year = parsed
+    return _date(int(year), int(month), int(day))
+
+
+def _parse_percent(value) -> Decimal | None:
+    """Ячейка "Роялти %" — число или текст с запятой вместо точки ('12,5')."""
+    if value in (None, ""):
+        return None
+    if isinstance(value, (int, float)):
+        return Decimal(str(value))
+    text = str(value).strip().replace(",", ".").replace("%", "")
+    if not text:
+        return None
+    try:
+        return Decimal(text)
+    except InvalidOperation:
+        return None
+
+
+def _try_normalize_optional(value, allowed: list[str], field_name: str) -> tuple[str | None, str | None]:
+    """
+    Как normalize_optional_tag, но не бросает исключение — возвращает
+    (значение_или_None, текст_предупреждения_или_None). Импорт работает
+    "мягко" (см. брейншторм — "validate loosely, не all-or-nothing"):
+    опечатка в одной ячейке одной строки не должна ронять всю загрузку
+    файла на сотни контрагентов — теряется только это поле этой строки,
+    остальное (включая title/nickname) сохраняется, а причина попадает
+    в отчёт по этой строке.
+    """
+    if value in (None, ""):
+        return None, None
+    try:
+        return normalize_tag(str(value), allowed, field_name), None
+    except HTTPException as exc:
+        return None, str(exc.detail)
 
 
 @contragents_router.get("")
@@ -147,6 +223,191 @@ def create_contragent(
         "contract_number": contragent.contract_number,
         "contract_date": contragent.contract_date.isoformat(),
     }
+
+
+@contragents_router.post("/import")
+def import_contragents(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_session),
+) -> dict:
+    """
+    Массовый импорт контрагентов из .xlsx — одна строка на контрагента
+    (см. брейншторм, раздел "Импорт/экспорт (Excel)").
+
+    Обязательна фактически только колонка "Название" (title) — остальные
+    могут отсутствовать или быть пустыми в конкретной строке, контрагент
+    создаётся/обновляется "неполным" (см. GET /contragents/{id}/templates —
+    такой контрагент просто не участвует в подборе документов, пока
+    карточку не дозаполнят).
+
+    title и "Номер договора" берутся из файла КАК ЕСТЬ, без пересчёта —
+    в отличие от POST /contragents (создание через UI), где title и
+    contract_number вычисляются по формуле. Здесь это исторические/
+    юридически зафиксированные значения, пересчёт мог бы дать другое
+    число, чем реально стоит в бумажном договоре.
+
+    Дубли — точное совпадение "Название" с уже существующим контрагентом:
+    существующая запись ОБНОВЛЯЕТСЯ, вторая не создаётся. При обновлении
+    непустая ячейка перезаписывает соответствующее поле, пустая — оставляет
+    прежнее значение как есть (не затирает то, что уже было заполнено
+    вручную и отсутствует в конкретном файле повторного импорта). Никнеймы
+    при непустой ячейке заменяются ПОЛНОСТЬЮ новым набором из ячейки
+    (через запятую), а не дополняются.
+
+    Невалидный тег (country/тип/тип договора — опечатка, значения нет
+    среди допустимых) не роняет всю строку: поле остаётся пустым, причина
+    попадает в "details" по этой строке, остальные поля сохраняются.
+    Единственная причина полностью пропустить строку — отсутствие title.
+    """
+    if not file.filename.endswith(".xlsx"):
+        raise HTTPException(status_code=400, detail="Ожидается файл .xlsx")
+
+    content = file.file.read()
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Не удалось прочитать файл: {exc}")
+    ws = wb.active
+
+    header_row = next(ws.iter_rows(min_row=1, max_row=1, values_only=True), ())
+    header = [str(v).strip() if v is not None else "" for v in header_row]
+    if "Название" not in header:
+        raise HTTPException(
+            status_code=400, detail="В файле нет обязательной колонки «Название»"
+        )
+    col_index = {name: i for i, name in enumerate(header)}
+
+    def cell(row: tuple, name: str):
+        idx = col_index.get(name)
+        return row[idx] if idx is not None and idx < len(row) else None
+
+    created = updated = skipped = 0
+    details: list[dict] = []
+
+    for row_num, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+        if row is None or all(v is None for v in row):
+            continue   # полностью пустая строка — не считаем ни пропуском, ни ошибкой
+
+        title_raw = cell(row, "Название")
+        title = str(title_raw).strip() if title_raw not in (None, "") else ""
+        if not title:
+            skipped += 1
+            details.append({"row": row_num, "status": "пропущено", "reason": "нет названия (title)"})
+            continue
+
+        warnings: list[str] = []
+
+        contragent_type, w = _try_normalize_optional(cell(row, "Тип"), CONTRAGENT_TYPES, "Тип")
+        if w:
+            warnings.append(w)
+        country, w = _try_normalize_optional(cell(row, "Страна"), COUNTRIES, "Страна")
+        if w:
+            warnings.append(w)
+        contract_family, w = _try_normalize_optional(
+            cell(row, "Тип договора"), CONTRACT_FAMILIES, "Тип договора"
+        )
+        if w:
+            warnings.append(w)
+
+        contract_number_raw = cell(row, "Номер договора")
+        contract_number = (
+            str(contract_number_raw).strip() if contract_number_raw not in (None, "") else None
+        )
+        contract_date_val = _parse_excel_date(cell(row, "Дата договора"))
+        royalty_percent = _parse_percent(cell(row, "Роялти %"))
+
+        nicknames_raw = cell(row, "Никнеймы")
+        nicknames = (
+            [n.strip() for n in str(nicknames_raw).split(",") if n.strip()]
+            if nicknames_raw not in (None, "")
+            else None
+        )
+
+        existing = db.query(Contragent).filter(Contragent.title == title).one_or_none()
+
+        if existing is None:
+            contragent = Contragent(
+                name=title,   # отдельного ФИО файл не даёт — title и есть источник правды
+                title=title,
+                country=country,
+                type=contragent_type,
+                contract_family=contract_family,
+                contract_date=contract_date_val,
+                contract_number=contract_number,
+                royalty_percent=royalty_percent,
+            )
+            db.add(contragent)
+            db.flush()   # нужен contragent.id до вставки никнеймов
+            for nick in (nicknames or []):
+                db.add(ContragentNickname(contragent_id=contragent.id, nickname=nick))
+            created += 1
+            details.append(
+                {"row": row_num, "status": "создано", "title": title, "warnings": warnings}
+            )
+        else:
+            if country is not None:
+                existing.country = country
+            if contragent_type is not None:
+                existing.type = contragent_type
+            if contract_family is not None:
+                existing.contract_family = contract_family
+            if contract_number is not None:
+                existing.contract_number = contract_number
+            if contract_date_val is not None:
+                existing.contract_date = contract_date_val
+            if royalty_percent is not None:
+                existing.royalty_percent = royalty_percent
+            if nicknames is not None:
+                for old_nick in list(existing.nicknames):
+                    db.delete(old_nick)
+                db.flush()
+                for nick in nicknames:
+                    db.add(ContragentNickname(contragent_id=existing.id, nickname=nick))
+            updated += 1
+            details.append(
+                {"row": row_num, "status": "обновлено", "title": title, "warnings": warnings}
+            )
+
+    db.commit()
+
+    return {"created": created, "updated": updated, "skipped": skipped, "details": details}
+
+
+@contragents_router.get("/export")
+def export_contragents(db: Session = Depends(get_session)) -> StreamingResponse:
+    """
+    Выгружает всех контрагентов в .xlsx — те же колонки и тот же порядок,
+    что ожидает import_contragents(), файл можно поправить руками и залить
+    обратно тем же импортом (см. брейншторм — "Экспорт... симметрично
+    формату импорта").
+    """
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Контрагенты"
+    ws.append(EXCEL_COLUMNS)
+
+    contragents = db.query(Contragent).order_by(Contragent.title).all()
+    for c in contragents:
+        ws.append([
+            c.title,
+            ", ".join(n.nickname for n in c.nicknames),
+            c.type or "",
+            c.country or "",
+            c.contract_family or "",
+            c.contract_number or "",
+            c.contract_date.isoformat() if c.contract_date else "",
+            float(c.royalty_percent) if c.royalty_percent is not None else "",
+        ])
+
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="contragents_export.xlsx"'},
+    )
 
 
 @contragents_router.get("/{contragent_id}")
