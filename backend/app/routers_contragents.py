@@ -12,6 +12,8 @@
                                           формат колонок, что и импорт — файл можно
                                           поправить руками и залить обратно)
   GET  /contragents/{id}               — карточка контрагента целиком
+  PATCH /contragents/{id}              — правка карточки (кроме title; пока
+                                          только через Swagger, без UI)
   DELETE /contragents/{id}             — удалить контрагента (никнеймы каскадно;
                                           пока только через Swagger, без кнопки в UI)
   GET  /contragents/{id}/templates     — подбор документов, совместимых с контрагентом
@@ -458,6 +460,118 @@ def get_contragent(contragent_id: uuid.UUID, db: Session = Depends(get_session))
         "id": str(contragent.id),
         "name": contragent.name,
         "title": contragent.title,
+        "country": contragent.country,
+        "type": contragent.type,
+        "contract_family": contragent.contract_family,
+        "contract_date": (
+            contragent.contract_date.isoformat() if contragent.contract_date else None
+        ),
+        "contract_number": contragent.contract_number,
+        "royalty_percent": (
+            float(contragent.royalty_percent) if contragent.royalty_percent is not None else None
+        ),
+        "nicknames": [n.nickname for n in contragent.nicknames],
+    }
+
+
+@contragents_router.patch("/{contragent_id}")
+def update_contragent(
+    contragent_id: uuid.UUID,
+    name: str | None = Form(None),
+    country: str | None = Form(None),
+    contragent_type: str | None = Form(None),
+    contract_family: str | None = Form(None),
+    contract_date: str | None = Form(None),
+    contract_number: str | None = Form(None),
+    royalty_percent: str | None = Form(None),
+    nicknames: str | None = Form(None),
+    db: Session = Depends(get_session),
+) -> dict:
+    """
+    Правит существующую карточку контрагента. title здесь НЕ редактируется
+    — по брейншторму его меняет вручную только владелец сервиса, напрямую
+    в БД (см. докстринг Contragent.title в models.py).
+
+    Семантика полей — та же, что и в PATCH /templates/{id}:
+      - параметр не передан в форме -> не трогаем, значение остаётся как было
+      - передана пустая строка -> поле очищается (None)
+      - передано непустое значение -> валидируется/парсится и сохраняется
+
+    contract_date/contract_number здесь — независимые "сырые" поля, как
+    при импорте (см. import_contragents), НЕ пересчитываются друг из
+    друга. Это ручная правка на случай ошибки при вводе, а не обычный
+    рабочий путь — в обычном пути contract_date фиксируется один раз при
+    создании и дальше не меняется (см. брейншторм).
+
+    nicknames — при непустом значении ПОЛНОСТЬЮ заменяет прежний список
+    (через запятую), как и при импорте, а не дополняет его.
+
+    Пока доступно только через Swagger — в интерфейсе кнопки правки
+    карточки контрагента ещё нет.
+    """
+    contragent = db.get(Contragent, contragent_id)
+    if contragent is None:
+        raise HTTPException(status_code=404, detail="Контрагент не найден")
+
+    if name is not None:
+        contragent.name = name.strip() or None
+
+    if country is not None:
+        contragent.country = normalize_optional_tag(country, COUNTRIES, "country")
+    if contragent_type is not None:
+        contragent.type = normalize_optional_tag(
+            contragent_type, CONTRAGENT_TYPES, "contragent_type"
+        )
+    if contract_family is not None:
+        contragent.contract_family = normalize_optional_tag(
+            contract_family, CONTRACT_FAMILIES, "contract_family"
+        )
+
+    if contract_number is not None:
+        contragent.contract_number = contract_number.strip() or None
+
+    if contract_date is not None:
+        if not contract_date.strip():
+            contragent.contract_date = None
+        else:
+            parsed = parse_date(contract_date)
+            if not parsed:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Не удалось распознать дату договора: {contract_date!r}",
+                )
+            day, month, year_full = parsed
+            contragent.contract_date = _date(int(year_full), int(month), int(day))
+
+    if royalty_percent is not None:
+        if not royalty_percent.strip():
+            contragent.royalty_percent = None
+        else:
+            value = _parse_percent(royalty_percent)
+            if value is None:
+                raise HTTPException(
+                    status_code=400, detail=f"Не удалось распознать роялти %: {royalty_percent!r}"
+                )
+            if not (0 <= value <= 100):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Роялти должно быть числом от 0 до 100, получено: {value}",
+                )
+            contragent.royalty_percent = value
+
+    if nicknames is not None:
+        for old_nick in list(contragent.nicknames):
+            db.delete(old_nick)
+        db.flush()
+        for nick in [n.strip() for n in nicknames.split(",") if n.strip()]:
+            db.add(ContragentNickname(contragent_id=contragent.id, nickname=nick))
+
+    db.commit()
+
+    return {
+        "id": str(contragent.id),
+        "title": contragent.title,
+        "name": contragent.name,
         "country": contragent.country,
         "type": contragent.type,
         "contract_family": contragent.contract_family,
