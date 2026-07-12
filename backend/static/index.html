@@ -733,6 +733,10 @@ async function openContragentDocs(c) {
     if (!rDetail.ok || !rDocs.ok) throw new Error();
     detail = await rDetail.json();
     docsData = await rDocs.json();
+    // краткая карточка из поиска (c) не содержит contract_number/
+    // contract_date/royalty_percent — без этой замены applyContragentPrefill
+    // тихо получал бы undefined и не подставлял/не блокировал поля формы
+    currentContragent = detail;
   } catch {
     content.className = '';
     content.textContent = '';
