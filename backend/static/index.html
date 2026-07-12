@@ -348,6 +348,10 @@ async function browse(folderId = null) {
         el('span', { class: 'nm' }, t.name),
         badge ? el('span', { class: 'badge' }, badge) : ''),
       el('button', {
+        class: 'rename-btn', type: 'button', title: 'Переименовать шаблон',
+        onclick: e => { e.stopPropagation(); renameTemplate(t, folderId); }
+      }, '✎'),
+      el('button', {
         class: 'rename-btn danger', type: 'button', title: 'Удалить шаблон',
         onclick: e => { e.stopPropagation(); deleteTemplate(t, folderId); }
       }, '✕'))
@@ -447,6 +451,25 @@ async function renameFolder(folder, currentFolderId) {
     browse(currentFolderId);   // перерисовать список с новым именем
   } catch (e) {
     showMsg('Не удалось переименовать папку. Проверьте, что сервер запущен.');
+  }
+}
+
+// Переименование шаблона: спрашивает новое имя, шлёт PATCH /templates/{id},
+// перерисовывает текущий уровень. Файл в MinIO не трогается — меняется
+// только колонка name.
+async function renameTemplate(tpl, currentFolderId) {
+  const name = prompt('Новое название шаблона:', tpl.name);
+  if (name === null) return;                       // отмена
+  const trimmed = name.trim();
+  if (!trimmed || trimmed === tpl.name) return;      // без изменений
+
+  try {
+    const body = new URLSearchParams({ name: trimmed });
+    const r = await fetch(`${API}/templates/${tpl.id}`, { method: 'PATCH', body });
+    if (!r.ok) throw new Error(`${r.status}`);
+    browse(currentFolderId);   // перерисовать список с новым именем
+  } catch (e) {
+    showMsg('Не удалось переименовать шаблон. Проверьте, что сервер запущен.');
   }
 }
 

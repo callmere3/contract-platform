@@ -12,6 +12,7 @@
   Шаблоны:
     POST   /templates                   — загрузить НОВЫЙ шаблон в папку
     PUT    /templates/{id}/file         — заменить файл у СУЩЕСТВУЮЩЕГО шаблона
+    PATCH  /templates/{id}               — переименовать шаблон (только name)
     DELETE /templates/{id}              — удалить шаблон (файл + запись в БД)
     GET    /templates/{id}/fields       — какие поля нужно заполнить
     POST   /templates/{id}/generate     — сгенерировать документ
@@ -222,6 +223,27 @@ def replace_template_file(
         "version": template.version,
         "fields_found": placeholders,
     }
+
+
+@templates_router.patch("/{template_id}")
+def rename_template(
+    template_id: uuid.UUID,
+    name: str = Form(...),
+    db: Session = Depends(get_session),
+) -> dict:
+    """
+    Переименовывает шаблон. Только смена name — id, folder_id, doc_type,
+    storage_key, version, template_fields не трогаются.
+
+    PATCH, а не PUT: PUT /templates/{id}/file уже занят под замену файла
+    (другая семантика — там меняется содержимое, тут только название).
+    """
+    template = db.get(Template, template_id)
+    if template is None:
+        raise HTTPException(status_code=404, detail="Шаблон не найден")
+    template.name = name
+    db.commit()
+    return {"id": str(template.id), "name": template.name}
 
 
 @templates_router.delete("/{template_id}")
