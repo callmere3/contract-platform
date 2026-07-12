@@ -1033,6 +1033,7 @@ async function loadForm(tpl, origin = 'folders') {
   $('#form-panel').hidden = false;
 
   renderForm(data.fields);
+  if (origin === 'contragent-docs') applyContragentPrefill(tpl.doc_type);
   window.scrollTo(0, 0);
 }
 
@@ -1392,6 +1393,54 @@ function renumber(tbody) {
 }
 
 // ---------- сбор данных и отправка ----------
+// ---------- автоподстановка данных контрагента в форму генерации ----------
+// Срабатывает только когда форма открыта из карточки контрагента
+// (origin === 'contragent-docs', см. loadForm). См. брейншторм, раздел
+// "После выбора контрагента":
+//   - для "Договора" — дата зафиксирована в карточке, не редактируется
+//   - для Приложения/Акта — номер договора берётся из карточки, не вводится
+//   - роялти — предзаполняется, но остаётся редактируемым (бизнес-параметр,
+//     может осознанно отличаться от документа к документу)
+//   - псевдоним — выпадающий список из псевдонимов контрагента, а не текст
+function applyContragentPrefill(docType) {
+  if (!currentContragent) return;
+
+  if (docType === 'contract') {
+    lockField('c_date', currentContragent.contract_date,
+      'Дата зафиксирована в карточке контрагента и не редактируется здесь.');
+  }
+  if (docType === 'appendix' || docType === 'act') {
+    lockField('contract', currentContragent.contract_number,
+      'Номер договора зафиксирован в карточке контрагента и не редактируется здесь.');
+  }
+
+  const royaltyInput = document.querySelector('[data-name="royalty"]');
+  if (royaltyInput && currentContragent.royalty_percent != null) {
+    royaltyInput.value = String(currentContragent.royalty_percent);
+  }
+
+  const nickWrap = document.querySelector('[data-field="nickname"]');
+  const nickInput = document.querySelector('[data-name="nickname"]');
+  if (nickWrap && nickInput && currentContragent.nicknames && currentContragent.nicknames.length) {
+    const sel = el('select', { id: 'f_nickname', 'data-name': 'nickname' });
+    sel.append(el('option', { value: '' }, '— нет —'));
+    currentContragent.nicknames.forEach(n => sel.append(el('option', { value: n }, n)));
+    nickInput.replaceWith(sel);
+  }
+}
+
+// Проставляет value и блокирует поле от редактирования (disabled сохраняет
+// .value доступным для collect() через querySelector — не как нативный
+// submit формы, где disabled-поля вообще не попадают в данные).
+function lockField(name, value, note) {
+  const input = document.querySelector(`[data-name="${name}"]`);
+  const wrap = document.querySelector(`[data-field="${name}"]`);
+  if (!input || !wrap || value == null) return;
+  input.value = value;
+  input.disabled = true;
+  wrap.append(el('div', { class: 'hint', style: 'color:var(--accent)' }, note));
+}
+
 function collect() {
   const data = {};
 
