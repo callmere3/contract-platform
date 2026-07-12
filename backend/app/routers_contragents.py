@@ -12,6 +12,8 @@
                                           формат колонок, что и импорт — файл можно
                                           поправить руками и залить обратно)
   GET  /contragents/{id}               — карточка контрагента целиком
+  DELETE /contragents/{id}             — удалить контрагента (никнеймы каскадно;
+                                          пока только через Swagger, без кнопки в UI)
   GET  /contragents/{id}/templates     — подбор документов, совместимых с контрагентом
                                           по тегам (country/contragent_type/contract_family)
   POST /contragents/{id}/nicknames     — добавить псевдоним контрагенту
@@ -468,6 +470,31 @@ def get_contragent(contragent_id: uuid.UUID, db: Session = Depends(get_session))
         ),
         "nicknames": [n.nickname for n in contragent.nicknames],
     }
+
+
+@contragents_router.delete("/{contragent_id}")
+def delete_contragent(contragent_id: uuid.UUID, db: Session = Depends(get_session)) -> dict:
+    """
+    Удаляет контрагента. Никнеймы удаляются каскадно (cascade="all,
+    delete-orphan" в models.py + ondelete="CASCADE" на FK в БД).
+
+    Пока нет таблицы generated_documents (см. брейншторм — сознательно не
+    делаем), нет и проверки "а генерировали ли уже документы для этого
+    контрагента" — удаление ничего, кроме самой карточки и её никнеймов,
+    не затрагивает: ранее сгенерированные .docx в MinIO не трогаются,
+    шаблоны и их теги тоже.
+
+    Пока доступно только через Swagger — кнопка удаления в самом
+    интерфейсе (экран документов контрагента) ещё не добавлена.
+    """
+    contragent = db.get(Contragent, contragent_id)
+    if contragent is None:
+        raise HTTPException(status_code=404, detail="Контрагент не найден")
+
+    db.delete(contragent)
+    db.commit()
+
+    return {"id": str(contragent_id), "deleted": True}
 
 
 @contragents_router.get("/{contragent_id}/templates")
