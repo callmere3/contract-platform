@@ -165,6 +165,7 @@ def create_contragent(
     contract_family: str = Form(...),   # 'РОЯЛТИ' | 'АВАНС' | 'АВАНС_ОБЯЗАТЕЛЬСТВО'
     contract_date: str = Form(...),     # ISO из <input type="date">, напр. '2026-03-15'
     royalty_percent: float = Form(...),
+    nicknames: str | None = Form(None), # через запятую, тот же формат, что и в импорте
     db: Session = Depends(get_session),
 ) -> dict:
     """
@@ -176,16 +177,20 @@ def create_contragent(
     при генерации "Договора" — не пересчитывается на лету (см. брейншторм,
     "Почему именно так, а не иначе").
 
+    nicknames — необязательное поле, через запятую (как в импорте/экспорте,
+    см. import_contragents), можно оставить пустым и добавить никнейм(ы)
+    позже через POST /contragents/{id}/nicknames.
+
     Мягкая проверка дублей (см. брейншторм) — задача фронтенда: перед
     сабмитом вызвать GET /contragents?q=<name> и показать похожие; сам
     этот эндпоинт ничего не блокирует (жёсткого constraint на title в БД
     нет, см. models.py).
 
-    Это эндпоинт СОЗДАНИЯ ЧЕРЕЗ UI — все поля обязательны, как в
+    Это эндпоинт СОЗДАНИЯ ЧЕРЕЗ UI — остальные поля обязательны, как в
     UX-флоу брейншторма ("Новый контрагент"). Массовый импорт с неполными
-    записями (только title/nickname) — отдельный будущий эндпоинт (шаг 5
-    плана, работает по другим правилам: title берётся из файла как есть,
-    без пересчёта).
+    записями (только title/nickname) — отдельный эндпоинт (POST
+    /contragents/import, шаг 5, работает по другим правилам: title
+    берётся из файла как есть, без пересчёта).
 
     country/contragent_type/contract_family нормализуются к каноническому
     регистру (см. app/tags.py) — без этого 'ру' и 'РУ' в БД считались бы
@@ -223,6 +228,14 @@ def create_contragent(
         royalty_percent=royalty_percent,
     )
     db.add(contragent)
+    db.flush()   # нужен contragent.id до вставки никнеймов
+
+    nickname_list = (
+        [n.strip() for n in nicknames.split(",") if n.strip()] if nicknames else []
+    )
+    for nick in nickname_list:
+        db.add(ContragentNickname(contragent_id=contragent.id, nickname=nick))
+
     db.commit()
 
     return {
@@ -230,6 +243,7 @@ def create_contragent(
         "title": contragent.title,
         "contract_number": contragent.contract_number,
         "contract_date": contragent.contract_date.isoformat(),
+        "nicknames": nickname_list,
     }
 
 

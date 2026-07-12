@@ -315,6 +315,11 @@
         <label for="new-c-royalty">Роялти %</label>
         <input type="text" id="new-c-royalty" placeholder="70">
       </div>
+      <div class="field">
+        <label for="new-c-nicknames">Никнейм(ы)</label>
+        <input type="text" id="new-c-nicknames" placeholder="July Jones, Vladimir Ivanov">
+        <div class="hint">через запятую, можно оставить пустым и добавить позже</div>
+      </div>
       <div class="modal-actions">
         <button class="btn" type="button" id="btn-c-cancel">Отмена</button>
         <button class="btn primary" type="button" id="btn-c-submit">Создать</button>
@@ -638,6 +643,7 @@ function openContragentModal() {
   $('#new-c-contract-family').selectedIndex = 0;
   $('#new-c-date').value = new Date().toISOString().slice(0, 10);
   $('#new-c-royalty').value = '';
+  $('#new-c-nicknames').value = '';
   $('#new-c-duplicates').textContent = '';
   $('#contragent-backdrop').hidden = false;
 }
@@ -668,6 +674,7 @@ async function submitContragent() {
   const contractFamily = $('#new-c-contract-family').value;
   const date = $('#new-c-date').value;
   const royalty = $('#new-c-royalty').value.trim();
+  const nicknames = $('#new-c-nicknames').value.trim();
 
   if (!name) { showMsg('Укажите ФИО/название.'); return; }
   if (!country || !contragentType || !contractFamily) {
@@ -684,6 +691,7 @@ async function submitContragent() {
       name, country, contragent_type: contragentType, contract_family: contractFamily,
       contract_date: date, royalty_percent: royalty,
     });
+    if (nicknames) body.append('nicknames', nicknames);
     const r = await fetch(`${API}/contragents`, { method: 'POST', body });
     if (!r.ok) {
       const detail = await r.json().catch(() => null);
