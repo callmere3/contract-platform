@@ -17,6 +17,9 @@ services:
       - ./backend/app:/app/app
       # статика (HTML-интерфейс) — правки видны без пересборки
       - ./backend/static:/app/static
+      # новые ревизии Alembic тоже должны быть видны без пересборки образа
+      - ./backend/alembic:/app/alembic
+      - ./backend/alembic.ini:/app/alembic.ini
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
   db:
