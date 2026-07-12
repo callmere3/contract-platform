@@ -405,6 +405,15 @@
     </div>
     <div class="panel-body">
       <form id="form"></form>
+      <div class="field" id="paired-act-field" hidden>
+        <div class="check">
+          <input type="checkbox" id="paired-act-checkbox" checked>
+          <div class="txt">
+            <label for="paired-act-checkbox" id="paired-act-label"></label>
+            <div class="hint">Использует те же данные формы — второй раз вводить не нужно.</div>
+          </div>
+        </div>
+      </div>
     </div>
     <div class="actions">
       <button class="btn primary" id="btn-gen">Сформировать документ</button>
@@ -420,6 +429,8 @@ let currentTemplateId = null;
 let currentFields = [];
 let currentFormOrigin = 'folders';   // 'folders' | 'contragent-docs' — куда возвращает btn-back
 let currentContragent = null;
+let currentContragentTemplates = [];   // документы текущего контрагента (см. openContragentDocs) — нужны, чтобы найти парный Акт для Приложения
+let currentPairedAct = null;           // {id, name} найденного Акта той же связки, или null
 
 // ---------- утилиты ----------
 const $ = s => document.querySelector(s);
@@ -737,6 +748,7 @@ async function openContragentDocs(c) {
     // contract_date/royalty_percent — без этой замены applyContragentPrefill
     // тихо получал бы undefined и не подставлял/не блокировал поля формы
     currentContragent = detail;
+    currentContragentTemplates = docsData.templates;   // нужно для поиска парного Акта (см. loadForm)
   } catch {
     content.className = '';
     content.textContent = '';
@@ -1038,6 +1050,25 @@ async function loadForm(tpl, origin = 'folders') {
 
   renderForm(data.fields);
   if (origin === 'contragent-docs') applyContragentPrefill(tpl.doc_type);
+
+  // Парная генерация Акта вместе с Приложением (см. брейншторм — оба
+  // используют один набор данных для одной и той же сделки/контрагента).
+  // Ищем среди уже отфильтрованных по тегам документов ЭТОГО контрагента
+  // (currentContragentTemplates) — они гарантированно того же
+  // country/contragent_type/contract_family, что и открытое Приложение,
+  // поэтому Акт из другой связки сюда попасть не может.
+  currentPairedAct = null;
+  $('#paired-act-field').hidden = true;
+  if (origin === 'contragent-docs' && tpl.doc_type === 'appendix') {
+    const act = currentContragentTemplates.find(t => t.doc_type === 'act');
+    if (act) {
+      currentPairedAct = act;
+      $('#paired-act-label').textContent = `Также сформировать «${act.name}» по тем же данным`;
+      $('#paired-act-checkbox').checked = true;
+      $('#paired-act-field').hidden = false;
+    }
+  }
+
   window.scrollTo(0, 0);
 }
 
@@ -1514,6 +1545,26 @@ function collect() {
   return data;
 }
 
+// Генерирует один документ по готовым данным формы и сразу скачивает его.
+// Вынесено отдельно, чтобы использовать и для основного документа, и для
+// парного Акта (см. generate()) без дублирования кода запроса/скачивания.
+async function generateAndDownload(templateId, data, filename) {
+  const r = await fetch(`${API}/templates/${templateId}/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}));
+    throw new Error(err.detail || `Ошибка ${r.status}`);
+  }
+  const blob = await r.blob();
+  const url = URL.createObjectURL(blob);
+  const a = el('a', { href: url, download: `${filename}.docx` });
+  document.body.append(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+
 async function generate() {
   clearMsg();
   const btn = $('#btn-gen');
@@ -1521,25 +1572,32 @@ async function generate() {
   btn.disabled = true;
   status.textContent = 'Формируем…';
 
+  const data = collect();
+  // Данные формы Приложения переиспользуются для Акта КАК ЕСТЬ (включая
+  // "date" — дату самого документа): для роялти Приложение и Акт обычно
+  // подписываются одним числом на одних и тех же треках, поэтому это
+  // осознанное упрощение, а не побочный эффект — если дата должна
+  // отличаться, проще снять чекбокс и сформировать Акт отдельно.
+  const wantsPairedAct = currentPairedAct
+    && !$('#paired-act-field').hidden
+    && $('#paired-act-checkbox').checked;
+
   try {
-    const r = await fetch(`${API}/templates/${currentTemplateId}/generate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(collect())
-    });
+    await generateAndDownload(currentTemplateId, data, $('#tpl-name').textContent);
 
-    if (!r.ok) {
-      const err = await r.json().catch(() => ({}));
-      throw new Error(err.detail || `Ошибка ${r.status}`);
+    let msg = 'Документ сформирован и скачан.';
+    if (wantsPairedAct) {
+      try {
+        await generateAndDownload(currentPairedAct.id, data, currentPairedAct.name);
+        msg = 'Приложение и Акт сформированы и скачаны.';
+      } catch (e) {
+        // Основной документ уже скачан — не откатываем, просто предупреждаем
+        // про Акт отдельно (например, в нём есть метка, которой нет в форме
+        // Приложения, и find_missing_variables на бэкенде это поймал).
+        msg = `Документ скачан, но Акт сформировать не удалось: ${e.message}`;
+      }
     }
-
-    const blob = await r.blob();
-    const url = URL.createObjectURL(blob);
-    const a = el('a', { href: url, download: `${$('#tpl-name').textContent}.docx` });
-    document.body.append(a); a.click(); a.remove();
-    URL.revokeObjectURL(url);
-
-    showMsg('Документ сформирован и скачан.', 'ok');
+    showMsg(msg, 'ok');
   } catch (e) {
     showMsg(e.message);
   } finally {
