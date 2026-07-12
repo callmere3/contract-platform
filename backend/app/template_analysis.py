@@ -22,6 +22,7 @@ import io
 import re
 import zipfile
 from dataclasses import dataclass, field
+from datetime import date as _date
 
 # Поля, которые вычисляет context_builder — в форме не показываются.
 # Синхронизировано с context_builder.build_context()
@@ -150,6 +151,19 @@ DEFAULT_VALUES = {
     "advance_days": "10",  # срок выплаты аванса, рабочих дней (п.2.2)
     "royalty": "70",       # роялти, % — предзаполнено, оператор может изменить
 }
+
+# Поля, которые предзаполняются СЕГОДНЯШНЕЙ датой (не статичным значением
+# из DEFAULT_VALUES — дата плывёт день ото дня, поэтому считается заново
+# при каждом открытии формы, см. fields_to_dict).
+#
+# c_date — дата комбинированного Договора. date — дата отдельного
+# Приложения/Акта (для них это дата подписания ИМЕННО ЭТОГО документа,
+# а не договора-родителя — сегодня естественный дефолт).
+#
+# НЕ входят: delivery_date (это дедлайн в будущем, не сегодняшняя дата),
+# birthday/pas_date (исторические даты контрагента, никак не связаны
+# с сегодня).
+TODAY_DEFAULT_FIELDS = {"c_date", "date"}
 
 # Приложение/Акт — отдельный файл, привязанный к уже существующему
 # договору (см. LINKED_DOC_TYPES выше). У contract/c_date/date там другой
@@ -452,13 +466,18 @@ def fields_to_dict(fields: list[FormField], doc_type: str | None = None) -> list
         else:
             group, label, hint = field_meta_for(f.name, doc_type)
 
+        if f.name in TODAY_DEFAULT_FIELDS and f.type == "date":
+            default = _date.today().isoformat()  # 2026-07-12 — ISO, как ждёт <input type="date">
+        else:
+            default = DEFAULT_VALUES.get(f.name, "")
+
         item = {
             "name": f.name,
             "type": f.type,
             "group": group,
             "label": label,
             "hint": hint,
-            "default": DEFAULT_VALUES.get(f.name, ""),
+            "default": default,
         }
         if f.type == "list":
             # колонки в осмысленном порядке, а не по алфавиту

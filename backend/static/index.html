@@ -817,7 +817,12 @@ function renderField(f) {
   } else if (f.type === 'date') {
     // календарь: значение уходит в ISO (2026-03-15),
     // сервер сам превращает его в «15» марта 2026 г.
-    wrap.append(el('input', { type: 'date', id: `f_${f.name}`, 'data-name': f.name }));
+    // default (если есть, напр. сегодняшняя дата для c_date/date) —
+    // уже готовый ISO, подставляем как value.
+    wrap.append(el('input', {
+      type: 'date', id: `f_${f.name}`, 'data-name': f.name,
+      value: f.default || ''
+    }));
   } else {
     wrap.append(el('input', {
       type: 'text', id: `f_${f.name}`, 'data-name': f.name,
