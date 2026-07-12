@@ -14,6 +14,11 @@ class Settings(BaseSettings):
     minio_root_password: str
     minio_bucket: str = "contracts"
 
+    # "логин:пароль,логин2:пароль2" — см. app/auth.py. Пусто = авторизация
+    # выключена (сервис открыт всем, кто знает URL — используется только
+    # для локальной разработки, на сервере обязательно задать).
+    auth_users: str = ""
+
     environment: str = "development"
 
     class Config:

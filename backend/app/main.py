@@ -5,17 +5,24 @@
 Этап 2: подключены роутеры /folders (дерево папок произвольной глубины)
 и /templates (загрузка шаблонов и генерация), на старте создаются таблицы БД.
 Этап 3: раздача HTML-интерфейса на корневом пути `/`.
+Basic Auth поверх всего сервиса (app/auth.py) — список пользователей в .env.
 """
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 
+from app.auth import BasicAuthMiddleware
 from app.db import check_db_connection, init_db
 from app.routers_templates import folders_router, templates_router
 from app.storage import download_test_file, ensure_bucket_exists, upload_test_file
 
 app = FastAPI(title="Contract Platform API")
+
+# HTTP Basic Auth поверх всего сервиса — документы содержат паспортные
+# данные и банковские реквизиты, порт не должен быть открыт без проверки.
+# Список пользователей задаётся в .env (AUTH_USERS), см. app/auth.py.
+app.add_middleware(BasicAuthMiddleware)
 
 app.include_router(folders_router)
 app.include_router(templates_router)
