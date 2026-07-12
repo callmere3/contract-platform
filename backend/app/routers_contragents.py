@@ -5,8 +5,9 @@
                                           вычисляются автоматически, см. брейншторм)
   GET  /contragents?q=...              — поиск по title/nickname (ILIKE, регистронезависимо).
                                           Без q — весь список (для стартового экрана/отладки).
-  POST /contragents/import             — массовый импорт из .xlsx (мягкая валидация,
-                                          дубли по title обновляются, а не дублируются)
+  POST /contragents/import             — массовый импорт из .xlsx (обязательна только
+                                          колонка "Титл"; дубли по title обновляются,
+                                          а не дублируются)
   GET  /contragents/export             — выгрузка всех контрагентов в .xlsx (тот же
                                           формат колонок, что и импорт — файл можно
                                           поправить руками и залить обратно)
@@ -44,8 +45,15 @@ contragents_router = APIRouter(prefix="/contragents", tags=["contragents"])
 # "Импорт/экспорт (Excel)") — человекочитаемые русские заголовки, файл
 # симметричен в обе стороны: экспортировал -> поправил руками -> залил
 # обратно тем же импортом.
+#
+# "Титл" — единственная обязательная колонка (это title контрагента,
+# по нему же идёт поиск/дедупликация при импорте). "Название" (ФИО/
+# название компании) — необязательная колонка, в отличие от создания
+# через UI (POST /contragents), где name обязателен, а title вычисляется
+# из него автоматически. При импорте — наоборот: title всегда берётся из
+# файла как есть, а name опционален.
 EXCEL_COLUMNS = [
-    "Название", "Никнеймы", "Тип", "Страна",
+    "Титл", "Название", "Никнеймы", "Тип", "Страна",
     "Тип договора", "Номер договора", "Дата договора", "Роялти %",
 ]
 
@@ -234,19 +242,20 @@ def import_contragents(
     Массовый импорт контрагентов из .xlsx — одна строка на контрагента
     (см. брейншторм, раздел "Импорт/экспорт (Excel)").
 
-    Обязательна фактически только колонка "Название" (title) — остальные
-    могут отсутствовать или быть пустыми в конкретной строке, контрагент
+    Обязательна ТОЛЬКО колонка "Титл" (title) — по ней же идёт поиск
+    дублей. Остальные колонки, включая "Название" (ФИО/название), могут
+    отсутствовать или быть пустыми в конкретной строке, контрагент
     создаётся/обновляется "неполным" (см. GET /contragents/{id}/templates —
     такой контрагент просто не участвует в подборе документов, пока
     карточку не дозаполнят).
 
-    title и "Номер договора" берутся из файла КАК ЕСТЬ, без пересчёта —
-    в отличие от POST /contragents (создание через UI), где title и
-    contract_number вычисляются по формуле. Здесь это исторические/
-    юридически зафиксированные значения, пересчёт мог бы дать другое
-    число, чем реально стоит в бумажном договоре.
+    "Титл" и "Номер договора" берутся из файла КАК ЕСТЬ, без пересчёта —
+    в отличие от POST /contragents (создание через UI), где title
+    вычисляется из name по формуле. Здесь это исторические/юридически
+    зафиксированные значения, пересчёт мог бы дать другое число, чем
+    реально стоит в бумажном договоре.
 
-    Дубли — точное совпадение "Название" с уже существующим контрагентом:
+    Дубли — точное совпадение "Титл" с уже существующим контрагентом:
     существующая запись ОБНОВЛЯЕТСЯ, вторая не создаётся. При обновлении
     непустая ячейка перезаписывает соответствующее поле, пустая — оставляет
     прежнее значение как есть (не затирает то, что уже было заполнено
@@ -257,7 +266,7 @@ def import_contragents(
     Невалидный тег (country/тип/тип договора — опечатка, значения нет
     среди допустимых) не роняет всю строку: поле остаётся пустым, причина
     попадает в "details" по этой строке, остальные поля сохраняются.
-    Единственная причина полностью пропустить строку — отсутствие title.
+    Единственная причина полностью пропустить строку — отсутствие "Титл".
     """
     if not file.filename.endswith(".xlsx"):
         raise HTTPException(status_code=400, detail="Ожидается файл .xlsx")
@@ -271,9 +280,9 @@ def import_contragents(
 
     header_row = next(ws.iter_rows(min_row=1, max_row=1, values_only=True), ())
     header = [str(v).strip() if v is not None else "" for v in header_row]
-    if "Название" not in header:
+    if "Титл" not in header:
         raise HTTPException(
-            status_code=400, detail="В файле нет обязательной колонки «Название»"
+            status_code=400, detail="В файле нет обязательной колонки «Титл»"
         )
     col_index = {name: i for i, name in enumerate(header)}
 
@@ -288,12 +297,15 @@ def import_contragents(
         if row is None or all(v is None for v in row):
             continue   # полностью пустая строка — не считаем ни пропуском, ни ошибкой
 
-        title_raw = cell(row, "Название")
+        title_raw = cell(row, "Титл")
         title = str(title_raw).strip() if title_raw not in (None, "") else ""
         if not title:
             skipped += 1
-            details.append({"row": row_num, "status": "пропущено", "reason": "нет названия (title)"})
+            details.append({"row": row_num, "status": "пропущено", "reason": "нет титла (title)"})
             continue
+
+        name_raw = cell(row, "Название")
+        name = str(name_raw).strip() if name_raw not in (None, "") else None
 
         warnings: list[str] = []
 
@@ -327,7 +339,7 @@ def import_contragents(
 
         if existing is None:
             contragent = Contragent(
-                name=title,   # отдельного ФИО файл не даёт — title и есть источник правды
+                name=name,   # теперь отдельная опциональная колонка "Название", не заглушка
                 title=title,
                 country=country,
                 type=contragent_type,
@@ -345,6 +357,8 @@ def import_contragents(
                 {"row": row_num, "status": "создано", "title": title, "warnings": warnings}
             )
         else:
+            if name is not None:
+                existing.name = name
             if country is not None:
                 existing.country = country
             if contragent_type is not None:
@@ -390,6 +404,7 @@ def export_contragents(db: Session = Depends(get_session)) -> StreamingResponse:
     for c in contragents:
         ws.append([
             c.title,
+            c.name or "",
             ", ".join(n.nickname for n in c.nicknames),
             c.type or "",
             c.country or "",
