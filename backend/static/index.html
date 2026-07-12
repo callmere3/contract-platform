@@ -1377,8 +1377,19 @@ function renderList(f) {
 function addRow(tbody, cols, withProfanity) {
   const tr = el('tr');
   tr.append(el('td', { class: 'num' }, ''));
-  cols.forEach(c => tr.append(el('td', {},
-    el('input', { type: 'text', 'data-col': c.name }))));
+  cols.forEach(c => {
+    // Для таблицы треков (withProfanity=true — только у неё есть колонка
+    // НЛ) столбец "Исполнитель" по умолчанию берёт текущее значение поля
+    // "Псевдоним" — так каждая новая строка не заполняется вручную заново
+    // для типового случая одного исполнителя. Поле всё равно остаётся
+    // обычным текстовым input — редактируется как угодно.
+    let defaultVal = '';
+    if (withProfanity && c.name === 'performer') {
+      const nickEl = document.querySelector('[data-name="nickname"]');
+      if (nickEl && nickEl.value) defaultVal = nickEl.value;
+    }
+    tr.append(el('td', {}, el('input', { type: 'text', 'data-col': c.name, value: defaultVal })));
+  });
   if (withProfanity) tr.append(el('td', { class: 'chk' },
     el('input', { type: 'checkbox', 'data-col': 'has_profanity' })));
   tr.append(el('td', { class: 'act' },
@@ -1423,13 +1434,35 @@ function applyContragentPrefill(docType) {
     royaltyInput.value = String(currentContragent.royalty_percent);
   }
 
+  const nameInput = document.querySelector('[data-name="name"]');
+  if (nameInput && currentContragent.name) {
+    nameInput.value = currentContragent.name;
+  }
+
+  // Псевдоним — выпадающий список, по умолчанию выбран первый (обычно
+  // единственный) — так есть откуда подставлять исполнителя в треки ниже,
+  // но оператор в любой момент может выбрать другой или переписать вручную.
+  let nicknameValue = '';
   const nickWrap = document.querySelector('[data-field="nickname"]');
   const nickInput = document.querySelector('[data-name="nickname"]');
   if (nickWrap && nickInput && currentContragent.nicknames && currentContragent.nicknames.length) {
     const sel = el('select', { id: 'f_nickname', 'data-name': 'nickname' });
     sel.append(el('option', { value: '' }, '— нет —'));
     currentContragent.nicknames.forEach(n => sel.append(el('option', { value: n }, n)));
+    nicknameValue = currentContragent.nicknames[0];
+    sel.value = nicknameValue;
     nickInput.replaceWith(sel);
+  }
+
+  // Столбец "Исполнитель" в таблице треков — подставляем выбранный
+  // псевдоним в уже существующие строки (обычно там уже есть одна пустая
+  // строка по умолчанию). Строки, добавленные позже кнопкой "+ Добавить
+  // строку", подхватывают то же значение сами — см. addRow(). Поле
+  // остаётся редактируемым — это только стартовое значение, не блокировка.
+  if (nicknameValue) {
+    document.querySelectorAll('[data-list="tracks"] [data-col="performer"]').forEach(inp => {
+      if (!inp.value) inp.value = nicknameValue;
+    });
   }
 }
 
