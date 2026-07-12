@@ -323,6 +323,12 @@ def generate_document(
     # nickname — если у контрагента нет псевдонима (условие его скроет)
     # release_* — если релиз это сингл
     optional = {"nickname", "release_label", "release_name", "release_year"}
+    # smm/smm_text (сумма на SMM, п.2.1.2 в СГ_аванс) печатаются только
+    # под {%p if marketing %} — если чекбокс «Маркетинговая кампания» не
+    # нажат, весь пункт в документ не попадает, и поле не должно
+    # требоваться. Если нажат — сумма обязательна, как и раньше.
+    if not context.get("marketing"):
+        optional = optional | {"smm", "smm_text"}
     missing = [
         m for m in find_missing_variables(template_vars, context)
         if m not in optional

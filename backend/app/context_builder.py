@@ -11,6 +11,7 @@
 готовый словарь для docxtpl.
 """
 import re
+from datetime import date as _date
 
 
 def build_initials(full_name: str) -> str:
@@ -506,22 +507,39 @@ def _parse_amount(amount_raw) -> int:
     return n
 
 
-def build_term_end(quarter, year) -> str:
+def build_term_end(document_date_raw) -> str:
     """
-    Возвращает дату окончания Срока, напр. '31 декабря 2027 г.'
+    Срок действия договора/приложения/акта — 5 лет от даты документа,
+    округлённые ВВЕРХ до конца квартала, в котором окажется дата +5 лет.
 
-    quarter и year могут прийти как строки (HTML-форма всегда шлёт строки)
-    или как числа (из кода/тестов) — приводим к int.
+    document_date_raw — дата САМОГО документа в любом формате, понятном
+    parse_date() (ISO из календаря, «15» марта 2026 г., 15.03.2026).
+    Для комбинированного Договора это c_date, для отдельных Приложения/
+    Акта — их собственная date (см. build_context).
+
+    Пример: документ от 01.12.2020 -> +5 лет = 01.12.2025, это Q4
+    -> 'до 31 декабря 2025 г.' (год — год даты+5, а не год исходного
+    документа: если оригинал в январе, а +5 лет улетает в декабрь того
+    же +5 года, это всё ещё тот год, никакого дополнительного сдвига).
+
+    '' если document_date_raw пуст или не распознан — find_missing_variables
+    поймает это как незаполненное поле вместо того, чтобы молча
+    посчитать срок от 01.01.1900.
     """
+    parsed = parse_date(document_date_raw)
+    if not parsed:
+        return ""
+    day, month, year = parsed
+    base = _date(int(year), int(month), int(day))
+
     try:
-        quarter = int(quarter)
-        year = int(year)
-    except (TypeError, ValueError):
-        raise ValueError("Квартал и год должны быть числами")
+        future = base.replace(year=base.year + 5)
+    except ValueError:
+        # 29 февраля — через 5 лет год не обязательно високосный
+        future = base.replace(year=base.year + 5, day=28)
 
-    if quarter not in QUARTER_ENDS:
-        raise ValueError("Квартал должен быть 1..4")
-    return f"{QUARTER_ENDS[quarter]} {year} г."
+    quarter = (future.month - 1) // 3 + 1
+    return f"{QUARTER_ENDS[quarter]} {future.year} г."
 
 
 def build_context(raw: dict, doc_type: str | None = None) -> dict:
@@ -564,8 +582,8 @@ def build_context(raw: dict, doc_type: str | None = None) -> dict:
         performers: [{nickname, fio}, ...]  (уникальные, из таблицы треков)
         is_group: bool   (True — исполнители образуют группу; её название
                           берётся из никнейма в столбце «Исполнитель»)
-        term_quarter: 1..4
-        term_year: int
+        (срок действия term_end вычисляется автоматически из даты
+        документа, отдельно не вводится — см. build_term_end)
 
     Сноска исполнителя строится как "никнейм - ФИО" для одиночного
     исполнителя (nickname берётся из того же поля, что и в преамбуле).
@@ -575,7 +593,6 @@ def build_context(raw: dict, doc_type: str | None = None) -> dict:
     SERVICE_KEYS = {
         "contract_day", "contract_month", "contract_year", "doc_kind",
         "performers", "is_group",
-        "term_quarter", "term_year",
     }
 
     tracks = raw.get("tracks", [])
@@ -688,9 +705,17 @@ def build_context(raw: dict, doc_type: str | None = None) -> dict:
             bool(raw.get("is_group")),
         ),
 
-        # срок действия
-        "term_end": build_term_end(
-            raw.get("term_quarter", 4), raw.get("term_year", 2027)
+        # срок действия — 5 лет от даты САМОГО документа, до конца квартала.
+        # Для комбинированного Договора это c_date, для отдельных
+        # Приложения/Акта — их собственная date (не дата договора-родителя).
+        # срок действия — предзаполняется автоматически (5 лет от даты
+        # документа, до конца квартала), но оператор может его поправить
+        # в форме вручную — иногда срок отличается от стандартного
+        # правила. Если поле заполнено — берём как есть; посчитанное
+        # значение это только предложение по умолчанию, не жёсткая логика.
+        "term_end": (
+            str(raw.get("term_end") or "").strip()
+            or build_term_end(date_raw if is_linked_doc else c_date_raw)
         ),
     })
     return context

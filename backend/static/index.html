@@ -554,9 +554,9 @@ function renderForm(fields) {
   // типа релиза и чекбокса «Есть видеоклип».
   wireupReleaseVisibility();
 
-  // Дата документа (date) больше не отдельное поле формы — сервер сам
-  // заполняет её тем же значением, что и дату договора (c_date).
-  // См. COMPUTED_FIELDS в template_analysis.py и context_builder.py.
+  // Предзаполнение срока действия (term_end) от даты документа —
+  // оператор может поправить вручную, автозаполнение это не блокирует.
+  wireupTermEndAutofill();
 }
 
 // Синхронизирует таблицу исполнителей со столбцом «Исполнитель» треков.
@@ -619,6 +619,60 @@ function wireupPerformerAutofill() {
     if (e.target.matches('.btn.small, .row-del')) setTimeout(syncPerformers, 0);
   });
   syncPerformers();  // первичное заполнение
+}
+
+// Предзаполняет «Срок действия» (term_end) от даты документа: +5 лет,
+// округление вверх до конца квартала. Ровно та же логика, что и в
+// backend (context_builder.build_term_end) — здесь только чтобы
+// оператор сразу видел предлагаемое значение в форме и мог его
+// поправить, не отправляя форму вслепую. Финальное значение всё равно
+// проверяет и, если нужно, досчитывает сам backend — это поле лишь
+// подсказка, а не источник истины.
+//
+// Дата-драйвер: c_date для комбинированного Договора, date — для
+// отдельных Приложения/Акта (там c_date вычисляется из номера договора
+// и не редактируется, а date — это дата самого документа). В форме
+// одновременно виден только один из этих двух input'ов, так что просто
+// берём тот, что есть.
+function computeTermEndRu(isoDate) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec((isoDate || '').trim());
+  if (!m) return '';
+  const year = Number(m[1]), month = Number(m[2]), day = Number(m[3]);
+
+  let futureYear = year + 5, futureMonth = month, futureDay = day;
+  if (month === 2 && day === 29) {
+    // 29 февраля — через 5 лет год не обязательно високосный
+    const isLeap = (futureYear % 4 === 0 && futureYear % 100 !== 0) || futureYear % 400 === 0;
+    futureDay = isLeap ? 29 : 28;
+  }
+  const future = new Date(Date.UTC(futureYear, futureMonth - 1, futureDay));
+  if (isNaN(future.getTime())) return '';
+
+  const quarter = Math.floor(future.getUTCMonth() / 3) + 1;
+  const endings = {
+    1: ['31', 'марта'], 2: ['30', 'июня'],
+    3: ['30', 'сентября'], 4: ['31', 'декабря'],
+  };
+  const [endDay, endMonth] = endings[quarter];
+  return `${endDay} ${endMonth} ${future.getUTCFullYear()} г.`;
+}
+
+function wireupTermEndAutofill() {
+  const termEnd = document.querySelector('[data-name="term_end"]');
+  if (!termEnd) return;
+  // одновременно виден только один из этих двух — какой есть, тот и драйвер
+  const driver = document.querySelector('[data-name="c_date"]')
+    || document.querySelector('[data-name="date"]');
+  if (!driver) return;
+
+  termEnd.addEventListener('input', () => { termEnd.dataset.touched = '1'; });
+  const sync = () => {
+    if (termEnd.dataset.touched) return;  // оператор уже поправил вручную — не перезаписываем
+    const suggested = computeTermEndRu(driver.value);
+    if (suggested) termEnd.value = suggested;
+  };
+  driver.addEventListener('input', sync);
+  sync();  // предзаполнение при открытии формы, если дата уже введена
 }
 
 // Показ/скрытие зависимых полей релиза.
