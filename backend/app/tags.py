@@ -15,7 +15,7 @@ from fastapi import HTTPException
 
 COUNTRIES = ["РУ", "КЗ"]
 CONTRAGENT_TYPES = ["СГ", "ИП", "ООО"]
-CONTRACT_FAMILIES = ["роялти", "аванс", "аванс_обязательство"]
+CONTRACT_FAMILIES = ["РОЯЛТИ", "АВАНС", "АВАНС_ОБЯЗАТЕЛЬСТВО"]
 
 
 def normalize_tag(value: str, allowed: list[str], field_name: str) -> str:

@@ -89,7 +89,7 @@ class Template(Base):
     # Nullable: у 8 текущих шаблонов заполняются вручную ПОСЛЕ миграции.
     country: Mapped[str | None] = mapped_column(String(16))          # 'РУ' | 'КЗ'
     contragent_type: Mapped[str | None] = mapped_column(String(16))  # 'СГ' | 'ИП' | 'ООО'
-    contract_family: Mapped[str | None] = mapped_column(String(32))  # 'роялти' | 'аванс' | 'аванс_обязательство'
+    contract_family: Mapped[str | None] = mapped_column(String(32))  # 'РОЯЛТИ' | 'АВАНС' | 'АВАНС_ОБЯЗАТЕЛЬСТВО'
 
     version: Mapped[int] = mapped_column(default=1)
     created_at: Mapped[datetime] = mapped_column(
@@ -156,7 +156,7 @@ class Contragent(Base):
 
     country: Mapped[str | None] = mapped_column(String(16))          # 'РУ' | 'КЗ'
     type: Mapped[str | None] = mapped_column(String(16))             # 'СГ' | 'ИП' | 'ООО'
-    contract_family: Mapped[str | None] = mapped_column(String(32))  # 'роялти' | 'аванс' | 'аванс_обязательство'
+    contract_family: Mapped[str | None] = mapped_column(String(32))  # 'РОЯЛТИ' | 'АВАНС' | 'АВАНС_ОБЯЗАТЕЛЬСТВО'
 
     contract_date: Mapped[date | None] = mapped_column(Date)
     contract_number: Mapped[str | None] = mapped_column(String(64))

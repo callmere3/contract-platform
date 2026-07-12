@@ -77,7 +77,7 @@ def create_contragent(
     name: str = Form(...),
     country: str = Form(...),           # 'РУ' | 'КЗ'
     contragent_type: str = Form(...),   # 'СГ' | 'ИП' | 'ООО'
-    contract_family: str = Form(...),   # 'роялти' | 'аванс' | 'аванс_обязательство'
+    contract_family: str = Form(...),   # 'РОЯЛТИ' | 'АВАНС' | 'АВАНС_ОБЯЗАТЕЛЬСТВО'
     contract_date: str = Form(...),     # ISO из <input type="date">, напр. '2026-03-15'
     royalty_percent: float = Form(...),
     db: Session = Depends(get_session),
