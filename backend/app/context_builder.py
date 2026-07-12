@@ -135,6 +135,24 @@ def format_date_ru(value: str) -> str:
     return f"«{day}» {month_name} {year} г."
 
 
+def format_date_dotted(value: str) -> str:
+    """
+    Приводит дату к точечному формату (для birthday, pas_date — в
+    документе печатается как есть, без прописи, в отличие от c_date):
+        '1990-01-01' -> '01.01.1990'   # из <input type="date">
+        '01.01.1990' -> '01.01.1990'   # уже в этом формате — без изменений
+
+    Если дата не распознана, возвращает исходную строку как есть —
+    чтобы оператор мог вписать нестандартный текст вручную (например,
+    неполную дату или уточнение).
+    """
+    parsed = parse_date(value)
+    if not parsed:
+        return value
+    day, month, year = parsed
+    return f"{day}.{month}.{year}"
+
+
 def parse_day_month(c_date: str) -> tuple[str, str] | None:
     """
     Совместимость: извлекает только день и месяц.
@@ -777,6 +795,14 @@ def build_context(raw: dict, doc_type: str | None = None) -> dict:
         #   дата САМОГО документа (Приложения/Акта), вводится оператором.
         "c_date": format_date_ru(c_date_raw),
         "date": format_date_ru(date_raw) if is_linked_doc else format_date_ru(c_date_raw),
+
+        # birthday и pas_date — теперь тоже календарь в форме (ISO на
+        # входе), но в документе печатаются точечным форматом, а не
+        # прописью, в отличие от c_date/date. Раньше вводились текстом
+        # напрямую в этом же формате — старые значения (уже "01.01.1990")
+        # parse_date распознаёт и вернёт как есть, без изменений.
+        "birthday": format_date_dotted(raw.get("birthday", "")),
+        "pas_date": format_date_dotted(raw.get("pas_date", "")),
 
         # тип релиза
         "release_type": release_type,
