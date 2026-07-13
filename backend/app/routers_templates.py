@@ -16,14 +16,17 @@
     DELETE /templates/{id}              — удалить шаблон (файл + запись в БД)
     GET    /templates/{id}/fields       — какие поля нужно заполнить
     POST   /templates/{id}/generate     — сгенерировать документ
+                                           (?format=docx|pdf, по умолчанию docx)
 """
 import io
 import uuid
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+import httpx
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.context_builder import build_context, find_missing_variables
 from app.db import get_session
 from app.generation import render_document, scan_placeholders
@@ -377,10 +380,15 @@ def get_template_fields(template_id: uuid.UUID, db: Session = Depends(get_sessio
 def generate_document(
     template_id: uuid.UUID,
     data: dict,
+    format: str = Query("docx", pattern="^(docx|pdf)$"),
     db: Session = Depends(get_session),
 ) -> StreamingResponse:
     """
-    Генерирует документ по данным формы.
+    Генерирует документ по данным формы. format=docx (по умолчанию) или
+    format=pdf — во втором случае готовый docx дополнительно прогоняется
+    через отдельный сервис-конвертер (LibreOffice headless, см. converter/),
+    сам docx при этом нигде не сохраняется отдельно — PDF получают "на
+    лету", один запрос — один результат.
 
     Тело запроса — «сырые» данные формы. Они проходят через build_context(),
     который добавляет вычисляемые поля: номер договора собирается из
@@ -426,8 +434,38 @@ def generate_document(
 
     result_bytes = render_document(docx_bytes, context)
 
+    if format == "docx":
+        return StreamingResponse(
+            io.BytesIO(result_bytes),
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={"Content-Disposition": 'attachment; filename="document.docx"'},
+        )
+
+    # format == "pdf" — отдаём docx на конвертацию отдельному сервису.
+    # Таймаут больше, чем у самого soffice внутри converter (60с) — с
+    # запасом на сетевые накладные расходы внутри docker-сети, не потому
+    # что конвертация реально может идти дольше.
+    try:
+        response = httpx.post(
+            f"{settings.converter_url}/convert",
+            files={"file": ("document.docx", result_bytes,
+                             "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
+            timeout=70,
+        )
+    except httpx.RequestError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Сервис конвертации в PDF недоступен: {exc}",
+        )
+
+    if response.status_code != 200:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Не удалось сконвертировать документ в PDF: {response.text[:300]}",
+        )
+
     return StreamingResponse(
-        io.BytesIO(result_bytes),
-        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        headers={"Content-Disposition": 'attachment; filename="document.docx"'},
+        io.BytesIO(response.content),
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'attachment; filename="document.pdf"'},
     )

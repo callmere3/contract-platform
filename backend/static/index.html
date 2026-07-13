@@ -467,6 +467,10 @@
     </div>
     <div class="actions">
       <button class="btn primary" id="btn-gen">Сформировать документ</button>
+      <select id="gen-format" title="Формат файла" style="width:auto">
+        <option value="docx">Word (.docx)</option>
+        <option value="pdf">PDF (.pdf)</option>
+      </select>
       <span class="spacer"></span>
       <span class="loading" id="gen-status"></span>
     </div>
@@ -1719,8 +1723,11 @@ function collect() {
 // Генерирует один документ по готовым данным формы и сразу скачивает его.
 // Вынесено отдельно, чтобы использовать и для основного документа, и для
 // парного Акта (см. generate()) без дублирования кода запроса/скачивания.
-async function generateAndDownload(templateId, data, filename) {
-  const r = await fetch(`${API}/templates/${templateId}/generate`, {
+// format: 'docx' | 'pdf' — при 'pdf' бэкенд сам прогоняет docx через
+// отдельный сервис-конвертер (LibreOffice headless), здесь просто другой
+// query-параметр и другое расширение файла.
+async function generateAndDownload(templateId, data, filename, format) {
+  const r = await fetch(`${API}/templates/${templateId}/generate?format=${format}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)
@@ -1731,7 +1738,7 @@ async function generateAndDownload(templateId, data, filename) {
   }
   const blob = await r.blob();
   const url = URL.createObjectURL(blob);
-  const a = el('a', { href: url, download: `${filename}.docx` });
+  const a = el('a', { href: url, download: `${filename}.${format}` });
   document.body.append(a); a.click(); a.remove();
   URL.revokeObjectURL(url);
 }
@@ -1744,6 +1751,7 @@ async function generate() {
   status.textContent = 'Формируем…';
 
   const data = collect();
+  const format = $('#gen-format').value;   // 'docx' | 'pdf'
   // Данные формы Приложения переиспользуются для Акта КАК ЕСТЬ (включая
   // "date" — дату самого документа): для роялти Приложение и Акт обычно
   // подписываются одним числом на одних и тех же треках, поэтому это
@@ -1754,12 +1762,12 @@ async function generate() {
     && $('#paired-act-checkbox').checked;
 
   try {
-    await generateAndDownload(currentTemplateId, data, $('#tpl-name').textContent);
+    await generateAndDownload(currentTemplateId, data, $('#tpl-name').textContent, format);
 
     let msg = 'Документ сформирован и скачан.';
     if (wantsPairedAct) {
       try {
-        await generateAndDownload(currentPairedAct.id, data, currentPairedAct.name);
+        await generateAndDownload(currentPairedAct.id, data, currentPairedAct.name, format);
         msg = 'Приложение и Акт сформированы и скачаны.';
       } catch (e) {
         // Основной документ уже скачан — не откатываем, просто предупреждаем

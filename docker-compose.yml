@@ -22,6 +22,19 @@ services:
       - ./backend/alembic.ini:/app/alembic.ini
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
+  converter:
+    build: ./converter
+    container_name: contracts_converter
+    # api обращается к converter по имени сервиса внутри docker-сети
+    # (см. CONVERTER_URL=http://converter:8090 в app/config.py), наружу
+    # порт пробрасывать не нужно — это внутренний сервис, не публичный API.
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8090/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
   db:
     image: postgres:16
     container_name: contracts_db

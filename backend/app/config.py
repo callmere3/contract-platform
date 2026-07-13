@@ -19,6 +19,12 @@ class Settings(BaseSettings):
     # для локальной разработки, на сервере обязательно задать).
     auth_users: str = ""
 
+    # адрес отдельного контейнера с LibreOffice headless (см. converter/) —
+    # используется только эндпоинтом генерации при ?format=pdf, не нужен
+    # для остального приложения, поэтому с дефолтом (не заставляем всех
+    # существующих .env-файлов на сервере обязательно его знать)
+    converter_url: str = "http://converter:8090"
+
     environment: str = "development"
 
     class Config:
