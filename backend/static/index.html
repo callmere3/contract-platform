@@ -278,6 +278,8 @@
       <div class="panel-head">
         <div class="toolbar" style="flex:1">
           <input type="text" id="contragent-q" placeholder="Поиск по названию или псевдониму…" style="flex:1;max-width:360px">
+          <select id="filter-country" style="width:auto"></select>
+          <select id="filter-contragent-type" style="width:auto"></select>
           <span class="spacer"></span>
           <button class="btn small" type="button" id="btn-open-import-export">Импорт/экспорт</button>
         </div>
@@ -544,6 +546,18 @@ async function loadTagOptions() {
     ['#new-c-contragent-type', tagOptions.contragent_types],
     ['#new-c-contract-family', tagOptions.contract_families],
   ].forEach(([sel, values]) => fillRequiredSelect($(sel), values));
+
+  // Фильтры на "База контрагентов" — по contract_family (роялти/аванс)
+  // намеренно НЕ фильтруем, только country/contragent_type (см. запрос).
+  const filterCountry = $('#filter-country');
+  filterCountry.innerHTML = '';
+  filterCountry.append(el('option', { value: '' }, 'Все страны'));
+  tagOptions.countries.forEach(v => filterCountry.append(el('option', { value: v }, v)));
+
+  const filterType = $('#filter-contragent-type');
+  filterType.innerHTML = '';
+  filterType.append(el('option', { value: '' }, 'Все типы'));
+  tagOptions.contragent_types.forEach(v => filterType.append(el('option', { value: v }, v)));
 }
 
 function debounce(fn, ms) {
@@ -668,9 +682,16 @@ async function searchContragents() {
   box.className = 'loading';
   box.textContent = 'Загрузка…';
   const q = $('#contragent-q').value.trim();
+  const country = $('#filter-country').value;
+  const contragentType = $('#filter-contragent-type').value;
   let data;
   try {
-    const url = q ? `${API}/contragents?q=${encodeURIComponent(q)}` : `${API}/contragents`;
+    const params = new URLSearchParams();
+    if (q) params.set('q', q);
+    if (country) params.set('country', country);
+    if (contragentType) params.set('contragent_type', contragentType);
+    const qs = params.toString();
+    const url = qs ? `${API}/contragents?${qs}` : `${API}/contragents`;
     const r = await fetch(url);
     if (!r.ok) throw new Error(`${r.status}`);
     data = await r.json();
@@ -683,7 +704,7 @@ async function searchContragents() {
   box.className = '';
   box.textContent = '';
   if (!data.contragents.length) {
-    box.append(el('p', { class: 'empty' }, q ? 'Ничего не найдено.' : 'Контрагентов пока нет.'));
+    box.append(el('p', { class: 'empty' }, (q || country || contragentType) ? 'Ничего не найдено.' : 'Контрагентов пока нет.'));
     return;
   }
   const grid = el('div', { class: 'browse' });
@@ -1814,6 +1835,8 @@ $('#tab-search').addEventListener('click', () => switchMode('search'));
 $('#tab-db').addEventListener('click', () => switchMode('db'));
 $('#tab-folders').addEventListener('click', () => switchMode('folders'));
 $('#contragent-q').addEventListener('input', debounce(searchContragents, 300));
+$('#filter-country').addEventListener('change', searchContragents);
+$('#filter-contragent-type').addEventListener('change', searchContragents);
 $('#btn-new-contragent').addEventListener('click', openContragentModal);
 $('#btn-c-cancel').addEventListener('click', closeContragentModal);
 $('#btn-c-submit').addEventListener('click', submitContragent);

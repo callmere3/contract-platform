@@ -138,6 +138,8 @@ def _try_normalize_optional(value, allowed: list[str], field_name: str) -> tuple
 @contragents_router.get("")
 def search_contragents(
     q: str | None = None,
+    country: str | None = None,
+    contragent_type: str | None = None,
     db: Session = Depends(get_session),
 ) -> dict:
     """
@@ -149,10 +151,12 @@ def search_contragents(
     только title могла не найти уже существующего человека, если искать
     по тому, как его ФИО выглядит целиком.
 
-    Без q — отдаёт весь список (ограничен 200 записями). Пригодится и
-    для стартового экрана без поискового запроса, и для отладки через
-    Swagger, пока фронтенд ещё не переписан под контрагентов (этап 6-7
-    брейншторма).
+    country/contragent_type — необязательные фильтры по тегам (точное
+    совпадение после нормализации регистра, см. app/tags.py), применяются
+    ДОПОЛНИТЕЛЬНО к q, а не вместо него. contract_family сюда намеренно
+    не добавлен — фильтр по роялти/авансу не нужен (см. запрос пользователя).
+
+    Без q/фильтров — отдаёт весь список (ограничен 200 записями).
     """
     query = db.query(Contragent)
     if q:
@@ -168,6 +172,15 @@ def search_contragents(
                 )
             )
             .distinct()
+        )
+    if country:
+        query = query.filter(
+            Contragent.country == normalize_optional_tag(country, COUNTRIES, "country")
+        )
+    if contragent_type:
+        query = query.filter(
+            Contragent.type
+            == normalize_optional_tag(contragent_type, CONTRAGENT_TYPES, "contragent_type")
         )
     contragents = query.order_by(Contragent.title).limit(200).all()
     return {"contragents": [_contragent_summary(c) for c in contragents]}
