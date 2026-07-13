@@ -73,6 +73,7 @@ def _contragent_summary(c: Contragent) -> dict:
     return {
         "id": str(c.id),
         "title": c.title,
+        "name": c.name,
         "nicknames": [n.nickname for n in c.nicknames],
         "country": c.country,
         "type": c.type,

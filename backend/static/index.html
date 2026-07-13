@@ -722,43 +722,28 @@ function closeContragentModal() {
   $('#contragent-backdrop').hidden = true;
 }
 
-// Зеркало build_contragent_title() из app/context_builder.py — тот же
-// алгоритм, чтобы предупреждение о дубле сверялось с РЕАЛЬНЫМ title,
-// который вычислит бэкенд при сохранении, а не с сырым введённым именем
-// (сырое имя "Иванов Иван Иванович" и итоговый title "Иванов И. И. (СГ)" —
-// разные строки, ILIKE по имени дубль по факту не находил).
-function computeTitlePreview(name, contragentType) {
-  if (!name || !contragentType) return '';
-  if (contragentType === 'ООО') return `${name} (${contragentType})`;
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (!parts.length) return '';
-  const surname = parts[0];
-  const initials = parts.slice(1).map(p => p[0].toUpperCase() + '.').join(' ');
-  const label = initials ? `${surname} ${initials}` : surname;
-  return `${label} (${contragentType})`;
-}
-
-// Мягкая проверка дублей на лету — не блокирует сама по себе, только
-// подсвечивает точное совпадение (жёсткая блокировка — в submitContragent()
-// ниже, перед самой отправкой). Частичное совпадение по title/name/nickname
-// (все три теперь ищутся вместе на бэкенде, см. GET /contragents) — просто
+// Живая подсказка при вводе — не блокирует сама по себе (это делает
+// findExistingByName() прямо перед отправкой в submitContragent), только
+// заранее показывает то же самое условие, чтобы оператор увидел
+// проблему до клика "Создать", а не после. Точное совпадение по ФИО
+// (name) — то же самое, что будет реально блокировать отправку;
+// остальные частичные совпадения по title/name/nickname — просто
 // информационная подсказка "похожие есть".
 async function checkContragentDuplicates() {
   const name = $('#new-c-name').value.trim();
-  const contragentType = $('#new-c-contragent-type').value;
   const box = $('#new-c-duplicates');
   if (!name) { box.textContent = ''; box.style.color = ''; return; }
 
-  const expectedTitle = computeTitlePreview(name, contragentType);
+  const normalized = name.toLowerCase();
   try {
-    const r = await fetch(`${API}/contragents?q=${encodeURIComponent(expectedTitle || name)}`);
+    const r = await fetch(`${API}/contragents?q=${encodeURIComponent(name)}`);
     if (!r.ok) throw new Error();
     const data = await r.json();
 
-    const exactMatch = expectedTitle && data.contragents.some(c => c.title === expectedTitle);
-    if (exactMatch) {
+    const exactByName = data.contragents.find(c => (c.name || '').trim().toLowerCase() === normalized);
+    if (exactByName) {
       box.style.color = 'var(--danger)';
-      box.textContent = `Контрагент с таким названием уже существует: «${expectedTitle}».`;
+      box.textContent = `Контрагент с таким ФИО уже существует: «${exactByName.title}». Создать через эту форму нельзя.`;
     } else if (data.contragents.length) {
       box.style.color = '';
       box.textContent = `Похожие уже есть: ${data.contragents.map(c => c.title).join(', ')}`;
@@ -769,20 +754,25 @@ async function checkContragentDuplicates() {
   } catch { /* мягкая проверка — молча пропускаем сбой сети */ }
 }
 
-// Возвращает title существующего контрагента, если он ТОЧНО совпадает
-// с тем, что будет вычислен при создании — используется как жёсткая
-// блокировка перед отправкой формы (см. submitContragent). Отдельно от
-// checkContragentDuplicates(), потому что debounce мог не успеть
-// отработать к моменту клика "Создать" — здесь всегда свежий запрос.
-async function findExactTitleMatch(expectedTitle) {
-  if (!expectedTitle) return false;
+// Возвращает title существующего контрагента, если ФИО (name) точно
+// совпадает с введённым — используется как жёсткая блокировка перед
+// отправкой формы (см. submitContragent). Сравниваем именно по name, а
+// не только по title: у одного человека "Иванов (СГ)" и "Иванов (ИП)" —
+// разные title (разный тип), но должны ловиться этой проверкой как один
+// и тот же человек, иначе менеджер по ошибке заведёт его дважды под
+// разными типами контрагента. Отдельно от checkContragentDuplicates(),
+// потому что debounce мог не успеть отработать к моменту клика "Создать"
+// — здесь всегда свежий запрос прямо перед отправкой.
+async function findExistingByName(name) {
+  const normalized = name.trim().toLowerCase();
+  if (!normalized) return null;
   try {
-    const r = await fetch(`${API}/contragents?q=${encodeURIComponent(expectedTitle)}`);
-    if (!r.ok) return false;
+    const r = await fetch(`${API}/contragents?q=${encodeURIComponent(name)}`);
+    if (!r.ok) return null;
     const data = await r.json();
-    return data.contragents.some(c => c.title === expectedTitle);
+    return data.contragents.find(c => (c.name || '').trim().toLowerCase() === normalized) || null;
   } catch {
-    return false;   // сеть недоступна — не блокируем создание из-за этого
+    return null;   // сеть недоступна — не блокируем создание из-за этого
   }
 }
 
@@ -806,15 +796,14 @@ async function submitContragent() {
     showMsg('Роялти должно быть числом от 0 до 100.'); return;
   }
 
-  // Жёсткая блокировка дублей через эту форму: title вычисляется только из
-  // ФИО+типа, разойтись при создании ему не с чем, поэтому точное совпадение
-  // здесь — всегда нежелательный дубль. Кейс "один человек — два разных
-  // контракта (аванс/роялти)" через эту форму не создаём — для него
-  // отдельные записи с разными title заводятся импортом из Excel, где title
-  // берётся из файла как есть, а не вычисляется.
-  const expectedTitle = computeTitlePreview(name, contragentType);
-  if (await findExactTitleMatch(expectedTitle)) {
-    showMsg(`Контрагент с таким названием уже существует: «${expectedTitle}». Через эту форму создать нельзя.`);
+  // Жёсткая блокировка дублей через эту форму — по ФИО (name), не только
+  // по title (см. findExistingByName выше). Кейс "один человек — два
+  // разных контракта/типа" через эту форму не создаём — для него
+  // отдельные записи с разными title заводятся импортом из Excel, где
+  // title берётся из файла как есть, а не вычисляется из ФИО+типа.
+  const existing = await findExistingByName(name);
+  if (existing) {
+    showMsg(`Контрагент с таким ФИО уже существует: «${existing.title}». Через эту форму создать нельзя — второй контракт того же человека заводится импортом из Excel.`);
     return;
   }
 
@@ -1821,7 +1810,6 @@ $('#btn-new-contragent').addEventListener('click', openContragentModal);
 $('#btn-c-cancel').addEventListener('click', closeContragentModal);
 $('#btn-c-submit').addEventListener('click', submitContragent);
 $('#new-c-name').addEventListener('input', debounce(checkContragentDuplicates, 400));
-$('#new-c-contragent-type').addEventListener('change', checkContragentDuplicates);
 $('#contragent-backdrop').addEventListener('click', e => {
   if (e.target.id === 'contragent-backdrop') closeContragentModal();  // клик по фону — закрыть
 });
