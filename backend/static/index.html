@@ -803,7 +803,7 @@ async function submitContragent() {
   // title берётся из файла как есть, а не вычисляется из ФИО+типа.
   const existing = await findExistingByName(name);
   if (existing) {
-    showMsg(`Контрагент с таким ФИО уже существует: «${existing.title}». Через эту форму создать нельзя — второй контракт того же человека заводится импортом из Excel.`);
+    showMsg(`Контрагент с таким ФИО уже существует: «${existing.title}».`);
     return;
   }
 
