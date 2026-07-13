@@ -29,7 +29,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.context_builder import build_context, find_missing_variables
 from app.db import get_session
-from app.generation import render_document, scan_placeholders
+from app.generation import fix_tables_for_pdf, render_document, scan_placeholders
 from app.models import Template, TemplateField, TemplateFolder, folder_path
 from app.storage import delete_file, get_file, put_file
 from app.tags import CONTRAGENT_TYPES, CONTRACT_FAMILIES, COUNTRIES, normalize_optional_tag
@@ -442,13 +442,28 @@ def generate_document(
         )
 
     # format == "pdf" — отдаём docx на конвертацию отдельному сервису.
+    # fix_tables_for_pdf() чинит известный баг LibreOffice-конвертации:
+    # если суммарная ширина столбцов таблицы (треки/исполнители/клипы)
+    # больше печатной ширины страницы, LibreOffice сжимает столбцы
+    # непропорционально (текст может схлопнуться до одной буквы на
+    # строку), тогда как Word такое переполнение просто визуально терпит.
+    # На .docx-версию (ветка выше) это не влияет — там и так всё корректно.
+    try:
+        pdf_source_bytes = fix_tables_for_pdf(result_bytes)
+    except Exception:
+        # Если чинилка упала на каком-то нестандартном шаблоне — лучше
+        # отдать PDF с потенциально кривой таблицей, чем не отдать вообще
+        # ничего. Точечно эту ошибку не проглатываем молча: имеет смысл
+        # смотреть логи api, если это начнёт происходить часто.
+        pdf_source_bytes = result_bytes
+
     # Таймаут больше, чем у самого soffice внутри converter (60с) — с
     # запасом на сетевые накладные расходы внутри docker-сети, не потому
     # что конвертация реально может идти дольше.
     try:
         response = httpx.post(
             f"{settings.converter_url}/convert",
-            files={"file": ("document.docx", result_bytes,
+            files={"file": ("document.docx", pdf_source_bytes,
                              "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
             timeout=70,
         )
