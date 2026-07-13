@@ -287,20 +287,6 @@
       </div>
     </section>
 
-    <!-- Экран 2: документы выбранного контрагента -->
-    <section class="panel" id="contragent-docs" hidden>
-      <div class="panel-head">
-        <div>
-          <h2 id="cdocs-title" style="margin:0"></h2>
-          <span class="sub" id="cdocs-meta"></span>
-        </div>
-        <button class="btn small" id="btn-cdocs-back">← К поиску контрагентов</button>
-      </div>
-      <div class="panel-body">
-        <div id="cdocs-content" class="loading">Загрузка…</div>
-      </div>
-    </section>
-
     <!-- Экран 3: импорт/экспорт -->
     <section class="panel" id="contragent-import-export" hidden>
       <div class="panel-head">
@@ -332,6 +318,19 @@
       </table>
       <div class="modal-actions">
         <button class="btn" type="button" id="btn-card-close">Закрыть</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Модалка: документы выбранного контрагента (только с лендинга "Поиск",
+       поверх текущего экрана — вкладки при этом не переключаются) -->
+  <div class="modal-backdrop" id="contragent-docs-backdrop" hidden>
+    <div class="modal" style="width:480px">
+      <h3 id="cdocs-title">—</h3>
+      <span class="sub" id="cdocs-meta"></span>
+      <div id="cdocs-content" class="loading" style="margin-top:12px">Загрузка…</div>
+      <div class="modal-actions">
+        <button class="btn" type="button" id="btn-cdocs-close">Закрыть</button>
       </div>
     </div>
   </div>
@@ -654,7 +653,6 @@ function switchMode(mode) {
   if (mode === 'folders') {
     browse(null);
   } else if (mode === 'db') {
-    $('#contragent-docs').hidden = true;
     $('#contragent-import-export').hidden = true;
     $('#contragent-search').hidden = false;
     searchContragents();
@@ -888,21 +886,14 @@ function closeContragentCard() {
 }
 
 async function openContragentDocs(c) {
-  // Вызывается и из списка на "База контрагентов", и из выпадающего списка
-  // на лендинге — в обоих случаях явно переключаемся на вкладку "База
-  // контрагентов", чтобы контейнеры contragent-docs (внутри mode-db) были
-  // видимы независимо от того, где физически был клик.
-  $('#tab-search').classList.remove('active');
-  $('#tab-db').classList.add('active');
-  $('#tab-folders').classList.remove('active');
-  $('#mode-search').hidden = true;
-  $('#mode-db').hidden = false;
-  $('#mode-folders').hidden = true;
-
+  // Вызывается только из выпадающего списка на лендинге "Поиск" —
+  // показываем модалку поверх текущего экрана, вкладки НЕ переключаем.
+  // Раньше принудительно переключало на "База контрагентов", из-за чего
+  // кнопка "назад" из формы генерации возвращала не туда, откуда реально
+  // начинали (см. обсуждение в истории чата).
   currentContragent = c;
-  $('#contragent-search').hidden = true;
-  $('#contragent-docs').hidden = false;
   $('#cdocs-title').textContent = c.title;
+  $('#contragent-docs-backdrop').hidden = false;
 
   const content = $('#cdocs-content');
   content.className = 'loading';
@@ -958,6 +949,10 @@ async function openContragentDocs(c) {
     ));
   });
   content.append(grid);
+}
+
+function closeContragentDocsModal() {
+  $('#contragent-docs-backdrop').hidden = true;
 }
 
 // ---------- контрагенты: импорт/экспорт ----------
@@ -1221,6 +1216,7 @@ async function loadForm(tpl, origin = 'folders') {
   $('#mode-search').hidden = true;
   $('#mode-folders').hidden = true;
   $('#mode-db').hidden = true;
+  $('#contragent-docs-backdrop').hidden = true;   // модалка документов, если форма открыта из неё
   $('#form-panel').hidden = false;
 
   renderForm(data.fields);
@@ -1790,8 +1786,11 @@ $('#btn-gen').addEventListener('click', generate);
 $('#btn-back').addEventListener('click', () => {
   $('#form-panel').hidden = true;
   if (currentFormOrigin === 'contragent-docs' && currentContragent) {
-    $('#mode-db').hidden = false;
-    $('#contragent-docs').hidden = false;
+    // Модалка документов открывается только с лендинга "Поиск" — туда и
+    // возвращаемся, а не на "База контрагентов" (это две разные вещи,
+    // раньше здесь была историческая путаница, см. обсуждение).
+    switchMode('search');
+    openContragentDocs(currentContragent);
   } else {
     $('#mode-folders').hidden = false;
   }
@@ -1868,10 +1867,9 @@ document.addEventListener('click', e => {
     $('#landing-dropdown').hidden = true;
   }
 });
-$('#btn-cdocs-back').addEventListener('click', () => {
-  $('#contragent-docs').hidden = true;
-  $('#contragent-search').hidden = false;
-  searchContragents();   // список мог устареть, пока смотрели документы
+$('#btn-cdocs-close').addEventListener('click', closeContragentDocsModal);
+$('#contragent-docs-backdrop').addEventListener('click', e => {
+  if (e.target.id === 'contragent-docs-backdrop') closeContragentDocsModal();  // клик по фону — закрыть
 });
 $('#btn-open-import-export').addEventListener('click', openImportExport);
 $('#btn-ie-back').addEventListener('click', closeImportExport);
