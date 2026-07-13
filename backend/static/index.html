@@ -738,10 +738,11 @@ function computeTitlePreview(name, contragentType) {
   return `${label} (${contragentType})`;
 }
 
-// Мягкая проверка дублей на лету (см. брейншторм) — не блокирует
-// создание, только предупреждает. Точное совпадение будущего title —
-// явное предупреждение (скорее всего дубль); частичное совпадение по
-// имени/псевдониму — мягкая подсказка "похожие есть", как и раньше.
+// Мягкая проверка дублей на лету — не блокирует сама по себе, только
+// подсвечивает точное совпадение (жёсткая блокировка — в submitContragent()
+// ниже, перед самой отправкой). Частичное совпадение по title/name/nickname
+// (все три теперь ищутся вместе на бэкенде, см. GET /contragents) — просто
+// информационная подсказка "похожие есть".
 async function checkContragentDuplicates() {
   const name = $('#new-c-name').value.trim();
   const contragentType = $('#new-c-contragent-type').value;
@@ -757,7 +758,7 @@ async function checkContragentDuplicates() {
     const exactMatch = expectedTitle && data.contragents.some(c => c.title === expectedTitle);
     if (exactMatch) {
       box.style.color = 'var(--danger)';
-      box.textContent = `Контрагент с таким названием уже есть: «${expectedTitle}». Если это тот же человек с другим типом договора — можно создать, потом вручную поправить title в Swagger (PATCH /contragents/{id}), чтобы различать. Если это опечатка/дубль — лучше открыть существующего.`;
+      box.textContent = `Контрагент с таким названием уже существует: «${expectedTitle}».`;
     } else if (data.contragents.length) {
       box.style.color = '';
       box.textContent = `Похожие уже есть: ${data.contragents.map(c => c.title).join(', ')}`;
@@ -766,6 +767,23 @@ async function checkContragentDuplicates() {
       box.textContent = '';
     }
   } catch { /* мягкая проверка — молча пропускаем сбой сети */ }
+}
+
+// Возвращает title существующего контрагента, если он ТОЧНО совпадает
+// с тем, что будет вычислен при создании — используется как жёсткая
+// блокировка перед отправкой формы (см. submitContragent). Отдельно от
+// checkContragentDuplicates(), потому что debounce мог не успеть
+// отработать к моменту клика "Создать" — здесь всегда свежий запрос.
+async function findExactTitleMatch(expectedTitle) {
+  if (!expectedTitle) return false;
+  try {
+    const r = await fetch(`${API}/contragents?q=${encodeURIComponent(expectedTitle)}`);
+    if (!r.ok) return false;
+    const data = await r.json();
+    return data.contragents.some(c => c.title === expectedTitle);
+  } catch {
+    return false;   // сеть недоступна — не блокируем создание из-за этого
+  }
 }
 
 async function submitContragent() {
@@ -786,6 +804,18 @@ async function submitContragent() {
   const royaltyNum = parseFloat(royalty.replace(',', '.'));
   if (isNaN(royaltyNum) || royaltyNum < 0 || royaltyNum > 100) {
     showMsg('Роялти должно быть числом от 0 до 100.'); return;
+  }
+
+  // Жёсткая блокировка дублей через эту форму: title вычисляется только из
+  // ФИО+типа, разойтись при создании ему не с чем, поэтому точное совпадение
+  // здесь — всегда нежелательный дубль. Кейс "один человек — два разных
+  // контракта (аванс/роялти)" через эту форму не создаём — для него
+  // отдельные записи с разными title заводятся импортом из Excel, где title
+  // берётся из файла как есть, а не вычисляется.
+  const expectedTitle = computeTitlePreview(name, contragentType);
+  if (await findExactTitleMatch(expectedTitle)) {
+    showMsg(`Контрагент с таким названием уже существует: «${expectedTitle}». Через эту форму создать нельзя.`);
+    return;
   }
 
   const btn = $('#btn-c-submit');
