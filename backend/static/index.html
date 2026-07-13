@@ -165,6 +165,26 @@
   .mode-tab:hover{color:var(--ink-2)}
   .mode-tab.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:600}
 
+  /* --- лендинг "Поиск" --- */
+  .landing-title{font-size:30px;font-weight:600;letter-spacing:-.01em;margin:0 0 8px}
+  .landing-sub{color:var(--ink-3);font-size:14px;line-height:1.6;margin:0 0 28px}
+  .landing-dropdown{
+    position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:30;
+    background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    box-shadow:0 8px 28px rgba(20,27,38,.18);
+    max-height:320px;overflow-y:auto;text-align:left;
+  }
+  .landing-dropdown[hidden]{display:none}
+  .landing-dropdown .item{
+    display:block;width:100%;text-align:left;padding:9px 12px;
+    border:none;border-bottom:1px solid var(--line-2);background:none;cursor:pointer;font:inherit;
+  }
+  .landing-dropdown .item:last-child{border-bottom:none}
+  .landing-dropdown .item:hover{background:var(--accent-soft)}
+  .landing-dropdown .item .nm{font-size:14px;color:var(--ink)}
+  .landing-dropdown .item .nick{font-size:12px;color:var(--ink-3);margin-top:1px}
+  .landing-dropdown .empty{padding:10px 12px;font-size:13px;color:var(--ink-3)}
+
   /* --- сообщения --- */
   .msg{padding:10px 13px;border-radius:var(--radius);font-size:13px;margin-bottom:14px;display:none}
   .msg.err{background:#fbeceb;border:1px solid #eccbc8;color:var(--danger);display:block}
@@ -204,7 +224,7 @@
 <header>
   <div class="shell">
     <h1>ML Docs</h1>
-    <span class="sub" id="hdr-sub">Поиск контрагентов и генерация договоров, приложений и актов в один клик</span>
+    <span class="sub" id="hdr-sub">Медиа Лэнд</span>
   </div>
 </header>
 
@@ -220,9 +240,12 @@
   <!-- ===================== РЕЖИМ: ПОИСК (лендинг, основная точка входа) ===================== -->
   <div id="mode-search">
     <div style="max-width:480px;margin:0 auto;text-align:center;padding:3rem 0 5rem">
+      <div class="landing-title">ML Docs</div>
+      <p class="landing-sub">Поиск контрагентов и генерация договоров, приложений и актов в один клик</p>
       <div style="position:relative">
         <input type="text" id="landing-q" placeholder="Найти контрагента по имени или псевдониму"
-               style="width:100%;height:44px;font-size:15px">
+               style="width:100%;height:44px;font-size:15px" autocomplete="off">
+        <div class="landing-dropdown" id="landing-dropdown" hidden></div>
       </div>
       <div style="margin-top:1.25rem">
         <button class="btn" type="button" id="btn-new-contragent">+ Новый контрагент</button>
@@ -619,6 +642,7 @@ function switchMode(mode) {
     searchContragents();
   } else {
     $('#landing-q').value = '';
+    $('#landing-dropdown').hidden = true;
   }
 }
 
@@ -747,6 +771,17 @@ async function submitContragent() {
 
 // ---------- контрагенты: документы конкретного контрагента ----------
 async function openContragentDocs(c) {
+  // Вызывается и из списка на "База контрагентов", и из выпадающего списка
+  // на лендинге — в обоих случаях явно переключаемся на вкладку "База
+  // контрагентов", чтобы контейнеры contragent-docs (внутри mode-db) были
+  // видимы независимо от того, где физически был клик.
+  $('#tab-search').classList.remove('active');
+  $('#tab-db').classList.add('active');
+  $('#tab-folders').classList.remove('active');
+  $('#mode-search').hidden = true;
+  $('#mode-db').hidden = false;
+  $('#mode-folders').hidden = true;
+
   currentContragent = c;
   $('#contragent-search').hidden = true;
   $('#contragent-docs').hidden = false;
@@ -1665,14 +1700,48 @@ $('#new-c-name').addEventListener('input', debounce(checkContragentDuplicates, 4
 $('#contragent-backdrop').addEventListener('click', e => {
   if (e.target.id === 'contragent-backdrop') closeContragentModal();  // клик по фону — закрыть
 });
-// Лендинг ("Поиск") — по Enter переходим на "База контрагентов" с этим же запросом,
-// сам список на главной больше не показываем (см. запрос на более презентабельный вид).
-$('#landing-q').addEventListener('keydown', e => {
-  if (e.key !== 'Enter') return;
+// Лендинг ("Поиск") — живой поиск с выпадающим списком результатов
+// (без перехода на другую вкладку); клик по результату сразу открывает
+// его документы, "База контрагентов" для полного списка — отдельно.
+async function searchLanding() {
   const q = $('#landing-q').value.trim();
-  switchMode('db');
-  $('#contragent-q').value = q;
-  searchContragents();
+  const box = $('#landing-dropdown');
+  if (!q) { box.hidden = true; box.textContent = ''; return; }
+
+  let data;
+  try {
+    const r = await fetch(`${API}/contragents?q=${encodeURIComponent(q)}`);
+    if (!r.ok) throw new Error();
+    data = await r.json();
+  } catch {
+    return;   // тихо не показываем дропдаун при сетевой ошибке — не мешаем вводу
+  }
+
+  box.textContent = '';
+  if (!data.contragents.length) {
+    box.append(el('div', { class: 'empty' }, 'Ничего не найдено.'));
+    box.hidden = false;
+    return;
+  }
+  data.contragents.slice(0, 8).forEach(c => {
+    box.append(el('button', {
+      type: 'button', class: 'item',
+      onclick: () => { $('#landing-q').value = ''; box.hidden = true; openContragentDocs(c); }
+    },
+      el('div', { class: 'nm' }, c.title),
+      c.nicknames.length ? el('div', { class: 'nick' }, c.nicknames.join(', ')) : ''));
+  });
+  box.hidden = false;
+}
+$('#landing-q').addEventListener('input', debounce(searchLanding, 250));
+$('#landing-q').addEventListener('focus', () => {
+  if ($('#landing-q').value.trim()) $('#landing-dropdown').hidden = false;
+});
+// клик вне поля/дропдауна — закрыть список
+document.addEventListener('click', e => {
+  if (!e.target.closest('#landing-q') && !e.target.closest('#landing-dropdown')) {
+    $('#landing-dropdown').hidden = true;
+  }
 });
 $('#btn-cdocs-back').addEventListener('click', () => {
   $('#contragent-docs').hidden = true;
