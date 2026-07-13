@@ -86,6 +86,8 @@
     border:1px solid var(--line);border-radius:2px;padding:1px 5px;flex:none;
   }
   .node .badge-warn{color:var(--danger);border-color:var(--danger)}
+  .node.static{cursor:default}
+  .node.static:hover{border-color:var(--line);background:var(--panel)}
   .empty{color:var(--ink-3);font-size:14px;padding:8px 2px}
 
   /* --- форма --- */
@@ -224,7 +226,6 @@
 <header>
   <div class="shell">
     <h1>ML Docs</h1>
-    <span class="sub" id="hdr-sub">Медиа Лэнд</span>
   </div>
 </header>
 
@@ -674,8 +675,11 @@ async function searchContragents() {
   data.contragents.forEach(c => {
     const tagsSet = c.country && c.type && c.contract_family;
     const tagsLabel = tagsSet ? `${c.country}/${c.type}/${c.contract_family}` : 'теги не проставлены';
+    // Просмотр без действия: страница "База контрагентов" — только
+    // справочная, генерация документов доступна лишь через выпадающий
+    // список на вкладке "Поиск" (см. searchLanding/openContragentDocs).
     grid.append(el('div', { class: 'node-row' },
-      el('button', { class: 'node tpl', type: 'button', onclick: () => openContragentDocs(c) },
+      el('div', { class: 'node tpl static' },
         el('span', { class: 'icon' }, '◆'),
         el('span', {},
           el('span', { class: 'nm', style: 'display:block' }, c.title),
