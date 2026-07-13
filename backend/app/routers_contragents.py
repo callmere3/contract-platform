@@ -483,6 +483,7 @@ def get_contragent(contragent_id: uuid.UUID, db: Session = Depends(get_session))
 @contragents_router.patch("/{contragent_id}")
 def update_contragent(
     contragent_id: uuid.UUID,
+    title: str | None = Form(None),
     name: str | None = Form(None),
     country: str | None = Form(None),
     contragent_type: str | None = Form(None),
@@ -494,11 +495,22 @@ def update_contragent(
     db: Session = Depends(get_session),
 ) -> dict:
     """
-    Правит существующую карточку контрагента. title здесь НЕ редактируется
-    — по брейншторму его меняет вручную только владелец сервиса, напрямую
-    в БД (см. докстринг Contragent.title в models.py).
+    Правит существующую карточку контрагента.
 
-    Семантика полей — та же, что и в PATCH /templates/{id}:
+    title теперь МОЖНО редактировать (пересмотрено): изначально title
+    исключался из правки по брейншторму (менялся только напрямую в БД).
+    Причина пересмотра — реальный кейс: один и тот же человек может иметь
+    ДВА отдельных контрагента в базе — один с contract_family=АВАНС,
+    другой с РОЯЛТИ (два разных контракта, две карточки). При создании оба
+    получают ОДИНАКОВЫЙ title (формула title не зависит от contract_family,
+    только от name+type), это ожидаемо и не блокируется (нет unique-
+    constraint на title, см. models.py) — но их нужно разделить после
+    создания вручную, например "Иванов И. И. (СГ, аванс)" и
+    "Иванов И. И. (СГ, роялти)", иначе не различить в поиске/списках.
+    title не может быть пустой строкой — это NOT NULL в БД, попытка
+    очистить возвращает 400, а не тихо ломает запись.
+
+    Семантика остальных полей — та же, что и в PATCH /templates/{id}:
       - параметр не передан в форме -> не трогаем, значение остаётся как было
       - передана пустая строка -> поле очищается (None)
       - передано непустое значение -> валидируется/парсится и сохраняется
@@ -513,11 +525,17 @@ def update_contragent(
     (через запятую), как и при импорте, а не дополняет его.
 
     Пока доступно только через Swagger — в интерфейсе кнопки правки
-    карточки контрагента ещё нет.
+    карточки контрагента ещё нет (осознанное решение, см. контекст проекта).
     """
     contragent = db.get(Contragent, contragent_id)
     if contragent is None:
         raise HTTPException(status_code=404, detail="Контрагент не найден")
+
+    if title is not None:
+        stripped_title = title.strip()
+        if not stripped_title:
+            raise HTTPException(status_code=400, detail="title не может быть пустым")
+        contragent.title = stripped_title
 
     if name is not None:
         contragent.name = name.strip() or None

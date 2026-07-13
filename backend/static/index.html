@@ -757,7 +757,7 @@ async function checkContragentDuplicates() {
     const exactMatch = expectedTitle && data.contragents.some(c => c.title === expectedTitle);
     if (exactMatch) {
       box.style.color = 'var(--danger)';
-      box.textContent = `Контрагент с таким названием уже есть: «${expectedTitle}». Проверьте, не дубль ли это.`;
+      box.textContent = `Контрагент с таким названием уже есть: «${expectedTitle}». Если это тот же человек с другим типом договора — можно создать, потом вручную поправить title в Swagger (PATCH /contragents/{id}), чтобы различать. Если это опечатка/дубль — лучше открыть существующего.`;
     } else if (data.contragents.length) {
       box.style.color = '';
       box.textContent = `Похожие уже есть: ${data.contragents.map(c => c.title).join(', ')}`;
