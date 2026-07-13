@@ -715,25 +715,56 @@ function openContragentModal() {
   $('#new-c-royalty').value = '70';
   $('#new-c-nicknames').value = '';
   $('#new-c-duplicates').textContent = '';
+  $('#new-c-duplicates').style.color = '';
   $('#contragent-backdrop').hidden = false;
 }
 function closeContragentModal() {
   $('#contragent-backdrop').hidden = true;
 }
 
+// Зеркало build_contragent_title() из app/context_builder.py — тот же
+// алгоритм, чтобы предупреждение о дубле сверялось с РЕАЛЬНЫМ title,
+// который вычислит бэкенд при сохранении, а не с сырым введённым именем
+// (сырое имя "Иванов Иван Иванович" и итоговый title "Иванов И. И. (СГ)" —
+// разные строки, ILIKE по имени дубль по факту не находил).
+function computeTitlePreview(name, contragentType) {
+  if (!name || !contragentType) return '';
+  if (contragentType === 'ООО') return `${name} (${contragentType})`;
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return '';
+  const surname = parts[0];
+  const initials = parts.slice(1).map(p => p[0].toUpperCase() + '.').join(' ');
+  const label = initials ? `${surname} ${initials}` : surname;
+  return `${label} (${contragentType})`;
+}
+
 // Мягкая проверка дублей на лету (см. брейншторм) — не блокирует
-// создание, только предупреждает, если находятся похожие title/nickname.
+// создание, только предупреждает. Точное совпадение будущего title —
+// явное предупреждение (скорее всего дубль); частичное совпадение по
+// имени/псевдониму — мягкая подсказка "похожие есть", как и раньше.
 async function checkContragentDuplicates() {
   const name = $('#new-c-name').value.trim();
+  const contragentType = $('#new-c-contragent-type').value;
   const box = $('#new-c-duplicates');
-  if (!name) { box.textContent = ''; return; }
+  if (!name) { box.textContent = ''; box.style.color = ''; return; }
+
+  const expectedTitle = computeTitlePreview(name, contragentType);
   try {
-    const r = await fetch(`${API}/contragents?q=${encodeURIComponent(name)}`);
+    const r = await fetch(`${API}/contragents?q=${encodeURIComponent(expectedTitle || name)}`);
     if (!r.ok) throw new Error();
     const data = await r.json();
-    box.textContent = data.contragents.length
-      ? `Похожие уже есть: ${data.contragents.map(c => c.title).join(', ')}`
-      : '';
+
+    const exactMatch = expectedTitle && data.contragents.some(c => c.title === expectedTitle);
+    if (exactMatch) {
+      box.style.color = 'var(--danger)';
+      box.textContent = `Контрагент с таким названием уже есть: «${expectedTitle}». Проверьте, не дубль ли это.`;
+    } else if (data.contragents.length) {
+      box.style.color = '';
+      box.textContent = `Похожие уже есть: ${data.contragents.map(c => c.title).join(', ')}`;
+    } else {
+      box.style.color = '';
+      box.textContent = '';
+    }
   } catch { /* мягкая проверка — молча пропускаем сбой сети */ }
 }
 
@@ -1760,6 +1791,7 @@ $('#btn-new-contragent').addEventListener('click', openContragentModal);
 $('#btn-c-cancel').addEventListener('click', closeContragentModal);
 $('#btn-c-submit').addEventListener('click', submitContragent);
 $('#new-c-name').addEventListener('input', debounce(checkContragentDuplicates, 400));
+$('#new-c-contragent-type').addEventListener('change', checkContragentDuplicates);
 $('#contragent-backdrop').addEventListener('click', e => {
   if (e.target.id === 'contragent-backdrop') closeContragentModal();  // клик по фону — закрыть
 });
