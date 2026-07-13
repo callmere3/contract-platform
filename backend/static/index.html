@@ -1438,11 +1438,10 @@ function wireupPenaltyAutofill() {
 }
 
 // Показ/скрытие зависимых полей релиза.
-//   - тип релиза «Сингл» (none):
-//       * прячем «Название релиза» и «Год выпуска»
-//       * запрещаем добавлять треки (сингл — это один трек), лишние
-//         строки убираем. Исполнителей при этом может быть несколько,
-//         поэтому таблицу исполнителей НЕ ограничиваем.
+//   - тип релиза «Сингл» (none): прячем «Название релиза» и «Год выпуска».
+//     Таблицу треков НЕ ограничиваем одной строкой — раньше ограничивали
+//     (сингл = один трек), но артист может прислать сразу несколько
+//     синглов одним пакетом, это законный кейс.
 //   - чекбокс «Есть видеоклип» снят -> прячем ВЕСЬ раздел «Видеоклипы»
 //     (не только таблицу, иначе остаётся пустой fieldset с легендой).
 // Это только про форму. В шаблоне release_* под {%p if release_type
@@ -1459,7 +1458,10 @@ function wireupReleaseVisibility() {
     const isSingle = relType && relType.value === 'none';
     setHidden(document.querySelector('[data-field="release_name"]'), isSingle);
     setHidden(document.querySelector('[data-field="release_year"]'), isSingle);
-    limitTracksForSingle(isSingle);
+    // Раньше здесь была limitTracksForSingle(isSingle) — искусственно
+    // ограничивала таблицу треков одной строкой для "Сингла". Убрано:
+    // артист может прислать сразу несколько синглов одним пакетом, это
+    // законный кейс, кнопку "+ Добавить строку" ограничивать нельзя.
   };
   const syncClip = () => {
     const on = hasClip && hasClip.checked;
@@ -1483,25 +1485,7 @@ function wireupReleaseVisibility() {
   syncMarketing();
 }
 
-// Для сингла таблица треков ограничена одной строкой: прячем кнопку
-// «+ Добавить строку» и схлопываем лишние строки до первой. Для
-// альбома/ЕР — возвращаем всё как было.
-function limitTracksForSingle(isSingle) {
-  const tracksWrap = document.querySelector('[data-list="tracks"]');
-  if (!tracksWrap) return;
 
-  const addBtn = tracksWrap.querySelector('.tbl-foot .btn.small');
-  if (addBtn) addBtn.style.display = isSingle ? 'none' : '';
-
-  if (isSingle) {
-    const tbody = tracksWrap.querySelector('tbody');
-    // оставляем только первую строку
-    while (tbody.rows.length > 1) tbody.deleteRow(1);
-    renumber(tbody);
-    // после удаления лишних треков пересинхронизируем исполнителей
-    syncPerformers();
-  }
-}
 
 function renderField(f) {
   const wrap = el('div', { class: 'field', 'data-field': f.name });
@@ -1582,21 +1566,28 @@ function renderList(f) {
 // та же суть в отдельном списке "Исполнители (для сноски)", просто
 // колонка называется иначе (см. VIRTUAL_LIST_ITEMS в template_analysis.py).
 const PERFORMER_COLUMN_BY_LIST = { tracks: 'performer', performers: 'nickname' };
+// ФИО есть только в колонке списка "Исполнители (для сноски)" — вместе
+// с псевдонимом подставляем туда же и ФИО контрагента (см. addRow).
+const FIO_COLUMN_BY_LIST = { performers: 'fio' };
 
 function addRow(tbody, cols, withProfanity, listName) {
   const tr = el('tr');
   tr.append(el('td', { class: 'num' }, ''));
   const performerCol = PERFORMER_COLUMN_BY_LIST[listName];
+  const fioCol = FIO_COLUMN_BY_LIST[listName];
   cols.forEach(c => {
     // Столбец "исполнитель" (см. PERFORMER_COLUMN_BY_LIST) по умолчанию
     // берёт текущее значение поля "Псевдоним" — так каждая новая строка
     // не заполняется вручную заново для типового случая одного
-    // исполнителя. Поле всё равно остаётся обычным текстовым input —
-    // редактируется как угодно.
+    // исполнителя. ФИО (только в сноске "Исполнители") аналогично берёт
+    // ФИО открытого контрагента. Оба поля всё равно остаются обычными
+    // текстовыми input — редактируются как угодно.
     let defaultVal = '';
     if (performerCol && c.name === performerCol) {
       const nickEl = document.querySelector('[data-name="nickname"]');
       if (nickEl && nickEl.value) defaultVal = nickEl.value;
+    } else if (fioCol && c.name === fioCol && currentContragent && currentContragent.name) {
+      defaultVal = currentContragent.name;
     }
     tr.append(el('td', {}, el('input', { type: 'text', 'data-col': c.name, value: defaultVal })));
   });
@@ -1665,17 +1656,24 @@ function applyContragentPrefill(docType) {
   }
 
   // Столбец "исполнитель" в обеих таблицах (см. PERFORMER_COLUMN_BY_LIST
-  // выше) — подставляем выбранный псевдоним в уже существующие строки
+  // ниже) — подставляем выбранный псевдоним в уже существующие строки
   // (обычно там уже есть одна пустая строка по умолчанию). Строки,
   // добавленные позже кнопкой "+ Добавить строку", подхватывают то же
-  // значение сами — см. addRow(). Поле остаётся редактируемым — это
+  // значение сами — см. addRow(). Поля остаются редактируемыми — это
   // только стартовое значение, не блокировка.
   if (nicknameValue) {
     document.querySelectorAll('[data-list="tracks"] [data-col="performer"]').forEach(inp => {
       if (!inp.value) inp.value = nicknameValue;
     });
-    document.querySelectorAll('[data-list="performers"] [data-col="nickname"]').forEach(inp => {
-      if (!inp.value) inp.value = nicknameValue;
+    // В сноске "Исполнители" сразу заполняем и псевдоним, и ФИО в ОДНОЙ
+    // и той же строке — логично: раз мы уже знаем, чей это псевдоним
+    // (контрагент открыт), ФИО для той же строки тоже известно, нет
+    // смысла заставлять оператора вписывать его вручную.
+    document.querySelectorAll('[data-list="performers"] tbody tr').forEach(tr => {
+      const nickCell = tr.querySelector('[data-col="nickname"]');
+      const fioCell = tr.querySelector('[data-col="fio"]');
+      if (nickCell && !nickCell.value) nickCell.value = nicknameValue;
+      if (fioCell && !fioCell.value && currentContragent.name) fioCell.value = currentContragent.name;
     });
   }
 }
