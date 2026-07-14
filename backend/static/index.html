@@ -525,6 +525,19 @@
 </main>
 
 <script>
+const $ = s => document.querySelector(s);
+const el = (tag, attrs = {}, ...kids) => {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === 'class') n.className = v;
+    else if (k === 'html') n.innerHTML = v;
+    else if (k.startsWith('on')) n.addEventListener(k.slice(2), v);
+    else if (v !== null && v !== false) n.setAttribute(k, v);
+  }
+  kids.flat().forEach(c => n.append(c?.nodeType ? c : document.createTextNode(c)));
+  return n;
+};
+
 const API = '';            // тот же origin; при отдельном хосте — 'http://IP:8000'
 let currentTemplateId = null;
 let currentFields = [];
@@ -689,18 +702,6 @@ $('#btn-logout').addEventListener('click', logout);
 
 
 // ---------- утилиты ----------
-const $ = s => document.querySelector(s);
-const el = (tag, attrs = {}, ...kids) => {
-  const n = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (k === 'class') n.className = v;
-    else if (k === 'html') n.innerHTML = v;
-    else if (k.startsWith('on')) n.addEventListener(k.slice(2), v);
-    else if (v !== null && v !== false) n.setAttribute(k, v);
-  }
-  kids.flat().forEach(c => n.append(c?.nodeType ? c : document.createTextNode(c)));
-  return n;
-};
 function showMsg(text, kind = 'err') {
   const m = $('#msg');
   m.className = 'msg ' + kind;
