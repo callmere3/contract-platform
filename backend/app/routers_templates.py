@@ -26,14 +26,21 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
+from app.audit import log_action
+from app.auth import get_current_user, require_role
 from app.config import settings
 from app.context_builder import build_context, find_missing_variables
 from app.db import get_session
 from app.generation import fix_tables_for_pdf, render_document, scan_placeholders
-from app.models import Template, TemplateField, TemplateFolder, folder_path
+from app.models import Template, TemplateField, TemplateFolder, User, folder_path
+from app.roles import ADMIN, DIRECTOR, MANAGER
 from app.storage import delete_file, get_file, put_file
 from app.tags import CONTRAGENT_TYPES, CONTRACT_FAMILIES, COUNTRIES, normalize_optional_tag
 from app.template_analysis import analyze_template, fields_to_dict
+
+# управление структурой (папки/шаблоны) — только Admin (см. брейншторм ролей);
+# генерация документов — рабочее действие, доступно всем трём ролям
+CAN_GENERATE = (ADMIN, DIRECTOR, MANAGER)
 
 folders_router = APIRouter(prefix="/folders", tags=["folders"])
 templates_router = APIRouter(prefix="/templates", tags=["templates"])
@@ -43,7 +50,7 @@ templates_router = APIRouter(prefix="/templates", tags=["templates"])
 # ПАПКИ — навигация по дереву произвольной глубины
 # =====================================================================
 
-@folders_router.get("")
+@folders_router.get("", dependencies=[Depends(get_current_user)])
 def browse_folder(
     parent_id: uuid.UUID | None = None,
     db: Session = Depends(get_session),
@@ -95,7 +102,7 @@ def browse_folder(
     }
 
 
-@folders_router.post("")
+@folders_router.post("", dependencies=[Depends(require_role(ADMIN))])
 def create_folder(
     name: str = Form(...),
     parent_id: uuid.UUID | None = Form(None),
@@ -108,7 +115,7 @@ def create_folder(
     return {"id": str(folder.id), "name": name, "parent_id": str(parent_id) if parent_id else None}
 
 
-@folders_router.put("/{folder_id}")
+@folders_router.put("/{folder_id}", dependencies=[Depends(require_role(ADMIN))])
 def rename_folder(
     folder_id: uuid.UUID,
     name: str = Form(...),
@@ -134,7 +141,7 @@ def rename_folder(
 # ШАБЛОНЫ
 # =====================================================================
 
-@templates_router.post("")
+@templates_router.post("", dependencies=[Depends(require_role(ADMIN))])
 def upload_template(
     name: str = Form(...),
     folder_id: uuid.UUID = Form(...),
@@ -204,7 +211,7 @@ def upload_template(
     }
 
 
-@templates_router.put("/{template_id}/file")
+@templates_router.put("/{template_id}/file", dependencies=[Depends(require_role(ADMIN))])
 def replace_template_file(
     template_id: uuid.UUID,
     file: UploadFile = File(...),
@@ -258,7 +265,7 @@ def replace_template_file(
     }
 
 
-@templates_router.patch("/{template_id}")
+@templates_router.patch("/{template_id}", dependencies=[Depends(require_role(ADMIN))])
 def update_template(
     template_id: uuid.UUID,
     name: str = Form(...),
@@ -312,7 +319,7 @@ def update_template(
     }
 
 
-@templates_router.delete("/{template_id}")
+@templates_router.delete("/{template_id}", dependencies=[Depends(require_role(ADMIN))])
 def delete_template(template_id: uuid.UUID, db: Session = Depends(get_session)) -> dict:
     """
     Удаляет шаблон: файл из MinIO по storage_key + запись в БД. Связанные
@@ -336,7 +343,7 @@ def delete_template(template_id: uuid.UUID, db: Session = Depends(get_session)) 
     return {"id": str(template_id), "deleted": True}
 
 
-@templates_router.get("/{template_id}/fields")
+@templates_router.get("/{template_id}/fields", dependencies=[Depends(get_current_user)])
 def get_template_fields(template_id: uuid.UUID, db: Session = Depends(get_session)) -> dict:
     """
     Описание полей формы: тип, группа, подпись, подсказка.
@@ -376,12 +383,13 @@ def get_template_fields(template_id: uuid.UUID, db: Session = Depends(get_sessio
     }
 
 
-@templates_router.post("/{template_id}/generate")
+@templates_router.post("/{template_id}/generate", dependencies=[Depends(require_role(*CAN_GENERATE))])
 def generate_document(
     template_id: uuid.UUID,
     data: dict,
     format: str = Query("docx", pattern="^(docx|pdf)$"),
     db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ) -> StreamingResponse:
     """
     Генерирует документ по данным формы. format=docx (по умолчанию) или
@@ -433,6 +441,11 @@ def generate_document(
         )
 
     result_bytes = render_document(docx_bytes, context)
+
+    log_action(
+        db, current_user, "document.generate", entity_type="template", entity_id=template_id,
+        meta={"format": format, "template_name": template.name},
+    )
 
     if format == "docx":
         return StreamingResponse(

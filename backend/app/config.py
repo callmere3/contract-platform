@@ -14,10 +14,21 @@ class Settings(BaseSettings):
     minio_root_password: str
     minio_bucket: str = "contracts"
 
-    # "логин:пароль,логин2:пароль2" — см. app/auth.py. Пусто = авторизация
-    # выключена (сервис открыт всем, кто знает URL — используется только
-    # для локальной разработки, на сервере обязательно задать).
-    auth_users: str = ""
+    # Секрет для подписи JWT (HS256). Сгенерировать один раз командой
+    # `openssl rand -hex 32` и положить в .env — при смене все выданные
+    # токены (access и refresh) мгновенно станут недействительны, все
+    # пользователи будут разлогинены.
+    jwt_secret_key: str = "dev-insecure-secret-change-me"
+    jwt_access_ttl_minutes: int = 30
+    jwt_refresh_ttl_days: int = 14
+
+    # Первый Admin создаётся автоматически при старте, ЕСЛИ в таблице users
+    # ещё нет ни одного пользователя (см. app/auth.py: ensure_bootstrap_admin).
+    # Без этого некому было бы создать первого Admin через POST /users —
+    # этот эндпоинт сам требует роль Admin. Пусто = bootstrap выключен
+    # (например, на сервере, где пользователи уже заведены).
+    bootstrap_admin_username: str = ""
+    bootstrap_admin_password: str = ""
 
     # адрес отдельного контейнера с LibreOffice headless (см. converter/) —
     # используется только эндпоинтом генерации при ?format=pdf, не нужен

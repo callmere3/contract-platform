@@ -5,7 +5,12 @@
 Этап 2: подключены роутеры /folders (дерево папок произвольной глубины)
 и /templates (загрузка шаблонов и генерация).
 Этап 3: раздача HTML-интерфейса на корневом пути `/`.
-Basic Auth поверх всего сервиса (app/auth.py) — список пользователей в .env.
+Этап 6: авторизация — JWT с ролями (app/auth.py) вместо прежнего общего
+Basic Auth. Проверка прав теперь не общим middleware на весь сервис, а
+через Depends(require_role(...)) на каждом роуте отдельно (см. app/roles.py
+и правки в routers_contragents.py/routers_templates.py) — у разных
+эндпоинтов разные допустимые роли, общий "открыт/закрыт" такому больше
+не соответствует.
 
 Схема БД версионируется через Alembic (backend/alembic/) — на старте
 приложение больше НЕ вызывает create_all(). Раньше вызывало, и это стало
@@ -20,8 +25,9 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 
-from app.auth import BasicAuthMiddleware
-from app.db import check_db_connection
+from app.auth import ensure_bootstrap_admin
+from app.db import SessionLocal, check_db_connection
+from app.routers_auth import audit_router, auth_router, users_router
 from app.routers_contragents import contragents_router
 from app.routers_tags import tags_router
 from app.routers_templates import folders_router, templates_router
@@ -29,11 +35,9 @@ from app.storage import download_test_file, ensure_bucket_exists, upload_test_fi
 
 app = FastAPI(title="Contract Platform API")
 
-# HTTP Basic Auth поверх всего сервиса — документы содержат паспортные
-# данные и банковские реквизиты, порт не должен быть открыт без проверки.
-# Список пользователей задаётся в .env (AUTH_USERS), см. app/auth.py.
-app.add_middleware(BasicAuthMiddleware)
-
+app.include_router(auth_router)
+app.include_router(users_router)
+app.include_router(audit_router)
 app.include_router(folders_router)
 app.include_router(templates_router)
 app.include_router(contragents_router)
@@ -52,6 +56,15 @@ def index() -> FileResponse:
 @app.on_event("startup")
 def on_startup() -> None:
     ensure_bucket_exists()
+
+    # Создаёт первого Admin из .env, если в users ещё вообще никого нет
+    # (см. app/auth.py: ensure_bootstrap_admin) — иначе некому было бы
+    # создать первого Admin через POST /users, который сам требует роль Admin.
+    session = SessionLocal()
+    try:
+        ensure_bootstrap_admin(session)
+    finally:
+        session.close()
 
 
 @app.get("/health")

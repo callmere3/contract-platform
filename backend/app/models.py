@@ -8,8 +8,11 @@
   contragents             — контрагенты (этап 4, брейншторм "база контрагентов")
   contragent_nicknames    — псевдонимы контрагента (много на одного контрагента)
 
-Остальные таблицы (generated_documents — сознательно не делаем, см. брейншторм;
-users, audit_log — этап 7) добавятся позже.
+  users                   — пользователи и роли (этап 6, брейншторм ролей)
+  refresh_tokens          — выданные refresh-токены (для logout/отзыва сессии)
+  audit_log               — журнал действий (кто/что/когда), этап 6
+
+Таблицы generated_documents сознательно НЕТ — см. брейншторм.
 
 ВАЖНО про doc_type: это НЕ то же самое, что папка. Папки — организация
 для человека (как удобно ориентироваться в каталоге, глубина любая).
@@ -28,9 +31,11 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Date, DateTime, ForeignKey, Numeric, String, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Numeric, String, func
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+from app.roles import ROLES
 
 
 class Base(DeclarativeBase):
@@ -189,6 +194,114 @@ class ContragentNickname(Base):
     nickname: Mapped[str] = mapped_column(String(255))
 
     contragent: Mapped["Contragent"] = relationship(back_populates="nicknames")
+
+
+class User(Base):
+    """
+    Пользователь сервиса (этап 6). Заводится ТОЛЬКО вручную другим Admin'ом
+    через POST /users — формы саморегистрации сознательно нет (см. брейншторм):
+    в компании ограниченный список сотрудников, и заводить аккаунт должен
+    тот, кто отвечает за доступ, а не любой желающий по ссылке.
+
+    username — обычный логин (не email, см. брейншторм), уникальный,
+    без валидации формата "похоже на email" — просто непустая строка.
+
+    role — одна из ROLES (app/roles.py), проверяется на уровне приложения
+    (как и country/type у Contragent — не нативный Postgres ENUM, чтобы
+    добавление новой роли было ALTER не типа, а просто данных).
+
+    is_active — деактивация вместо удаления: у audit_log есть FK на
+    user_id, и удаление пользователя оборвало бы историю его действий.
+    Уволенному/отстранённому сотруднику выключают is_active, аккаунт и
+    вся история за ним остаются в базе.
+    """
+    __tablename__ = "users"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    username: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(255))
+    full_name: Mapped[str | None] = mapped_column(String(255))
+    role: Mapped[str] = mapped_column(String(16))  # см. app/roles.py: ROLES
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    refresh_tokens: Mapped[list["RefreshToken"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+
+
+class RefreshToken(Base):
+    """
+    Выданные refresh-токены — отдельной таблицей, а не просто "верим
+    любому JWT с правильной подписью до истечения срока", чтобы logout
+    и отзыв доступа (при деактивации пользователя) работали реально, а
+    не только "перестать присылать новый access-токен через 30 минут".
+
+    token_hash — хранится хэш (sha256), не сам токен: таблица утекла —
+    токены всё равно бесполезны без исходного значения, как и с паролями.
+    revoked_at — не удаляем строку при logout/rotate, а помечаем: полезно
+    при разборе инцидентов ("кто и когда вышел / токен был отозван").
+    """
+    __tablename__ = "refresh_tokens"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE")
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    user: Mapped["User"] = relationship(back_populates="refresh_tokens")
+
+
+class AuditLog(Base):
+    """
+    Журнал действий — кто/что/когда (этап 6, доступен Admin и Director).
+
+    user_id nullable + ondelete="SET NULL": пользователя можно деактивировать
+    (is_active=False), но если когда-нибудь понадобится всё же физически
+    удалить аккаунт — история действий не должна обрываться каскадно вместе
+    с ним, только потерять привязку к конкретному user_id.
+
+    meta — jsonb, а не отдельные колонки под каждый action: у разных действий
+    разный набор деталей (для generate_document — template_id и format, для
+    contragent.update — какие поля изменились), и добавление нового вида
+    события не должно требовать ALTER TABLE.
+    """
+    __tablename__ = "audit_log"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    user_username: Mapped[str | None] = mapped_column(String(255))
+    # копия логина на момент действия — переживает деактивацию/переименование
+    # пользователя, не нужно джойнить users, чтобы прочитать лог осмысленно
+
+    action: Mapped[str] = mapped_column(String(64))
+    # напр. 'contragent.create', 'contragent.delete', 'document.generate'
+
+    entity_type: Mapped[str | None] = mapped_column(String(32))  # 'contragent' | 'template' | 'user'
+    entity_id: Mapped[str | None] = mapped_column(String(64))
+
+    meta: Mapped[dict | None] = mapped_column(JSONB)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 def folder_path(folder: TemplateFolder) -> list[str]:

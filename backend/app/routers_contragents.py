@@ -38,9 +38,12 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from app.audit import log_action
+from app.auth import get_current_user, require_role
 from app.context_builder import build_contract_number, build_contragent_title, parse_date
 from app.db import get_session
-from app.models import Contragent, ContragentNickname, Template
+from app.models import Contragent, ContragentNickname, Template, User
+from app.roles import ADMIN, CAN_EXPORT, DIRECTOR, MANAGER
 from app.tags import (
     COUNTRIES,
     CONTRACT_FAMILIES,
@@ -48,6 +51,11 @@ from app.tags import (
     normalize_optional_tag,
     normalize_tag,
 )
+
+# создание/редактирование контрагента и генерация — рабочие действия,
+# доступны всем трём ролям (см. брейншторм ролей); удаление и импорт —
+# только Admin, экспорт — Admin+Director (см. CAN_EXPORT в app/roles.py)
+CAN_EDIT_CONTRAGENTS = (ADMIN, DIRECTOR, MANAGER)
 
 contragents_router = APIRouter(prefix="/contragents", tags=["contragents"])
 
@@ -135,7 +143,7 @@ def _try_normalize_optional(value, allowed: list[str], field_name: str) -> tuple
         return None, str(exc.detail)
 
 
-@contragents_router.get("")
+@contragents_router.get("", dependencies=[Depends(get_current_user)])
 def search_contragents(
     q: str | None = None,
     country: str | None = None,
@@ -186,7 +194,7 @@ def search_contragents(
     return {"contragents": [_contragent_summary(c) for c in contragents]}
 
 
-@contragents_router.post("")
+@contragents_router.post("", dependencies=[Depends(require_role(*CAN_EDIT_CONTRAGENTS))])
 def create_contragent(
     name: str = Form(...),
     country: str = Form(...),           # 'РУ' | 'КЗ'
@@ -196,6 +204,7 @@ def create_contragent(
     royalty_percent: float = Form(...),
     nicknames: str | None = Form(None), # через запятую, тот же формат, что и в импорте
     db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     """
     Создаёт карточку контрагента. title и contract_number вычисляются
@@ -273,6 +282,11 @@ def create_contragent(
 
     db.commit()
 
+    log_action(
+        db, current_user, "contragent.create", entity_type="contragent", entity_id=contragent.id,
+        meta={"title": contragent.title},
+    )
+
     return {
         "id": str(contragent.id),
         "title": contragent.title,
@@ -282,10 +296,11 @@ def create_contragent(
     }
 
 
-@contragents_router.post("/import")
+@contragents_router.post("/import", dependencies=[Depends(require_role(ADMIN))])
 def import_contragents(
     file: UploadFile = File(...),
     db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     """
     Массовый импорт контрагентов из .xlsx — одна строка на контрагента
@@ -433,16 +448,28 @@ def import_contragents(
 
     db.commit()
 
+    log_action(
+        db, current_user, "contragent.import", entity_type="contragent",
+        meta={"created": created, "updated": updated, "skipped": skipped},
+    )
+
     return {"created": created, "updated": updated, "skipped": skipped, "details": details}
 
 
-@contragents_router.get("/export")
-def export_contragents(db: Session = Depends(get_session)) -> StreamingResponse:
+@contragents_router.get("/export", dependencies=[Depends(require_role(*CAN_EXPORT))])
+def export_contragents(
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> StreamingResponse:
     """
     Выгружает всех контрагентов в .xlsx — те же колонки и тот же порядок,
     что ожидает import_contragents(), файл можно поправить руками и залить
     обратно тем же импортом (см. брейншторм — "Экспорт... симметрично
     формату импорта").
+
+    Доступно Admin и Director (см. брейншторм ролей) — выгрузка полной
+    базы контрагентов наружу считается более "чувствительным" действием,
+    чем обычное создание/редактирование карточки, поэтому не дана Manager.
     """
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -467,6 +494,11 @@ def export_contragents(db: Session = Depends(get_session)) -> StreamingResponse:
     wb.save(buffer)
     buffer.seek(0)
 
+    log_action(
+        db, current_user, "contragent.export", entity_type="contragent",
+        meta={"rows": len(contragents)},
+    )
+
     return StreamingResponse(
         buffer,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -474,7 +506,7 @@ def export_contragents(db: Session = Depends(get_session)) -> StreamingResponse:
     )
 
 
-@contragents_router.get("/{contragent_id}")
+@contragents_router.get("/{contragent_id}", dependencies=[Depends(get_current_user)])
 def get_contragent(contragent_id: uuid.UUID, db: Session = Depends(get_session)) -> dict:
     """Полная карточка контрагента — для экрана "после выбора контрагента" (см. брейншторм)."""
     contragent = db.get(Contragent, contragent_id)
@@ -499,7 +531,7 @@ def get_contragent(contragent_id: uuid.UUID, db: Session = Depends(get_session))
     }
 
 
-@contragents_router.patch("/{contragent_id}")
+@contragents_router.patch("/{contragent_id}", dependencies=[Depends(require_role(*CAN_EDIT_CONTRAGENTS))])
 def update_contragent(
     contragent_id: uuid.UUID,
     title: str | None = Form(None),
@@ -512,6 +544,7 @@ def update_contragent(
     royalty_percent: str | None = Form(None),
     nicknames: str | None = Form(None),
     db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     """
     Правит существующую карточку контрагента.
@@ -611,6 +644,11 @@ def update_contragent(
 
     db.commit()
 
+    log_action(
+        db, current_user, "contragent.update", entity_type="contragent", entity_id=contragent.id,
+        meta={"title": contragent.title},
+    )
+
     return {
         "id": str(contragent.id),
         "title": contragent.title,
@@ -629,8 +667,12 @@ def update_contragent(
     }
 
 
-@contragents_router.delete("/{contragent_id}")
-def delete_contragent(contragent_id: uuid.UUID, db: Session = Depends(get_session)) -> dict:
+@contragents_router.delete("/{contragent_id}", dependencies=[Depends(require_role(ADMIN))])
+def delete_contragent(
+    contragent_id: uuid.UUID,
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> dict:
     """
     Удаляет контрагента. Никнеймы удаляются каскадно (cascade="all,
     delete-orphan" в models.py + ondelete="CASCADE" на FK в БД).
@@ -648,13 +690,19 @@ def delete_contragent(contragent_id: uuid.UUID, db: Session = Depends(get_sessio
     if contragent is None:
         raise HTTPException(status_code=404, detail="Контрагент не найден")
 
+    deleted_title = contragent.title  # запомнить до удаления — после db.delete() поле недоступно
     db.delete(contragent)
     db.commit()
+
+    log_action(
+        db, current_user, "contragent.delete", entity_type="contragent", entity_id=contragent_id,
+        meta={"title": deleted_title},
+    )
 
     return {"id": str(contragent_id), "deleted": True}
 
 
-@contragents_router.get("/{contragent_id}/templates")
+@contragents_router.get("/{contragent_id}/templates", dependencies=[Depends(get_current_user)])
 def list_contragent_templates(
     contragent_id: uuid.UUID,
     db: Session = Depends(get_session),
@@ -701,7 +749,9 @@ def list_contragent_templates(
     }
 
 
-@contragents_router.post("/{contragent_id}/nicknames")
+@contragents_router.post(
+    "/{contragent_id}/nicknames", dependencies=[Depends(require_role(*CAN_EDIT_CONTRAGENTS))]
+)
 def add_nickname(
     contragent_id: uuid.UUID,
     nickname: str = Form(...),

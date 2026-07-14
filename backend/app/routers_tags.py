@@ -6,14 +6,15 @@ contract_family) из единственного источника правды
 не хранил список значений отдельной копией и не расходился с тем, что
 реально валидирует бэкенд при сохранении.
 """
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from app.auth import get_current_user
 from app.tags import CONTRAGENT_TYPES, CONTRACT_FAMILIES, COUNTRIES
 
 tags_router = APIRouter(prefix="/tags", tags=["tags"])
 
 
-@tags_router.get("")
+@tags_router.get("", dependencies=[Depends(get_current_user)])
 def get_tags() -> dict:
     return {
         "countries": COUNTRIES,
