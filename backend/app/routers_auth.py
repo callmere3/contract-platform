@@ -23,7 +23,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -41,6 +41,7 @@ from app.auth import (
 )
 from app.db import get_session
 from app.models import AuditLog, RefreshToken, User
+from app.rate_limit import check_login_rate_limit, record_failed_login, record_successful_login
 from app.roles import ADMIN, CAN_EXPORT, ROLES
 
 auth_router = APIRouter(prefix="/auth", tags=["auth"])
@@ -68,15 +69,27 @@ class RefreshRequest(BaseModel):
 
 
 @auth_router.post("/login", response_model=TokenPair)
-def login(body: LoginRequest, db: Session = Depends(get_session)) -> TokenPair:
+def login(body: LoginRequest, request: Request, db: Session = Depends(get_session)) -> TokenPair:
+    ip = request.client.host if request.client else "unknown"
+
+    retry_after = check_login_rate_limit(ip, body.username)
+    if retry_after:
+        raise HTTPException(
+            status_code=429,
+            detail="Слишком много неудачных попыток входа. Попробуйте позже.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
     user = db.query(User).filter(User.username == body.username).first()
 
     # Намеренно один и тот же текст ошибки и для "нет такого логина", и для
     # "пароль неверный" — чтобы перебором нельзя было выяснить, какие логины
     # вообще зарегистрированы в системе.
     if user is None or not user.is_active or not verify_password(body.password, user.password_hash):
+        record_failed_login(ip, body.username)
         raise HTTPException(status_code=401, detail="Неверный логин или пароль")
 
+    record_successful_login(ip, body.username)
     access = create_access_token(user)
     refresh = issue_refresh_token(db, user)
     return TokenPair(access_token=access, refresh_token=refresh)
