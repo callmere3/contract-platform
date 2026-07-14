@@ -219,13 +219,59 @@
   .loading{color:var(--ink-3);font-size:14px}
 
   @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+
+  /* --- экран входа (этап 6, JWT-авторизация) --- */
+  #login-screen{
+    position:fixed;inset:0;background:var(--bg);z-index:100;
+    display:flex;align-items:center;justify-content:center;
+  }
+  #login-screen .box{
+    width:320px;background:var(--panel);border:1px solid var(--line);
+    border-radius:var(--radius);padding:28px 24px;
+  }
+  #login-screen h1{font-size:16px;margin-bottom:18px;text-align:center}
+  #login-screen .field{margin-bottom:12px}
+  #login-screen label{display:block;font-size:12px;color:var(--ink-2);margin-bottom:4px}
+  #login-screen input{width:100%;height:38px;font-size:14px}
+  #login-screen .btn{width:100%;margin-top:6px}
+  #login-error{color:var(--danger);font-size:13px;margin-top:10px;min-height:1em}
+
+  /* --- пользователь в шапке --- */
+  .user-badge{margin-left:auto;display:flex;align-items:center;gap:10px;font-size:13px;color:var(--ink-2)}
+  .user-badge .role{
+    font-size:11px;text-transform:uppercase;letter-spacing:.04em;
+    border:1px solid var(--line);border-radius:2px;padding:1px 6px;color:var(--ink-3);
+  }
+  .user-badge button{background:none;border:none;color:var(--accent);cursor:pointer;font:inherit;padding:0}
 </style>
 </head>
 <body>
 
+<!-- Экран входа (этап 6) — перекрывает всё остальное, пока нет валидной сессии -->
+<div id="login-screen">
+  <div class="box">
+    <h1>ML Docs — вход</h1>
+    <div class="field">
+      <label for="login-username">Логин</label>
+      <input type="text" id="login-username" autocomplete="username">
+    </div>
+    <div class="field">
+      <label for="login-password">Пароль</label>
+      <input type="password" id="login-password" autocomplete="current-password">
+    </div>
+    <button class="btn primary" type="button" id="btn-login-submit">Войти</button>
+    <div id="login-error"></div>
+  </div>
+</div>
+
 <header>
   <div class="shell">
     <h1>ML Docs</h1>
+    <div class="user-badge" id="user-badge" hidden>
+      <span id="user-badge-username"></span>
+      <span class="role" id="user-badge-role"></span>
+      <button type="button" id="btn-logout">Выйти</button>
+    </div>
   </div>
 </header>
 
@@ -297,7 +343,7 @@
       </div>
       <div class="panel-body">
         <div class="field">
-          <a class="btn" id="btn-export-contragents" href="#" download>Скачать экспорт (.xlsx)</a>
+          <button class="btn" type="button" id="btn-export-contragents">Скачать экспорт (.xlsx)</button>
         </div>
         <div class="field">
           <label for="import-file">Загрузить .xlsx</label>
@@ -487,6 +533,161 @@ let currentContragent = null;
 let currentContragentTemplates = [];   // документы текущего контрагента (см. openContragentDocs) — нужны, чтобы найти парный Акт для Приложения
 let currentPairedAct = null;           // {id, name} найденного Акта той же связки, или null
 
+// ---------- авторизация (этап 6: JWT + роли) ----------
+// access/refresh хранятся в localStorage — переживают перезагрузку страницы,
+// не только вкладку (в отличие от sessionStorage). access живёт всего 30 минут
+// (см. backend/app/config.py: jwt_access_ttl_minutes), поэтому даже утечка из
+// localStorage (например, через XSS в самом приложении) даёт короткое окно;
+// refresh (14 дней) ротируется на каждое обновление (см. app/auth.py) — если
+// им воспользуются дважды, это будет видно как попытка применить уже
+// отозванный токен.
+let accessToken = localStorage.getItem('ml_access_token') || null;
+let refreshToken = localStorage.getItem('ml_refresh_token') || null;
+let currentUser = null;   // {id, username, full_name, role} — заполняется после логина/refresh
+
+function setTokens(access, refresh) {
+  accessToken = access;
+  refreshToken = refresh;
+  if (access) localStorage.setItem('ml_access_token', access); else localStorage.removeItem('ml_access_token');
+  if (refresh) localStorage.setItem('ml_refresh_token', refresh); else localStorage.removeItem('ml_refresh_token');
+}
+
+function showLoginScreen(message) {
+  currentUser = null;
+  document.querySelector('main').hidden = true;
+  $('#user-badge').hidden = true;
+  $('#login-screen').style.display = 'flex';
+  $('#login-error').textContent = message || '';
+  $('#login-password').value = '';
+}
+
+function showApp() {
+  $('#login-screen').style.display = 'none';
+  document.querySelector('main').hidden = false;
+  $('#user-badge').hidden = false;
+  $('#user-badge-username').textContent = currentUser.username;
+  $('#user-badge-role').textContent = currentUser.role;
+  applyRolePermissions();
+}
+
+// Единая точка входа для ЛЮБОГО запроса к нашему API — добавляет заголовок
+// Authorization и один раз молча пытается обновить access-токен по 401,
+// прежде чем сдаться и вернуть пользователя на экран входа. Все места в
+// коде ниже, где раньше был голый fetch(...) к ${API}/..., теперь зовут
+// apiFetch(...) с той же сигнатурой — сам вызов переписывать не нужно.
+async function apiFetch(url, options = {}) {
+  const withAuth = (opts) => ({
+    ...opts,
+    headers: { ...(opts.headers || {}), ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}) },
+  });
+
+  let r = await fetch(url, withAuth(options));
+  if (r.status === 401 && refreshToken) {
+    const refreshed = await tryRefresh();
+    if (refreshed) {
+      r = await fetch(url, withAuth(options));
+    } else {
+      showLoginScreen('Сессия истекла, войдите снова.');
+    }
+  }
+  return r;
+}
+
+async function tryRefresh() {
+  try {
+    const r = await fetch(`${API}/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+    if (!r.ok) { setTokens(null, null); return false; }
+    const data = await r.json();
+    setTokens(data.access_token, data.refresh_token);
+    return true;
+  } catch {
+    setTokens(null, null);
+    return false;
+  }
+}
+
+async function fetchCurrentUser() {
+  const r = await apiFetch(`${API}/auth/me`);
+  if (!r.ok) throw new Error('unauthorized');
+  currentUser = await r.json();
+}
+
+async function login() {
+  const username = $('#login-username').value.trim();
+  const password = $('#login-password').value;
+  $('#login-error').textContent = '';
+  if (!username || !password) {
+    $('#login-error').textContent = 'Заполните логин и пароль.';
+    return;
+  }
+  const btn = $('#btn-login-submit');
+  btn.disabled = true;
+  try {
+    const r = await fetch(`${API}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      throw new Error(err.detail || 'Неверный логин или пароль');
+    }
+    const data = await r.json();
+    setTokens(data.access_token, data.refresh_token);
+    await fetchCurrentUser();
+    showApp();
+    bootApp();
+  } catch (e) {
+    $('#login-error').textContent = e.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function logout() {
+  // best-effort: даже если запрос на отзыв не дойдёт (сервер недоступен),
+  // токены всё равно стираются локально — пользователь выходит в любом случае
+  try {
+    await fetch(`${API}/auth/logout`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+  } catch {}
+  setTokens(null, null);
+  showLoginScreen();
+}
+
+// Показывает/прячет элементы, доступные только определённым ролям (см.
+// backend/app/roles.py — это чисто UX-слой: реальная защита всё равно на
+// сервере через Depends(require_role(...)), здесь только не даём в UI
+// кнопку, нажатие на которую гарантированно вернёт 403).
+function applyRolePermissions() {
+  const role = currentUser.role;
+  const isAdmin = role === 'admin';
+  const canExport = role === 'admin' || role === 'director';   // см. CAN_EXPORT в app/roles.py
+
+  // управление структурой (папки/шаблоны) — только Admin
+  document.querySelectorAll('#btn-new-folder, #btn-new-template').forEach(b => b.hidden = !isAdmin);
+
+  // импорт/экспорт контрагентов — кнопка целиком скрыта у Manager (нет
+  // доступа ни к чему внутри), у Director видна, но без импорта (Admin-only)
+  $('#btn-open-import-export').hidden = !canExport;
+  $('#import-file').closest('.field').hidden = !isAdmin;
+  $('#btn-import-submit').hidden = !isAdmin;
+}
+
+function isAdminUser() { return currentUser && currentUser.role === 'admin'; }
+
+$('#btn-login-submit').addEventListener('click', login);
+$('#login-password').addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
+$('#btn-logout').addEventListener('click', logout);
+
+
 // ---------- утилиты ----------
 const $ = s => document.querySelector(s);
 const el = (tag, attrs = {}, ...kids) => {
@@ -526,7 +727,7 @@ function fillRequiredSelect(select, values) {
 
 async function loadTagOptions() {
   try {
-    const r = await fetch(`${API}/tags`);
+    const r = await apiFetch(`${API}/tags`);
     if (!r.ok) throw new Error(`${r.status}`);
     tagOptions = await r.json();
   } catch (e) {
@@ -588,7 +789,7 @@ async function browse(folderId = null) {
   const url = folderId ? `${API}/folders?parent_id=${folderId}` : `${API}/folders`;
   let data;
   try {
-    const r = await fetch(url);
+    const r = await apiFetch(url);
     if (!r.ok) throw new Error(`${r.status}`);
     data = await r.json();
   } catch (e) {
@@ -611,16 +812,19 @@ async function browse(folderId = null) {
 
   const grid = el('div', { class: 'browse' });
 
-  data.folders.forEach(f => grid.append(
-    el('div', { class: 'node-row' },
+  data.folders.forEach(f => {
+    const row = el('div', { class: 'node-row' },
       el('button', { class: 'node', type: 'button', onclick: () => open(f) },
         el('span', { class: 'icon' }, '📁'),
-        el('span', { class: 'nm' }, f.name)),
-      el('button', {
+        el('span', { class: 'nm' }, f.name)));
+    if (isAdminUser()) {
+      row.append(el('button', {
         class: 'rename-btn', type: 'button', title: 'Переименовать папку',
         onclick: e => { e.stopPropagation(); renameFolder(f, folderId); }
-      }, '✎'))
-  ));
+      }, '✎'));
+    }
+    grid.append(row);
+  });
 
   data.templates.forEach(t => {
     const badge = { contract: 'договор', appendix: 'приложение', act: 'акт' }[t.doc_type];
@@ -628,21 +832,24 @@ async function browse(folderId = null) {
     const tagsLabel = tagsSet
       ? `${t.country}/${t.contragent_type}/${t.contract_family}`
       : 'теги не проставлены';
-    grid.append(el('div', { class: 'node-row' },
+    const row = el('div', { class: 'node-row' },
       el('button', { class: 'node tpl', type: 'button', onclick: () => loadForm(t) },
         el('span', { class: 'icon' }, '📄'),
         el('span', { class: 'nm' }, t.name),
         badge ? el('span', { class: 'badge' }, badge) : '',
-        el('span', { class: 'badge' + (tagsSet ? '' : ' badge-warn') }, tagsLabel)),
-      el('button', {
-        class: 'rename-btn', type: 'button', title: 'Редактировать название и теги',
-        onclick: e => { e.stopPropagation(); openEditModal(t, folderId); }
-      }, '✎'),
-      el('button', {
-        class: 'rename-btn danger', type: 'button', title: 'Удалить шаблон',
-        onclick: e => { e.stopPropagation(); deleteTemplate(t, folderId); }
-      }, '✕'))
-    );
+        el('span', { class: 'badge' + (tagsSet ? '' : ' badge-warn') }, tagsLabel)));
+    if (isAdminUser()) {
+      row.append(
+        el('button', {
+          class: 'rename-btn', type: 'button', title: 'Редактировать название и теги',
+          onclick: e => { e.stopPropagation(); openEditModal(t, folderId); }
+        }, '✎'),
+        el('button', {
+          class: 'rename-btn danger', type: 'button', title: 'Удалить шаблон',
+          onclick: e => { e.stopPropagation(); deleteTemplate(t, folderId); }
+        }, '✕'));
+    }
+    grid.append(row);
   });
 
   box.append(grid);
@@ -692,7 +899,7 @@ async function searchContragents() {
     if (contragentType) params.set('contragent_type', contragentType);
     const qs = params.toString();
     const url = qs ? `${API}/contragents?${qs}` : `${API}/contragents`;
-    const r = await fetch(url);
+    const r = await apiFetch(url);
     if (!r.ok) throw new Error(`${r.status}`);
     data = await r.json();
   } catch (e) {
@@ -759,7 +966,7 @@ async function checkContragentDuplicates() {
 
   const normalized = name.toLowerCase();
   try {
-    const r = await fetch(`${API}/contragents?q=${encodeURIComponent(name)}`);
+    const r = await apiFetch(`${API}/contragents?q=${encodeURIComponent(name)}`);
     if (!r.ok) throw new Error();
     const data = await r.json();
 
@@ -790,7 +997,7 @@ async function findExistingByName(name) {
   const normalized = name.trim().toLowerCase();
   if (!normalized) return null;
   try {
-    const r = await fetch(`${API}/contragents?q=${encodeURIComponent(name)}`);
+    const r = await apiFetch(`${API}/contragents?q=${encodeURIComponent(name)}`);
     if (!r.ok) return null;
     const data = await r.json();
     return data.contragents.find(c => (c.name || '').trim().toLowerCase() === normalized) || null;
@@ -839,7 +1046,7 @@ async function submitContragent() {
       contract_date: date, royalty_percent: String(royaltyNum),
     });
     if (nicknames) body.append('nicknames', nicknames);
-    const r = await fetch(`${API}/contragents`, { method: 'POST', body });
+    const r = await apiFetch(`${API}/contragents`, { method: 'POST', body });
     if (!r.ok) {
       const detail = await r.json().catch(() => null);
       throw new Error(detail?.detail || `${r.status}`);
@@ -880,7 +1087,7 @@ async function openContragentCard(c) {
 
   let detail;
   try {
-    const r = await fetch(`${API}/contragents/${c.id}`);
+    const r = await apiFetch(`${API}/contragents/${c.id}`);
     if (!r.ok) throw new Error();
     detail = await r.json();
   } catch {
@@ -927,8 +1134,8 @@ async function openContragentDocs(c) {
   let detail, docsData;
   try {
     const [rDetail, rDocs] = await Promise.all([
-      fetch(`${API}/contragents/${c.id}`),
-      fetch(`${API}/contragents/${c.id}/templates`),
+      apiFetch(`${API}/contragents/${c.id}`),
+      apiFetch(`${API}/contragents/${c.id}/templates`),
     ]);
     if (!rDetail.ok || !rDocs.ok) throw new Error();
     detail = await rDetail.json();
@@ -983,13 +1190,37 @@ function closeContragentDocsModal() {
 function openImportExport() {
   $('#contragent-search').hidden = true;
   $('#contragent-import-export').hidden = false;
-  $('#btn-export-contragents').href = `${API}/contragents/export`;
   $('#import-report').textContent = '';
   $('#import-file').value = '';
 }
 function closeImportExport() {
   $('#contragent-import-export').hidden = true;
   $('#contragent-search').hidden = false;
+}
+
+// <a href download> не может нести заголовок Authorization — экспорт
+// защищён ролью (Admin/Director, см. app/roles.py: CAN_EXPORT), поэтому
+// скачивание идёт через apiFetch (с токеном) + blob, как и генерация
+// документов (см. generateAndDownload).
+async function exportContragents() {
+  const btn = $('#btn-export-contragents');
+  btn.disabled = true;
+  const originalText = btn.textContent;
+  btn.textContent = 'Готовим файл…';
+  try {
+    const r = await apiFetch(`${API}/contragents/export`);
+    if (!r.ok) throw new Error(`Не удалось скачать экспорт (${r.status})`);
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = el('a', { href: url, download: 'contragents_export.xlsx' });
+    document.body.append(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    showMsg(e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
 }
 
 async function submitImport() {
@@ -1002,7 +1233,7 @@ async function submitImport() {
   try {
     const fd = new FormData();
     fd.append('file', file);
-    const r = await fetch(`${API}/contragents/import`, { method: 'POST', body: fd });
+    const r = await apiFetch(`${API}/contragents/import`, { method: 'POST', body: fd });
     if (!r.ok) {
       const detail = await r.json().catch(() => null);
       throw new Error(detail?.detail || `${r.status}`);
@@ -1042,7 +1273,7 @@ async function createFolder() {
   try {
     const body = new URLSearchParams({ name: trimmed });
     if (currentFolderId) body.append('parent_id', currentFolderId);
-    const r = await fetch(`${API}/folders`, { method: 'POST', body });
+    const r = await apiFetch(`${API}/folders`, { method: 'POST', body });
     if (!r.ok) throw new Error(`${r.status}`);
     browse(currentFolderId);
   } catch (e) {
@@ -1092,7 +1323,7 @@ async function submitUpload() {
     if (contractFamily) fd.append('contract_family', contractFamily);
     fd.append('file', file);
 
-    const r = await fetch(`${API}/templates`, { method: 'POST', body: fd });
+    const r = await apiFetch(`${API}/templates`, { method: 'POST', body: fd });
     if (!r.ok) {
       const detail = await r.json().catch(() => null);
       throw new Error(detail?.detail || `${r.status}`);
@@ -1120,7 +1351,7 @@ async function renameFolder(folder, currentFolderId) {
 
   try {
     const body = new URLSearchParams({ name: trimmed });
-    const r = await fetch(`${API}/folders/${folder.id}`, { method: 'PUT', body });
+    const r = await apiFetch(`${API}/folders/${folder.id}`, { method: 'PUT', body });
     if (!r.ok) throw new Error(`${r.status}`);
     browse(currentFolderId);   // перерисовать список с новым именем
   } catch (e) {
@@ -1167,7 +1398,7 @@ async function submitEditTemplate() {
       contragent_type: $('#edit-tpl-contragent-type').value,
       contract_family: $('#edit-tpl-contract-family').value,
     });
-    const r = await fetch(`${API}/templates/${editingTemplate.id}`, { method: 'PATCH', body });
+    const r = await apiFetch(`${API}/templates/${editingTemplate.id}`, { method: 'PATCH', body });
     if (!r.ok) {
       const detail = await r.json().catch(() => null);
       throw new Error(detail?.detail || `${r.status}`);
@@ -1191,7 +1422,7 @@ async function deleteTemplate(tpl, currentFolderId) {
   if (!ok) return;
 
   try {
-    const r = await fetch(`${API}/templates/${tpl.id}`, { method: 'DELETE' });
+    const r = await apiFetch(`${API}/templates/${tpl.id}`, { method: 'DELETE' });
     if (!r.ok) throw new Error(`${r.status}`);
     showMsg('Шаблон удалён.', 'ok');
     browse(currentFolderId);
@@ -1224,7 +1455,7 @@ async function loadForm(tpl, origin = 'folders') {
   clearMsg();
   let data;
   try {
-    const r = await fetch(`${API}/templates/${tpl.id}/fields`);
+    const r = await apiFetch(`${API}/templates/${tpl.id}/fields`);
     if (!r.ok) throw new Error();
     data = await r.json();
   } catch {
@@ -1745,7 +1976,7 @@ function collect() {
 // отдельный сервис-конвертер (LibreOffice headless), здесь просто другой
 // query-параметр и другое расширение файла.
 async function generateAndDownload(templateId, data, filename, format) {
-  const r = await fetch(`${API}/templates/${templateId}/generate?format=${format}`, {
+  const r = await apiFetch(`${API}/templates/${templateId}/generate?format=${format}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)
@@ -1858,7 +2089,7 @@ async function searchLanding() {
 
   let data;
   try {
-    const r = await fetch(`${API}/contragents?q=${encodeURIComponent(q)}`);
+    const r = await apiFetch(`${API}/contragents?q=${encodeURIComponent(q)}`);
     if (!r.ok) throw new Error();
     data = await r.json();
   } catch {
@@ -1898,9 +2129,32 @@ $('#contragent-docs-backdrop').addEventListener('click', e => {
 $('#btn-open-import-export').addEventListener('click', openImportExport);
 $('#btn-ie-back').addEventListener('click', closeImportExport);
 $('#btn-import-submit').addEventListener('click', submitImport);
+$('#btn-export-contragents').addEventListener('click', exportContragents);
 
-loadTagOptions();
-switchMode('search');
+function bootApp() {
+  loadTagOptions();
+  switchMode('search');
+}
+
+// При загрузке страницы main скрыт по умолчанию (экран входа поверх него,
+// см. CSS #login-screen). Если в localStorage остались токены с прошлого
+// раза — пробуем восстановить сессию тем же apiFetch (он сам обновит access
+// через refresh при необходимости), не заставляя логиниться заново каждую
+// перезагрузку страницы в пределах TTL refresh-токена (14 дней).
+document.querySelector('main').hidden = true;
+(async () => {
+  if (!accessToken && !refreshToken) {
+    showLoginScreen();
+    return;
+  }
+  try {
+    await fetchCurrentUser();
+    showApp();
+    bootApp();
+  } catch {
+    showLoginScreen();
+  }
+})();
 </script>
 </body>
 </html>
