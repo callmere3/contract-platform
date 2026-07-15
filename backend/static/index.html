@@ -1514,10 +1514,7 @@ function renderForm(fields) {
   groups.forEach(g => {
     const fs = el('fieldset', { 'data-group': g }, el('legend', {}, g));
     const lists = byName.get(g).filter(f => f.type === 'list');
-    // is_group — флаг, но должен стоять ПОД таблицей исполнителей,
-    // а не среди обычных полей сверху. Выносим его из plain отдельно.
-    const isGroupField = byName.get(g).find(f => f.name === 'is_group');
-    const plain = byName.get(g).filter(f => f.type !== 'list' && f.name !== 'is_group');
+    const plain = byName.get(g).filter(f => f.type !== 'list');
 
     if (plain.length) {
       const grid = el('div', { class: 'grid' });
@@ -1526,12 +1523,6 @@ function renderForm(fields) {
     }
     lists.forEach(f => fs.append(renderList(f)));
 
-    // Чекбокс «Исполнитель — группа» — сразу под таблицей исполнителей.
-    if (isGroupField) {
-      const box = renderField(isGroupField);
-      box.style.marginTop = '10px';
-      fs.append(box);
-    }
     form.append(fs);
   });
 
@@ -1796,6 +1787,10 @@ function renderList(f) {
   const thead = el('tr', {}, el('th', {}, '№'));
   cols.forEach(c => thead.append(el('th', {}, c.label)));
   if (isTracks) thead.append(el('th', { title: 'Ненормативная лексика' }, 'НЛ'));
+  const isPerformers = f.name === 'performers';
+  if (isPerformers) thead.append(el('th', {
+    title: 'Отметьте для участников группы — можно смешивать с сольными исполнителями в одном списке'
+  }, 'Группа'));
   thead.append(el('th', {}, ''));
 
   const tbody = el('tbody');
@@ -1806,12 +1801,12 @@ function renderList(f) {
     el('div', { class: 'tbl-foot' },
       el('button', {
         class: 'btn small', type: 'button',
-        onclick: () => { addRow(tbody, cols, isTracks, f.name); renumber(tbody); }
+        onclick: () => { addRow(tbody, cols, isTracks, f.name, false); renumber(tbody); }
       }, '+ Добавить строку'))
   );
 
   wrap.append(tblWrap);
-  addRow(tbody, cols, isTracks, f.name);      // одна строка по умолчанию
+  addRow(tbody, cols, isTracks, f.name, true);      // одна строка по умолчанию, с автоподстановкой
   renumber(tbody);
   return wrap;
 }
@@ -1826,29 +1821,32 @@ const PERFORMER_COLUMN_BY_LIST = { tracks: 'performer', performers: 'nickname' }
 // с псевдонимом подставляем туда же и ФИО контрагента (см. addRow).
 const FIO_COLUMN_BY_LIST = { performers: 'fio' };
 
-function addRow(tbody, cols, withProfanity, listName) {
+function addRow(tbody, cols, withProfanity, listName, applyDefault = false) {
   const tr = el('tr');
   tr.append(el('td', { class: 'num' }, ''));
   const performerCol = PERFORMER_COLUMN_BY_LIST[listName];
   const fioCol = FIO_COLUMN_BY_LIST[listName];
   cols.forEach(c => {
-    // Столбец "исполнитель" (см. PERFORMER_COLUMN_BY_LIST) по умолчанию
-    // берёт текущее значение поля "Псевдоним" — так каждая новая строка
-    // не заполняется вручную заново для типового случая одного
-    // исполнителя. ФИО (только в сноске "Исполнители") аналогично берёт
-    // ФИО открытого контрагента. Оба поля всё равно остаются обычными
-    // текстовыми input — редактируются как угодно.
+    // Столбец "исполнитель" в ТРЕКАХ подставляется в КАЖДУЮ новую строку
+    // (типовой случай — все треки одного исполнителя, не нужно вписывать
+    // руками заново). В сноске "Исполнители" — только в самую первую
+    // строку (applyDefault=true), иначе вторая и последующие строки
+    // дублировали бы первого исполнителя вместо того, чтобы остаться
+    // пустыми под ввод следующего.
     let defaultVal = '';
-    if (performerCol && c.name === performerCol) {
+    const shouldPrefillPerformer = listName === 'tracks' || applyDefault;
+    if (performerCol && c.name === performerCol && shouldPrefillPerformer) {
       const nickEl = document.querySelector('[data-name="nickname"]');
       if (nickEl && nickEl.value) defaultVal = nickEl.value;
-    } else if (fioCol && c.name === fioCol && currentContragent && currentContragent.name) {
+    } else if (fioCol && c.name === fioCol && applyDefault && currentContragent && currentContragent.name) {
       defaultVal = currentContragent.name;
     }
     tr.append(el('td', {}, el('input', { type: 'text', 'data-col': c.name, value: defaultVal })));
   });
   if (withProfanity) tr.append(el('td', { class: 'chk' },
     el('input', { type: 'checkbox', 'data-col': 'has_profanity' })));
+  if (listName === 'performers') tr.append(el('td', { class: 'chk' },
+    el('input', { type: 'checkbox', 'data-col': 'is_group' })));
   tr.append(el('td', { class: 'act' },
     el('button', {
       class: 'row-del', type: 'button', title: 'Удалить строку',
@@ -1959,7 +1957,9 @@ function collect() {
           item[inp.dataset.col] = inp.type === 'checkbox' ? inp.checked : inp.value.trim();
         });
         return item;
-      }).filter(item => Object.entries(item).some(([k, v]) => k !== 'has_profanity' && v));
+      }).filter(item => Object.entries(item).some(
+        ([k, v]) => k !== 'has_profanity' && k !== 'is_group' && v
+      ));
       return;
     }
     const inp = document.querySelector(`[data-name="${f.name}"]`);

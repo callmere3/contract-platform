@@ -245,115 +245,152 @@ def build_profanity_note(tracks: list[dict]) -> str:
     return ", ".join(parts)
 
 
-def _normalize_performers(raw_performers, is_group: bool = False) -> list[dict]:
+def _normalize_performers(raw_performers) -> list[dict]:
     """
-    Приводит исполнителей к списку {'nickname': ..., 'fio': ...},
+    Приводит исполнителей к списку {'nickname': ..., 'fio': ..., 'is_group': ...},
     убирая дубли.
 
     Форма присылает list-поля как список объектов:
-        [{"nickname": "IVAN", "fio": "Иванов И.И."}, ...]
-    Поддерживается и старый вид (только ФИО строкой) — для обратной
-    совместимости с кодом/тестами, где никнейм не передавали.
+        [{"nickname": "IVAN", "fio": "Иванов И.И.", "is_group": False}, ...]
+
+    ВАЖНО: is_group теперь флаг НА КАЖДОЙ СТРОКЕ (чекбокс "Группа" в
+    таблице "Исполнители (для сноски)"), а не один флаг на весь список,
+    как было раньше. Это позволяет смешивать в одном документе солистов
+    и участников группы (или нескольких разных групп) — см.
+    build_performer_note.
 
     Составной никнейм: в столбце «Исполнитель» таблицы треков запятая —
     всегда разделитель исполнителей («IVAN, PETROV» = два исполнителя),
     имён с запятой внутри не бывает. Обычно фронтенд уже расщепляет их
     по строкам, но если составной никнейм всё же дошёл сюда (например,
     из API напрямую), расщепляем его и здесь — каждый получает то же ФИО.
-    В режиме группы никнейм — это название группы, его не расщепляем.
+    Расщепляем ТОЛЬКО сольные строки (is_group=False) — у группы никнейм
+    это её название, запятой внутри группового названия не расщепляем.
 
-    Дедупликация: если у нескольких треков один и тот же исполнитель,
-    в сноске он должен встретиться один раз.
-      - обычный режим: ключ — никнейм (регистронезависимо), иначе ФИО.
-        «2 трека одного исполнителя» дают одну запись.
-      - режим группы (is_group=True): у всех участников никнейм общий
-        (название группы), различаются они по ФИО — поэтому ключ здесь
-        ФИО, иначе участники схлопнулись бы в одного.
+    Дедупликация — раздельная для соло и групповых записей (у группы
+    никнейм — общее название, а не уникальный идентификатор исполнителя,
+    поэтому ключ дедупликации для неё — пара (название группы, ФИО), а
+    не только никнейм, иначе разные участники одной группы схлопнулись
+    бы в одного):
+      - соло: ключ — никнейм (регистронезависимо), иначе ФИО.
+      - группа: ключ — (никнейм-группы, ФИО), регистронезависимо.
     Сохраняется первое вхождение, порядок не меняется.
     """
     if not raw_performers:
         return []
 
-    # разворачиваем составные никнеймы в отдельные записи (обычный режим)
+    # разворачиваем составные никнеймы в отдельные записи (только соло)
     expanded = []
     for p in raw_performers:
         if isinstance(p, dict):
             nickname = str(p.get("nickname", "")).strip()
             fio = str(p.get("fio", "")).strip()
+            is_group = bool(p.get("is_group"))
         elif p:
-            nickname, fio = "", str(p).strip()
+            nickname, fio, is_group = "", str(p).strip(), False
         else:
             continue
         if not is_group and "," in nickname:
             for part in nickname.split(","):
                 part = part.strip()
                 if part:
-                    expanded.append((part, fio))
+                    expanded.append((part, fio, is_group))
         else:
-            expanded.append((nickname, fio))
+            expanded.append((nickname, fio, is_group))
 
     result = []
     seen = set()
-    for nickname, fio in expanded:
+    for nickname, fio, is_group in expanded:
         if not (nickname or fio):
             continue
         if is_group:
-            key = fio.casefold() if fio else nickname.casefold()
+            key = ("group", nickname.casefold(), fio.casefold())
         else:
-            key = nickname.casefold() if nickname else fio.casefold()
+            key = ("solo", nickname.casefold() if nickname else fio.casefold())
         if key in seen:
             continue
         seen.add(key)
-        result.append({"nickname": nickname, "fio": fio})
+        result.append({"nickname": nickname, "fio": fio, "is_group": is_group})
     return result
 
 
 def build_performer_note(
     performers: list[dict],
     nickname: str | None = None,
-    is_group: bool = False,
 ) -> str:
     """
     Формирует сноску про исполнителей (всегда присутствует).
 
-    performers — список словарей {'nickname', 'fio'} (см. _normalize_performers),
-    уже без дублей. Заполняется из уникальных исполнителей таблицы треков
-    (колонка «Исполнитель» = никнейм), ФИО оператор дописывает вручную.
+    performers — список словарей {'nickname', 'fio', 'is_group'} (см.
+    _normalize_performers), уже без дублей. is_group — флаг НА КАЖДОЙ
+    СТРОКЕ (чекбокс в таблице), а не один на весь список — поддерживается
+    смешанный случай: часть исполнителей солисты, часть — участники
+    одной или нескольких групп, всё в одной сноске одного документа.
 
-    Обычный режим (is_group=False) — формат "никнейм - ФИО" построчно:
-      - один исполнитель      -> "Исполнитель: IVAN - Иванов И.И."
-      - несколько             -> "Исполнители: IVAN - Иванов И.И.; PETROV - Петров П.П."
+    Соло-строки (is_group=False) — каждая отдельным сегментом
+    "никнейм - ФИО". Групповые строки (is_group=True) кластеризуются по
+    никнейму: одинаковый никнейм = одна и та же группа, разный —
+    разные группы (несколько групп в одном документе тоже поддержаны).
 
-    Режим группы (is_group=True) — название группы берётся из никнейма
-    (тот же столбец «Исполнитель» в треках), ФИО участников перечисляются:
-      - "Исполнители в составе группы «THE X»: Иванов И.И., Петров П.П."
+      - только соло, один      -> "Исполнитель: IVAN - Иванов И.И."
+      - только соло, несколько -> "Исполнители: IVAN - Иванов И.И.; PETROV - Петров П.П."
+      - только одна группа     -> "Исполнители в составе группы «THE X»: Иванов И.И., Петров П.П."
+        (формулировка не изменилась — самый частый случай остаётся как был)
+      - смешанный список       -> "Исполнители: IVAN - Иванов И.И.; в составе группы «THE X»: Петров П.П., Сидоров С.С."
+      - несколько групп        -> "Исполнители: в составе группы «X»: ...; в составе группы «Y»: ..."
     """
     if not performers:
         return "Исполнитель: —"
 
-    if is_group:
-        # Название группы — из никнейма (столбец «Исполнитель» в треках).
-        # У группы он общий, после дедупликации остаётся один; берём первый
-        # непустой на случай, если оператор ввёл его не в каждой строке.
-        group_name = next(
-            (p["nickname"] for p in performers if p["nickname"]),
-            nickname or "",
-        )
-        fios = ", ".join(p["fio"] for p in performers if p["fio"])
-        if group_name:
-            return f"Исполнители в составе группы «{group_name}»: {fios}"
+    solo = [p for p in performers if not p.get("is_group")]
+    grouped = [p for p in performers if p.get("is_group")]
+
+    solo_segments = []
+    for p in solo:
+        nick, fio = p["nickname"], p["fio"]
+        if nick and fio:
+            solo_segments.append(f"{nick} - {fio}")
+        else:
+            solo_segments.append(fio or nick or "—")
+
+    # Групповые строки кластеризуем по никнейму (= название группы),
+    # сохраняя порядок первого появления каждой группы. Пустой никнейм
+    # (оператор не проставил его в какой-то строке) — подставляем общий
+    # nickname формы, как и раньше.
+    group_order: list[str] = []
+    group_members: dict[str, list[str]] = {}
+    for p in grouped:
+        gname = p["nickname"] or nickname or ""
+        if gname not in group_members:
+            group_members[gname] = []
+            group_order.append(gname)
+        if p["fio"]:
+            group_members[gname].append(p["fio"])
+
+    # Частный случай — единственная группа, без единого солиста рядом:
+    # формулировка ровно как была исторически, ничего не меняем для
+    # самого частого сценария.
+    if group_order and not solo_segments and len(group_order) == 1:
+        gname = group_order[0]
+        fios = ", ".join(group_members[gname])
+        if gname:
+            return f"Исполнители в составе группы «{gname}»: {fios}"
         return f"Исполнители в составе группы: {fios}"
 
-    if len(performers) == 1:
-        p = performers[0]
-        fio = p["fio"]
-        nick = p["nickname"] or nickname or ""
-        if nick:
-            return f"Исполнитель: {nick} - {fio}"
-        return f"Исполнитель: {fio}"
+    group_segments = []
+    for gname in group_order:
+        fios = ", ".join(group_members[gname])
+        if gname:
+            group_segments.append(f"в составе группы «{gname}»: {fios}")
+        else:
+            group_segments.append(f"в составе группы: {fios}")
 
-    pairs = [f"{p['nickname'] or '—'} - {p['fio']}" for p in performers]
-    return f"Исполнители: {'; '.join(pairs)}"
+    segments = solo_segments + group_segments
+    if not segments:
+        return "Исполнитель: —"
+
+    label = "Исполнитель" if len(segments) == 1 else "Исполнители"
+    return f"{label}: " + "; ".join(segments)
 
 
 # Даты окончания квартала — по требованию юриста Срок указывается
@@ -734,9 +771,10 @@ def build_context(raw: dict, doc_type: str | None = None) -> dict:
         has_videoclip: bool
         videoclips: [{title, director, music_author, performer,
                       production, producer, share}]
-        performers: [{nickname, fio}, ...]  (уникальные, из таблицы треков)
-        is_group: bool   (True — исполнители образуют группу; её название
-                          берётся из никнейма в столбце «Исполнитель»)
+        performers: [{nickname, fio, is_group}, ...]  (уникальные, из
+                    таблицы треков + сноски; is_group — чекбокс НА
+                    КАЖДОЙ СТРОКЕ, поддержан смешанный список солистов
+                    и участников группы/групп в одном документе)
         (срок действия term_end вычисляется автоматически из даты
         документа, отдельно не вводится — см. build_term_end)
 
@@ -747,7 +785,7 @@ def build_context(raw: dict, doc_type: str | None = None) -> dict:
     # Всё остальное из raw попадёт в контекст как есть.
     SERVICE_KEYS = {
         "contract_day", "contract_month", "contract_year", "doc_kind",
-        "performers", "is_group",
+        "performers",
     }
 
     tracks = raw.get("tracks", [])
@@ -886,11 +924,8 @@ def build_context(raw: dict, doc_type: str | None = None) -> dict:
         # вычисляемые сноски
         "profanity_note": build_profanity_note(tracks),
         "performer_note": build_performer_note(
-            _normalize_performers(
-                raw.get("performers"), bool(raw.get("is_group"))
-            ),
+            _normalize_performers(raw.get("performers")),
             raw.get("nickname"),
-            bool(raw.get("is_group")),
         ),
 
         # срок действия — 5 лет от даты САМОГО документа, до конца квартала.
