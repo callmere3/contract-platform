@@ -14,7 +14,13 @@
     PUT    /templates/{id}/file         — заменить файл у СУЩЕСТВУЮЩЕГО шаблона
     PATCH  /templates/{id}               — переименовать шаблон (только name)
     DELETE /templates/{id}              — удалить шаблон (файл + запись в БД)
+    GET    /templates/maps-to-options   — допустимые значения maps_to (для UI)
     GET    /templates/{id}/fields       — какие поля нужно заполнить
+                                           (?contragent_id=... — автоподстановка
+                                           default'ов из карточки контрагента)
+    PATCH  /templates/{id}/fields       — настроить источник значения (maps_to)
+                                           для полей шаблона (ручной ввод /
+                                           автоподстановка из контрагента)
     POST   /templates/{id}/generate     — сгенерировать документ
                                            (?format=docx|pdf, по умолчанию docx)
 """
@@ -32,10 +38,17 @@ from app.config import settings
 from app.context_builder import build_context, find_missing_variables
 from app.db import get_session
 from app.generation import fix_tables_for_pdf, render_document, scan_placeholders
-from app.models import Template, TemplateField, TemplateFolder, User, folder_path
+from app.models import Contragent, Template, TemplateField, TemplateFolder, User, folder_path
 from app.roles import ADMIN, DIRECTOR, MANAGER
 from app.storage import delete_file, get_file, put_file
-from app.tags import CONTRAGENT_TYPES, CONTRACT_FAMILIES, COUNTRIES, normalize_optional_tag
+from app.tags import (
+    CONTRAGENT_MAPPED_FIELDS,
+    CONTRAGENT_TYPES,
+    CONTRACT_FAMILIES,
+    COUNTRIES,
+    normalize_maps_to,
+    normalize_optional_tag,
+)
 from app.template_analysis import analyze_template, fields_to_dict
 
 # управление структурой (папки/шаблоны) — только Admin (см. брейншторм ролей);
@@ -229,8 +242,11 @@ def replace_template_file(
     файл просто перезаписывает старый по тому же пути в MinIO, старый
     файл нигде не остаётся.
 
-    Метки пересканируются заново: старые template_fields удаляются,
-    вместо них создаются новые под обновлённую разметку. version
+    Метки пересканируются заново: список template_fields пересобирается под
+    обновлённую разметку, но maps_to уже существующих меток (настроенный
+    через PATCH /templates/{id}/fields) сохраняется — переживает правку
+    текста шаблона, а не сбрасывается на "Ручной ввод" (см. ниже). Новые
+    метки, которых раньше не было, получают maps_to="manual". version
     увеличивается — пригодится, если понадобится история изменений.
     """
     if not file.filename.endswith(".docx"):
@@ -250,8 +266,17 @@ def replace_template_file(
     # тот же storage_key, что и был — файл в MinIO перезаписывается на месте
     put_file(template.storage_key, content)
 
-    # старые метки больше не актуальны — пересобираем список заново
-    template.fields = [TemplateField(placeholder=p, maps_to="manual") for p in placeholders]
+    # Метки пересканируются — но настроенный maps_to (см. PATCH
+    # /templates/{id}/fields) должен пережить правку шаблона: если метка
+    # 'inn' была привязана к contragent.reg_number, а в шаблоне просто
+    # поправили формулировку абзаца рядом — 'inn' никуда не делась и
+    # связь должна остаться, иначе автоподстановка молча слетит на
+    # "Ручной ввод" при каждой правке текста договора, что тяжело заметить.
+    old_maps_to = {f.placeholder: f.maps_to for f in template.fields}
+    template.fields = [
+        TemplateField(placeholder=p, maps_to=old_maps_to.get(p, "manual"))
+        for p in placeholders
+    ]
     template.version += 1
 
     db.add(template)
@@ -343,10 +368,107 @@ def delete_template(template_id: uuid.UUID, db: Session = Depends(get_session)) 
     return {"id": str(template_id), "deleted": True}
 
 
-@templates_router.get("/{template_id}/fields", dependencies=[Depends(get_current_user)])
-def get_template_fields(template_id: uuid.UUID, db: Session = Depends(get_session)) -> dict:
+@templates_router.get("/maps-to-options", dependencies=[Depends(get_current_user)])
+def get_maps_to_options() -> dict:
     """
-    Описание полей формы: тип, группа, подпись, подсказка.
+    Список допустимых значений maps_to с человекочитаемыми подписями —
+    для выпадающего списка "Источник значения" в модалке редактирования
+    шаблона (см. PATCH /templates/{id}/fields). Единственный источник
+    правды — CONTRAGENT_MAPPED_FIELDS в app/tags.py, чтобы подписи в UI
+    не расходились с тем, что реально проверяет normalize_maps_to().
+
+    Зарегистрирован ДО динамических /{template_id}/... маршрутов по той
+    же причине, что и /contragents/import и /export (см. их докстринги) —
+    хотя здесь коллизии по факту не случилось бы (другой HTTP-метод и
+    другое число сегментов пути), порядок сохранён как общее правило для
+    всех статических путей этого роутера, чтобы не полагаться на то, что
+    в этот раз повезло.
+    """
+    return {
+        "options": [{"value": "manual", "label": "Ручной ввод"}]
+        + [{"value": v, "label": l} for v, l in CONTRAGENT_MAPPED_FIELDS.items()]
+    }
+
+
+@templates_router.patch("/{template_id}/fields", dependencies=[Depends(require_role(ADMIN))])
+def update_template_fields(
+    template_id: uuid.UUID,
+    mapping: dict[str, str],
+    db: Session = Depends(get_session),
+) -> dict:
+    """
+    Настраивает источник значения (maps_to) для полей шаблона — один раз,
+    при подготовке шаблона админом, а не на каждой генерации документа.
+
+    mapping — {placeholder: maps_to}, напр. {"inn": "contragent.reg_number"}.
+    Значения maps_to — см. app/tags.py: CONTRAGENT_MAPPED_FIELDS (плюс
+    "manual" — обычный ручной ввод, значение по умолчанию для всех полей).
+
+    Только для меток, которые РЕАЛЬНО есть в текущей разметке шаблона —
+    опечатка в имени метки здесь тихо ничего не подставит при генерации
+    (см. get_template_fields), поэтому лучше явно вернуть 404 сразу, чем
+    дать админу настроить связь для несуществующего поля.
+
+    Не проверяет доступность конкретного контрагентского атрибута для
+    ЛЮБОГО контрагента — просто разрешает связь. Например, если контрагент
+    "неполный" (без reg_number), поле с maps_to="contragent.reg_number"
+    при генерации для НЕГО просто останется пустым — это ожидаемо, не
+    ошибка настройки шаблона.
+    """
+    template = db.get(Template, template_id)
+    if template is None:
+        raise HTTPException(status_code=404, detail="Шаблон не найден")
+
+    fields_by_placeholder = {f.placeholder: f for f in template.fields}
+
+    updated = []
+    for placeholder, maps_to in mapping.items():
+        field = fields_by_placeholder.get(placeholder)
+        if field is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"В шаблоне нет метки {placeholder!r} — нечего связывать",
+            )
+        field.maps_to = normalize_maps_to(maps_to)
+        updated.append({"placeholder": placeholder, "maps_to": field.maps_to})
+
+    db.commit()
+
+    return {"template_id": str(template_id), "updated": updated}
+
+
+def _resolve_contragent_value(maps_to: str, contragent: Contragent) -> str:
+    """
+    Достаёт значение из карточки контрагента для maps_to вида
+    'contragent.<attr>' (кроме 'contragent.nickname' — см. отдельную
+    обработку в get_template_fields, там несколько никнеймов, а не одно
+    значение).
+
+    Пустое/незаполненное поле карточки -> "" (пустая строка), а не None —
+    так default просто останется пустым и работает как обычный
+    незаполненный ручной ввод, а не падает на None.
+    """
+    if maps_to == "contragent.name":
+        return contragent.name or ""
+    if maps_to == "contragent.reg_number":
+        return contragent.reg_number or ""
+    if maps_to == "contragent.royalty_percent":
+        return str(contragent.royalty_percent) if contragent.royalty_percent is not None else ""
+    if maps_to == "contragent.contract_number":
+        return contragent.contract_number or ""
+    return ""
+
+
+@templates_router.get("/{template_id}/fields", dependencies=[Depends(get_current_user)])
+def get_template_fields(
+    template_id: uuid.UUID,
+    contragent_id: uuid.UUID | None = Query(None),
+    db: Session = Depends(get_session),
+) -> dict:
+    """
+    Описание полей формы: тип, группа, подпись, подсказка, источник
+    значения (maps_to) и, если передан contragent_id — уже подставленный
+    default из карточки контрагента для полей с автоподстановкой.
 
     Типы анализируются прямо из разметки шаблона (см. template_analysis),
     поэтому форма перестраивается сама при изменении шаблона:
@@ -360,9 +482,29 @@ def get_template_fields(template_id: uuid.UUID, db: Session = Depends(get_sessio
     которых эти значения собираются (день/месяц договора, список исполнителей).
 
     Для отдельных Приложения/Акта (template.doc_type) contract и date —
-    НЕ вычисляемые, а обычные поля ввода (номер и дата уже существующего
-    договора вводятся вручную, пока нет базы контрагентов) — см.
-    LINKED_DOC_TYPES в template_analysis.py.
+    НЕ вычисляемые, а обычные поля ввода (номер уже существующего договора) —
+    см. LINKED_DOC_TYPES в template_analysis.py. Именно поэтому 'contract'
+    здесь — хороший кандидат на maps_to="contragent.contract_number":
+    номер уже есть в карточке контрагента, вводить его второй раз вручную
+    для каждого Приложения/Акта не нужно.
+
+    contragent_id — необязателен. Если передан:
+      - каждому полю с настроенным maps_to (см. PATCH /templates/{id}/fields)
+        подставляется default из соответствующего атрибута контрагента,
+        если тот заполнен (пустой атрибут карточки — default остаётся как
+        был, ничего не перезаписываем пустотой);
+      - поле nickname с maps_to="contragent.nickname" вместо одного default
+        получает список "nickname_options" — все никнеймы контрагента —
+        для выпадающего списка на фронте (см. app/tags.py, коммент к
+        CONTRAGENT_MAPPED_FIELDS про особый случай).
+
+    Подставленный default — это ТОЛЬКО предзаполнение обычного
+    редактируемого инпута (как и все остальные default'ы в этой форме,
+    см. DEFAULT_VALUES/TODAY_DEFAULT_FIELDS в template_analysis.py) —
+    оператор может поправить перед генерацией, backend при самой
+    генерации (POST .../generate) это никак не проверяет и не
+    перезаписывает: единственный источник истины для сгенерированного
+    документа — то, что реально пришло в теле запроса на генерацию.
     """
     template = db.get(Template, template_id)
     if template is None:
@@ -373,6 +515,32 @@ def get_template_fields(template_id: uuid.UUID, db: Session = Depends(get_sessio
         analyze_template(docx_bytes, doc_type=template.doc_type),
         doc_type=template.doc_type,
     )
+
+    maps_to_by_placeholder = {f.placeholder: f.maps_to for f in template.fields}
+
+    contragent = None
+    if contragent_id is not None:
+        contragent = db.get(Contragent, contragent_id)
+        if contragent is None:
+            raise HTTPException(status_code=404, detail="Контрагент не найден")
+
+    for item in form_fields:
+        maps_to = maps_to_by_placeholder.get(item["name"], "manual")
+        item["maps_to"] = maps_to
+
+        if contragent is None or maps_to == "manual":
+            continue
+
+        if maps_to == "contragent.nickname":
+            options = [n.nickname for n in contragent.nicknames]
+            item["nickname_options"] = options
+            if len(options) == 1:
+                item["default"] = options[0]
+            continue
+
+        value = _resolve_contragent_value(maps_to, contragent)
+        if value:
+            item["default"] = value
 
     return {
         "id": str(template.id),

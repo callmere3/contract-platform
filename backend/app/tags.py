@@ -29,6 +29,47 @@ REG_NUMBER_META = {
 }
 
 
+# Источники автоподстановки для полей формы генерации из карточки
+# контрагента (TemplateField.maps_to). "manual" (по умолчанию) — оператор
+# вводит значение сам, как и раньше. Любое другое значение отсюда —
+# при известном contragent_id поле в GET /templates/{id}/fields приходит
+# с уже заполненным `default` из карточки контрагента, но остаётся
+# обычным редактируемым инпутом (см. брейншторм — "оператор в теории
+# может поправить перед генерацией").
+#
+# "contragent.nickname" — особый случай: у контрагента может быть
+# НЕСКОЛЬКО никнеймов, поэтому вместо одного default'а поле получает
+# список вариантов (см. get_template_fields) — фронтенд рисует выпадающий
+# список вместо простого текстового поля.
+CONTRAGENT_MAPPED_FIELDS = {
+    "contragent.name": "ФИО/название контрагента",
+    "contragent.reg_number": "Рег. номер (ИНН/ОГРНИП/ОГРН)",
+    "contragent.royalty_percent": "Роялти, %",
+    "contragent.contract_number": "Номер договора (для Приложения/Акта)",
+    "contragent.nickname": "Псевдоним (из списка контрагента)",
+}
+MAPS_TO_CHOICES = ["manual", *CONTRAGENT_MAPPED_FIELDS]
+
+
+def normalize_maps_to(value: str) -> str:
+    """
+    Проверяет значение maps_to для поля шаблона (см. CONTRAGENT_MAPPED_FIELDS
+    выше) — по аналогии с normalize_tag, но без регистронезависимости:
+    это служебные ключи ('contragent.reg_number'), не то, что печатает
+    оператор руками, опечатка здесь — ошибка конфигурации админа, а не
+    "ру" вместо "РУ" в пользовательском вводе.
+    """
+    if value not in MAPS_TO_CHOICES:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Недопустимое значение maps_to: {value!r}. "
+                f"Допустимые значения: {', '.join(MAPS_TO_CHOICES)}"
+            ),
+        )
+    return value
+
+
 def normalize_reg_number(value: str | None, contragent_type: str | None) -> str | None:
     """
     Приводит рег. номер к строке только из цифр и проверяет длину,
