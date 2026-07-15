@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { searchContragents } from '../api/contragents';
 
 /**
@@ -21,6 +21,23 @@ export function useContragentSearch({ q = '', country = '', contragentType = '',
   const [error, setError] = useState('');
   const requestId = useRef(0);
 
+  const fetchNow = useCallback(async () => {
+    const id = ++requestId.current;
+    setLoading(true);
+    try {
+      const data = await searchContragents({ q, country, contragentType });
+      if (id !== requestId.current) return; // пришёл устаревший ответ — игнорируем
+      setItems(data.contragents);
+      setError('');
+    } catch (e) {
+      if (id !== requestId.current) return;
+      setError(e.message);
+      setItems([]);
+    } finally {
+      if (id === requestId.current) setLoading(false);
+    }
+  }, [q, country, contragentType]);
+
   useEffect(() => {
     if (!enabled) {
       setItems([]);
@@ -29,25 +46,13 @@ export function useContragentSearch({ q = '', country = '', contragentType = '',
       return;
     }
 
-    const id = ++requestId.current;
     setLoading(true);
-    const timer = setTimeout(async () => {
-      try {
-        const data = await searchContragents({ q, country, contragentType });
-        if (id !== requestId.current) return; // пришёл устаревший ответ — игнорируем
-        setItems(data.contragents);
-        setError('');
-      } catch (e) {
-        if (id !== requestId.current) return;
-        setError(e.message);
-        setItems([]);
-      } finally {
-        if (id === requestId.current) setLoading(false);
-      }
-    }, 400);
-
+    const timer = setTimeout(fetchNow, 400);
     return () => clearTimeout(timer);
-  }, [q, country, contragentType, enabled]);
+  }, [enabled, fetchNow]);
 
-  return { items, loading, error };
+  // Мгновенный повторный запрос без дебаунса — например, после удаления
+  // контрагента из карточки: список должен обновиться сразу, а не через 400мс
+  // и не ждать смены вкладки.
+  return { items, loading, error, refetch: fetchNow };
 }

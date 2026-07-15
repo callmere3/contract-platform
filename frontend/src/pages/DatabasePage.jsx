@@ -26,7 +26,7 @@ export function DatabasePage() {
   const { openModal } = useModal();
   const { role } = useAuth();
 
-  const { items, loading, error } = useContragentSearch({
+  const { items, loading, error, refetch } = useContragentSearch({
     q: q.trim(),
     country,
     contragentType,
@@ -89,7 +89,9 @@ export function DatabasePage() {
             <ContragentRow
               key={c.id}
               contragent={c}
-              onClick={() => openModal('contragentCard', { contragentId: c.id })}
+              onClick={() =>
+                openModal('contragentCard', { contragentId: c.id, onDeleted: refetch })
+              }
             />
           ))}
       </Card>

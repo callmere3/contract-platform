@@ -26,7 +26,7 @@ const ROWS = [
  * в списке (search_contragents) нет ни даты, ни роялти, ни номера договора —
  * только summary. Заодно карточка всегда свежая, даже если список устарел.
  */
-export function ContragentCardModal({ contragentId, level, isTop }) {
+export function ContragentCardModal({ contragentId, level, isTop, onDeleted }) {
   const { closeModal, openModal } = useModal();
   const { reg_number_meta: regMeta } = useTags();
   const { role } = useAuth();
@@ -55,6 +55,7 @@ export function ContragentCardModal({ contragentId, level, isTop }) {
     setBusy(true);
     try {
       await deleteContragent(contragentId);
+      onDeleted?.();
       closeModal();
     } catch (e) {
       setError(e.message);
