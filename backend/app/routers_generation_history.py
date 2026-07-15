@@ -1,19 +1,25 @@
 """
-GET /generation-history — журнал сгенерированных документов (Admin, Director).
+/generation-history — журнал сгенерированных документов (Admin, Director).
+
+  GET  /generation-history               — список (см. list_generation_history)
+  GET  /generation-history/{id}/recreate  — воссоздать документ по сохранённому
+                                             payload (?format=docx|pdf, этап 2)
 
 Отдельно от /audit-log: тот — общий технический журнал действий (кто что
 создал/удалил/поменял), этот — бизнес-витрина именно по документам: какой
-контрагент, какой шаблон, кто сгенерировал. Payload формы, нужный для
-пересоздания документа (этап 2), сюда не отдаётся — только то, что нужно
-для списка.
+контрагент, какой шаблон, кто сгенерировал.
 """
-from fastapi import APIRouter, Depends, Query
+import uuid
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.auth import require_role
 from app.db import get_session
-from app.models import GeneratedDocument
+from app.models import GeneratedDocument, Template
 from app.roles import CAN_VIEW_GENERATION_HISTORY
+from app.routers_templates import build_document_response
 
 generation_history_router = APIRouter(prefix="/generation-history", tags=["generation-history"])
 
@@ -44,3 +50,42 @@ def list_generation_history(
         }
         for e in entries
     ]
+
+
+@generation_history_router.get(
+    "/{entry_id}/recreate", dependencies=[Depends(require_role(*CAN_VIEW_GENERATION_HISTORY))]
+)
+def recreate_generated_document(
+    entry_id: uuid.UUID,
+    format: str = Query("docx", pattern="^(docx|pdf)$"),
+    db: Session = Depends(get_session),
+) -> StreamingResponse:
+    """
+    Воссоздаёт документ на лету по сохранённому payload формы — файл нигде
+    не хранился, поэтому это ровно такой же рендер, каким был оригинал, но
+    выполненный сейчас (см. build_document_response в routers_templates.py).
+
+    Если шаблон с тех пор удалили (template_id стал NULL по ondelete=SET
+    NULL) или перезалили другим файлом — пересоздать нечем/результат будет
+    отличаться от оригинала. Это осознанный компромисс, см. докстринг
+    GeneratedDocument в app/models.py: хранить сам файл шаблона на каждую
+    генерацию было бы избыточно.
+    """
+    entry = db.get(GeneratedDocument, entry_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Запись в истории не найдена")
+
+    if entry.template_id is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Шаблон, по которому создавался документ, был удалён — пересоздать нечем",
+        )
+
+    template = db.get(Template, entry.template_id)
+    if template is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Шаблон, по которому создавался документ, был удалён — пересоздать нечем",
+        )
+
+    return build_document_response(template, entry.payload, format)

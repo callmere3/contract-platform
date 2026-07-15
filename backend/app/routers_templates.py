@@ -564,41 +564,17 @@ def get_template_fields(
     }
 
 
-@templates_router.post("/{template_id}/generate", dependencies=[Depends(require_role(*CAN_GENERATE))])
-def generate_document(
-    template_id: uuid.UUID,
-    data: dict,
-    format: str = Query("docx", pattern="^(docx|pdf)$"),
-    contragent_id: uuid.UUID | None = Query(None),
-    db: Session = Depends(get_session),
-    current_user: User = Depends(get_current_user),
-) -> StreamingResponse:
+def build_document_response(template: Template, data: dict, format: str) -> StreamingResponse:
     """
-    Генерирует документ по данным формы. format=docx (по умолчанию) или
-    format=pdf — во втором случае готовый docx дополнительно прогоняется
-    через отдельный сервис-конвертер (LibreOffice headless, см. converter/),
-    сам docx при этом нигде не сохраняется отдельно — PDF получают "на
-    лету", один запрос — один результат.
+    Общее ядро рендера — валидация + docxtpl + (для pdf) конвертация.
+    Переиспользуется в /generate (шаг 1) и /generation-history/{id}/recreate
+    (пересоздание по сохранённому payload, см. app/routers_generation_history.py).
 
-    Тело запроса — «сырые» данные формы. Они проходят через build_context(),
-    который добавляет вычисляемые поля: номер договора собирается из
-    дня/месяца и инициалов ФИО, сноски — из галочек НЛ и списка исполнителей.
-
-    Перед рендерингом проверяем, что все метки шаблона заполнены, иначе
-    docxtpl молча подставит пустые строки и в договоре будет
-    «Дата рождения: » без значения.
-
-    contragent_id — необязателен (из "Папок" документ генерируют без
-    привязки к контрагенту, см. DocFormPage) и, как и в GET .../fields,
-    рендеринг никак не затрагивает — используется только для истории
-    генерации (см. GeneratedDocument): какой контрагент показывать в
-    списке. Источник истины для самого документа — по-прежнему только
-    тело запроса (см. брейншторм про maps_to).
+    Специально НЕ пишет ничего в generated_documents — это ответственность
+    вызывающей стороны: пересоздание уже существующей записи истории не
+    должно плодить новую (иначе "кто сгенерировал" исказится на того, кто
+    просто посмотрел документ повторно).
     """
-    template = db.get(Template, template_id)
-    if template is None:
-        raise HTTPException(status_code=404, detail="Шаблон не найден")
-
     docx_bytes = get_file(template.storage_key)
 
     try:
@@ -630,16 +606,6 @@ def generate_document(
         )
 
     result_bytes = render_document(docx_bytes, context)
-
-    contragent_title = None
-    if contragent_id is not None:
-        contragent = db.get(Contragent, contragent_id)
-        contragent_title = contragent.title if contragent is not None else None
-
-    log_generation(
-        db, current_user, template.id, template.name, format, data,
-        contragent_id=contragent_id, contragent_title=contragent_title,
-    )
 
     if format == "docx":
         return StreamingResponse(
@@ -691,3 +657,53 @@ def generate_document(
         media_type="application/pdf",
         headers={"Content-Disposition": 'attachment; filename="document.pdf"'},
     )
+
+
+@templates_router.post("/{template_id}/generate", dependencies=[Depends(require_role(*CAN_GENERATE))])
+def generate_document(
+    template_id: uuid.UUID,
+    data: dict,
+    format: str = Query("docx", pattern="^(docx|pdf)$"),
+    contragent_id: uuid.UUID | None = Query(None),
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> StreamingResponse:
+    """
+    Генерирует документ по данным формы. format=docx (по умолчанию) или
+    format=pdf — во втором случае готовый docx дополнительно прогоняется
+    через отдельный сервис-конвертер (LibreOffice headless, см. converter/),
+    сам docx при этом нигде не сохраняется отдельно — PDF получают "на
+    лету", один запрос — один результат.
+
+    Тело запроса — «сырые» данные формы. Они проходят через build_context(),
+    который добавляет вычисляемые поля: номер договора собирается из
+    дня/месяца и инициалов ФИО, сноски — из галочек НЛ и списка исполнителей.
+
+    Перед рендерингом проверяем, что все метки шаблона заполнены, иначе
+    docxtpl молча подставит пустые строки и в договоре будет
+    «Дата рождения: » без значения.
+
+    contragent_id — необязателен (из "Папок" документ генерируют без
+    привязки к контрагенту, см. DocFormPage) и, как и в GET .../fields,
+    рендеринг никак не затрагивает — используется только для истории
+    генерации (см. GeneratedDocument): какой контрагент показывать в
+    списке. Источник истины для самого документа — по-прежнему только
+    тело запроса (см. брейншторм про maps_to).
+    """
+    template = db.get(Template, template_id)
+    if template is None:
+        raise HTTPException(status_code=404, detail="Шаблон не найден")
+
+    response = build_document_response(template, data, format)
+
+    contragent_title = None
+    if contragent_id is not None:
+        contragent = db.get(Contragent, contragent_id)
+        contragent_title = contragent.title if contragent is not None else None
+
+    log_generation(
+        db, current_user, template.id, template.name, format, data,
+        contragent_id=contragent_id, contragent_title=contragent_title,
+    )
+
+    return response
