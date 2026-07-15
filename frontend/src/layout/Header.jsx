@@ -2,6 +2,7 @@ import { NavLink } from 'react-router-dom';
 import { useTheme } from '../theme/ThemeContext';
 import { useAuth } from '../auth/AuthContext';
 import { canManageUsers } from '../auth/permissions';
+import { useModal } from '../modals/ModalProvider';
 
 // Первые три вкладки видны всем ролям (см. ТЗ: "менеджер видит все вкладки").
 // Ограничения для них — не на уровне доступа к вкладке, а на уровне действий
@@ -19,6 +20,7 @@ const TABS = [
 export function Header({ companyName = 'ML Docs' }) {
   const { theme, toggleTheme } = useTheme();
   const { user, logout } = useAuth();
+  const { openModal } = useModal();
 
   const tabs = canManageUsers(user?.role)
     ? [...TABS, { to: '/users', label: 'Пользователи' }]
@@ -55,9 +57,15 @@ export function Header({ companyName = 'ML Docs' }) {
         >
           {theme === 'dark' ? '☀' : '☾'}
         </button>
-        <div className="flex items-center gap-1.5 text-[13px] text-text-secondary">
-          <span>{user?.full_name || user?.username}</span>
-        </div>
+        {/* Имя — точка входа в смену своего пароля: отдельная вкладка ради
+            одного действия избыточна, а profile-меню в макете не заложено. */}
+        <button
+          onClick={() => openModal('changePassword')}
+          title="Сменить пароль"
+          className="text-[13px] text-text-secondary hover:text-text bg-transparent border-none cursor-pointer p-0 font-sans"
+        >
+          {user?.full_name || user?.username}
+        </button>
         <button
           onClick={logout}
           className="text-[13px] text-accent bg-transparent border-none cursor-pointer p-0 font-sans"

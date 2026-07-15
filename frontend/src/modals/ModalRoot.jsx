@@ -7,6 +7,7 @@ import { ImportExportModal } from './ImportExportModal';
 import { NewTemplateModal, NewFolderModal } from './NewTemplateModal';
 import { EditTemplateModal } from './EditTemplateModal';
 import { NewUserModal } from './NewUserModal';
+import { ChangePasswordModal } from './ChangePasswordModal';
 
 const REGISTRY = {
   newContragent: NewContragentModal,
@@ -18,6 +19,7 @@ const REGISTRY = {
   newFolder: NewFolderModal,
   editTemplate: EditTemplateModal,
   newUser: NewUserModal,
+  changePassword: ChangePasswordModal,
 };
 
 export function ModalRoot() {

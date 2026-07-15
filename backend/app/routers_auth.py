@@ -130,9 +130,65 @@ def me(user: User = Depends(get_current_user)) -> dict:
     return {"id": str(user.id), "username": user.username, "full_name": user.full_name, "role": user.role}
 
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=8)
+
+
+@auth_router.post("/change-password", response_model=TokenPair)
+def change_password(
+    body: ChangePasswordRequest,
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> TokenPair:
+    """
+    Смена СВОЕГО пароля — доступна любой роли, без прав администратора.
+
+    Здесь, в /auth, а не в /users: это действие над собой, а не
+    администрирование. PATCH /users/{id} для этого не годится — он требует
+    роль Admin и НЕ спрашивает старый пароль (админ сбрасывает пароль
+    забывшему, а не меняет свой).
+
+    Старый пароль обязателен: без него любой, кто на минуту получил доступ
+    к незаблокированному экрану или к украденному access-токену, менял бы
+    пароль и запирал владельца снаружи.
+
+    После смены все остальные сессии обрываются (revoke_all_user_tokens) —
+    это и есть смысл смены пароля, если он утёк. Текущему клиенту сразу
+    выдаём новую пару токенов, чтобы не разлогинивать того, кто только что
+    сам всё это и сделал.
+    """
+    if not verify_password(body.current_password, current_user.password_hash):
+        # Намеренно не уточняем, что неверен именно старый пароль в
+        # деталях сверх этого — но и скрывать нечего: пользователь уже
+        # аутентифицирован, это его собственная учётка.
+        raise HTTPException(status_code=400, detail="Текущий пароль указан неверно")
+
+    if body.new_password == body.current_password:
+        raise HTTPException(status_code=400, detail="Новый пароль совпадает с текущим")
+
+    current_user.password_hash = hash_password(body.new_password)
+    db.commit()
+
+    log_action(
+        db, current_user, "user.change_password", entity_type="user", entity_id=current_user.id,
+    )
+
+    # Сначала отзываем ВСЕ refresh-токены (включая свой), затем выдаём
+    # себе новый — порядок важен, иначе только что выданный тут же и
+    # отозвался бы вместе с остальными.
+    revoke_all_user_tokens(db, current_user.id)
+
+    return TokenPair(
+        access_token=create_access_token(current_user),
+        refresh_token=issue_refresh_token(db, current_user),
+    )
+
+
 # =====================================================================
 # /users — управление пользователями (только Admin)
 # =====================================================================
+
 
 class CreateUserRequest(BaseModel):
     username: str = Field(min_length=1)

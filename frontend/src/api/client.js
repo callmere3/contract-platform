@@ -165,3 +165,21 @@ export async function logoutRequest() {
 export function fetchCurrentUser() {
   return apiJson(`${API}/auth/me`);
 }
+
+/**
+ * Смена своего пароля. Доступна любой роли — это действие над собой, а не
+ * администрирование (для сброса чужого пароля есть PATCH /users/{id}).
+ *
+ * Сервер обрывает ВСЕ сессии пользователя и выдаёт новую пару токенов
+ * взамен — сразу кладём её себе, иначе текущий клиент оказался бы
+ * разлогинен сменой собственного пароля.
+ */
+export async function changePasswordRequest(currentPassword, newPassword) {
+  const data = await apiJson(`${API}/auth/change-password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+  });
+  setTokens(data.access_token, data.refresh_token);
+  return data;
+}
