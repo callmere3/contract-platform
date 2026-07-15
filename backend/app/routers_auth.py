@@ -42,7 +42,7 @@ from app.auth import (
 from app.db import get_session
 from app.models import AuditLog, RefreshToken, User
 from app.rate_limit import check_login_rate_limit, record_failed_login, record_successful_login
-from app.roles import ADMIN, CAN_EXPORT, ROLES
+from app.roles import ADMIN, CAN_VIEW_AUDIT_LOG, ROLES
 
 auth_router = APIRouter(prefix="/auth", tags=["auth"])
 users_router = APIRouter(prefix="/users", tags=["users"])
@@ -312,7 +312,7 @@ def update_user(
 # /audit-log — просмотр журнала (Admin, Director)
 # =====================================================================
 
-@audit_router.get("", dependencies=[Depends(require_role(*CAN_EXPORT))])
+@audit_router.get("", dependencies=[Depends(require_role(*CAN_VIEW_AUDIT_LOG))])
 def list_audit_log(
     limit: int = Query(100, le=500),
     entity_type: str | None = None,

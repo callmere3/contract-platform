@@ -13,41 +13,44 @@
  *
  * Матрица (согласована с ТЗ и бэкендом):
  *
- *   действие                      | admin | director | manager
- *   ------------------------------|-------|----------|--------
- *   генерация документов          |   +   |    +     |   +
- *   создание контрагента          |   +   |    +     |   +
- *   редактирование карточки       |   +   |    +     |   -
- *   удаление контрагента          |   +   |    -     |   -
- *   экспорт в Excel               |   +   |    +     |   -
- *   импорт из Excel               |   +   |    -     |   -
- *   папки/шаблоны: просмотр       |   +   |    +     |   +
- *   папки/шаблоны: управление     |   +   |    -     |   -
- *   пользователи (вкладка)        |   +   |    -     |   -
+ *   действие                      | admin | director | top_manager | manager
+ *   ------------------------------|-------|----------|-------------|--------
+ *   генерация документов          |   +   |    +     |     +       |   +
+ *   создание контрагента          |   +   |    +     |     +       |   +
+ *   редактирование карточки       |   +   |    +     |     +       |   -
+ *   удаление контрагента          |   +   |    -     |     -       |   -
+ *   экспорт в Excel               |   +   |    +     |     +       |   -
+ *   импорт из Excel               |   +   |    -     |     -       |   -
+ *   папки/шаблоны: просмотр       |   +   |    +     |     +       |   +
+ *   папки/шаблоны: управление     |   +   |    -     |     -       |   -
+ *   пользователи (вкладка)        |   +   |    -     |     -       |   -
+ *   просмотр audit_log            |   +   |    +     |     -       |   -
  */
 export const ADMIN = 'admin';
 export const DIRECTOR = 'director';
+export const TOP_MANAGER = 'top_manager';
 export const MANAGER = 'manager';
 
 export const ROLE_LABELS = {
   [ADMIN]: 'ADMIN',
   [DIRECTOR]: 'DIRECTOR',
+  [TOP_MANAGER]: 'TOP MANAGER',
   [MANAGER]: 'MANAGER',
 };
 
 const is = (role, ...allowed) => allowed.includes(role);
 
-// backend: CAN_CREATE_CONTRAGENTS = (ADMIN, DIRECTOR, MANAGER)
-export const canCreateContragents = (role) => is(role, ADMIN, DIRECTOR, MANAGER);
+// backend: CAN_CREATE_CONTRAGENTS = (ADMIN, DIRECTOR, TOP_MANAGER, MANAGER)
+export const canCreateContragents = (role) => is(role, ADMIN, DIRECTOR, TOP_MANAGER, MANAGER);
 
-// backend: CAN_EDIT_CONTRAGENTS = (ADMIN, DIRECTOR) — правка карточки и никнеймов
-export const canEditContragents = (role) => is(role, ADMIN, DIRECTOR);
+// backend: CAN_EDIT_CONTRAGENTS = (ADMIN, DIRECTOR, TOP_MANAGER) — правка карточки и никнеймов
+export const canEditContragents = (role) => is(role, ADMIN, DIRECTOR, TOP_MANAGER);
 
 // backend: CAN_DELETE_CONTRAGENTS = (ADMIN,)
 export const canDeleteContragents = (role) => is(role, ADMIN);
 
-// backend: CAN_EXPORT = (ADMIN, DIRECTOR)
-export const canExport = (role) => is(role, ADMIN, DIRECTOR);
+// backend: CAN_EXPORT_CONTRAGENTS = (ADMIN, DIRECTOR, TOP_MANAGER)
+export const canExport = (role) => is(role, ADMIN, DIRECTOR, TOP_MANAGER);
 
 // backend: CAN_IMPORT = (ADMIN,)
 export const canImport = (role) => is(role, ADMIN);

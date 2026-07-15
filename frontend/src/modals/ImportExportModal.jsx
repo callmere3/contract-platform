@@ -10,11 +10,11 @@ import { exportContragents, importContragents } from '../api/contragents';
  * Импорт/экспорт контрагентов.
  *
  * Права разные у двух половин модалки (см. app/roles.py):
- *   экспорт — admin + director (CAN_EXPORT)
+ *   экспорт — admin + director + top_manager (CAN_EXPORT_CONTRAGENTS)
  *   импорт  — только admin (CAN_IMPORT), "загрузку данных внутрь делает
  *             только Admin"
- * Поэтому у director модалка открывается, но блок импорта в ней скрыт —
- * ровно как в боевом index.html (applyRolePermissions).
+ * Поэтому у director/top_manager модалка открывается, но блок импорта в
+ * ней скрыт — ровно как в боевом index.html (applyRolePermissions).
  * У manager кнопки открытия этой модалки нет вовсе.
  */
 export function ImportExportModal({ level, isTop }) {

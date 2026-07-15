@@ -687,7 +687,7 @@ async function logout() {
 function applyRolePermissions() {
   const role = currentUser.role;
   const isAdmin = role === 'admin';
-  const canExport = role === 'admin' || role === 'director';   // см. CAN_EXPORT в app/roles.py
+  const canExport = role === 'admin' || role === 'director' || role === 'top_manager';   // см. CAN_EXPORT_CONTRAGENTS в app/roles.py
 
   // управление структурой (папки/шаблоны) — только Admin
   document.querySelectorAll('#btn-new-folder, #btn-new-template').forEach(b => b.hidden = !isAdmin);
@@ -1241,7 +1241,8 @@ function closeImportExport() {
 }
 
 // <a href download> не может нести заголовок Authorization — экспорт
-// защищён ролью (Admin/Director, см. app/roles.py: CAN_EXPORT), поэтому
+// защищён ролью (Admin/Director/TopManager, см. app/roles.py:
+// CAN_EXPORT_CONTRAGENTS), поэтому
 // скачивание идёт через apiFetch (с токеном) + blob, как и генерация
 // документов (см. generateAndDownload).
 async function exportContragents() {
