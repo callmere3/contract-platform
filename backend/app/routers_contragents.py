@@ -54,10 +54,14 @@ from app.tags import (
     normalize_tag,
 )
 
-# создание/редактирование контрагента и генерация — рабочие действия,
-# доступны всем трём ролям (см. брейншторм ролей); удаление и импорт —
-# только Admin, экспорт — Admin+Director (см. CAN_EXPORT в app/roles.py)
-CAN_EDIT_CONTRAGENTS = (ADMIN, DIRECTOR, MANAGER)
+# Создание контрагента — рабочее действие, доступно всем трём ролям.
+# Редактирование существующей карточки — НЕ для Manager: он заводит новых
+# контрагентов и генерирует по ним документы, но правка уже заведённой
+# карточки (в т.ч. reg_number — точного идентификатора) остаётся за
+# Admin/Director. Удаление и импорт — только Admin, экспорт —
+# Admin+Director (см. CAN_EXPORT в app/roles.py).
+CAN_CREATE_CONTRAGENTS = (ADMIN, DIRECTOR, MANAGER)
+CAN_EDIT_CONTRAGENTS = (ADMIN, DIRECTOR)
 
 contragents_router = APIRouter(prefix="/contragents", tags=["contragents"])
 
@@ -210,7 +214,7 @@ def search_contragents(
     return {"contragents": [_contragent_summary(c) for c in contragents]}
 
 
-@contragents_router.post("", dependencies=[Depends(require_role(*CAN_EDIT_CONTRAGENTS))])
+@contragents_router.post("", dependencies=[Depends(require_role(*CAN_CREATE_CONTRAGENTS))])
 def create_contragent(
     name: str = Form(...),
     country: str = Form(...),           # 'РУ' | 'КЗ'
