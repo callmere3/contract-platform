@@ -36,6 +36,7 @@ import openpyxl
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.audit import log_action
@@ -49,6 +50,7 @@ from app.tags import (
     CONTRACT_FAMILIES,
     CONTRAGENT_TYPES,
     normalize_optional_tag,
+    normalize_reg_number,
     normalize_tag,
 )
 
@@ -73,7 +75,10 @@ contragents_router = APIRouter(prefix="/contragents", tags=["contragents"])
 EXCEL_COLUMNS = [
     "Титл", "Название", "Никнеймы", "Тип", "Страна",
     "Тип договора", "Номер договора", "Дата договора", "Роялти %",
+    "Рег. номер",
 ]
+# "Рег. номер" — ИНН (СГ) / ОГРНИП (ИП) / ОГРН (ООО), см. app/tags.py:
+# REG_NUMBER_META. Одна колонка на все три смысла, как и в самой БД.
 
 
 def _contragent_summary(c: Contragent) -> dict:
@@ -86,6 +91,7 @@ def _contragent_summary(c: Contragent) -> dict:
         "country": c.country,
         "type": c.type,
         "contract_family": c.contract_family,
+        "reg_number": c.reg_number,
     }
 
 
@@ -139,6 +145,16 @@ def _try_normalize_optional(value, allowed: list[str], field_name: str) -> tuple
         return None, None
     try:
         return normalize_tag(str(value), allowed, field_name), None
+    except HTTPException as exc:
+        return None, str(exc.detail)
+
+
+def _try_normalize_reg_number(value, contragent_type: str | None) -> tuple[str | None, str | None]:
+    """Как normalize_reg_number(), но мягко — см. _try_normalize_optional() выше."""
+    if value in (None, ""):
+        return None, None
+    try:
+        return normalize_reg_number(str(value), contragent_type), None
     except HTTPException as exc:
         return None, str(exc.detail)
 
@@ -202,6 +218,7 @@ def create_contragent(
     contract_family: str = Form(...),   # 'РОЯЛТИ' | 'АВАНС' | 'АВАНС_ОБЯЗАТЕЛЬСТВО'
     contract_date: str = Form(...),     # ISO из <input type="date">, напр. '2026-03-15'
     royalty_percent: float = Form(...),
+    reg_number: str | None = Form(None),  # ИНН (СГ) / ОГРНИП (ИП) / ОГРН (ООО)
     nicknames: str | None = Form(None), # через запятую, тот же формат, что и в импорте
     db: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
@@ -210,6 +227,12 @@ def create_contragent(
     Создаёт карточку контрагента. title и contract_number вычисляются
     автоматически и НЕ принимаются от клиента — см. брейншторм
     ("title... НЕ показывается и НЕ редактируется в форме создания").
+
+    reg_number — необязателен (контрагент может быть создан "неполным"),
+    но если передан — проверяется на цифры и длину под contragent_type
+    (см. app/tags.py: REG_NUMBER_META) и на уникальность: карточка с таким
+    же рег. номером уже существующего контрагента не создастся — это и
+    есть точный идентификатор, а не мягкая проверка по title (см. ниже).
 
     contract_date фиксируется здесь один раз и дальше только отображается
     при генерации "Договора" — не пересчитывается на лету (см. брейншторм,
@@ -252,6 +275,20 @@ def create_contragent(
         )
     day, month, year_full = parsed
 
+    reg_number = normalize_reg_number(reg_number, contragent_type)
+    if reg_number is not None:
+        existing_by_reg = (
+            db.query(Contragent).filter(Contragent.reg_number == reg_number).one_or_none()
+        )
+        if existing_by_reg is not None:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Контрагент с рег. номером {reg_number!r} уже существует: "
+                    f"{existing_by_reg.title!r}"
+                ),
+            )
+
     title = build_contragent_title(name, contragent_type)
     contract_number = build_contract_number(
         day=day,
@@ -270,6 +307,7 @@ def create_contragent(
         contract_date=_date(int(year_full), int(month), int(day)),
         contract_number=contract_number,
         royalty_percent=royalty_percent,
+        reg_number=reg_number,
     )
     db.add(contragent)
     db.flush()   # нужен contragent.id до вставки никнеймов
@@ -280,7 +318,17 @@ def create_contragent(
     for nick in nickname_list:
         db.add(ContragentNickname(contragent_id=contragent.id, nickname=nick))
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # страховка на случай гонки: явную проверку выше кто-то мог
+        # обогнать между SELECT и INSERT — БД всё равно не даст создать
+        # дубль по уникальному индексу reg_number.
+        db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail=f"Контрагент с рег. номером {reg_number!r} уже существует",
+        )
 
     log_action(
         db, current_user, "contragent.create", entity_type="contragent", entity_id=contragent.id,
@@ -292,6 +340,7 @@ def create_contragent(
         "title": contragent.title,
         "contract_number": contragent.contract_number,
         "contract_date": contragent.contract_date.isoformat(),
+        "reg_number": contragent.reg_number,
         "nicknames": nickname_list,
     }
 
@@ -401,6 +450,29 @@ def import_contragents(
 
         existing = db.query(Contragent).filter(Contragent.title == title).one_or_none()
 
+        # тип для проверки длины reg_number — из этой же строки, а если
+        # там пусто (ячейка "Тип" не заполнена в файле) — из уже
+        # существующей записи (обновление без изменения типа).
+        reg_number_type = contragent_type or (existing.type if existing else None)
+        reg_number, w = _try_normalize_reg_number(cell(row, "Рег. номер"), reg_number_type)
+        if w:
+            warnings.append(w)
+        elif reg_number is not None:
+            conflict = (
+                db.query(Contragent)
+                .filter(
+                    Contragent.reg_number == reg_number,
+                    Contragent.id != (existing.id if existing else None),
+                )
+                .one_or_none()
+            )
+            if conflict is not None:
+                warnings.append(
+                    f"рег. номер {reg_number!r} уже занят контрагентом {conflict.title!r} — "
+                    f"не записан для этой строки"
+                )
+                reg_number = None
+
         if existing is None:
             contragent = Contragent(
                 name=name,   # теперь отдельная опциональная колонка "Название", не заглушка
@@ -411,6 +483,7 @@ def import_contragents(
                 contract_date=contract_date_val,
                 contract_number=contract_number,
                 royalty_percent=royalty_percent,
+                reg_number=reg_number,
             )
             db.add(contragent)
             db.flush()   # нужен contragent.id до вставки никнеймов
@@ -435,6 +508,8 @@ def import_contragents(
                 existing.contract_date = contract_date_val
             if royalty_percent is not None:
                 existing.royalty_percent = royalty_percent
+            if reg_number is not None:
+                existing.reg_number = reg_number
             if nicknames is not None:
                 for old_nick in list(existing.nicknames):
                     db.delete(old_nick)
@@ -446,7 +521,20 @@ def import_contragents(
                 {"row": row_num, "status": "обновлено", "title": title, "warnings": warnings}
             )
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # страховка на случай гонки с параллельным запросом (см. create_contragent) —
+        # проверки выше делались построчно в рамках этой же транзакции и
+        # не видят изменений из ДРУГИХ, ещё не закоммиченных транзакций.
+        db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Не удалось сохранить импорт: конфликт по уникальному рег. номеру "
+                "с записью, созданной параллельно. Повторите импорт."
+            ),
+        )
 
     log_action(
         db, current_user, "contragent.import", entity_type="contragent",
@@ -488,6 +576,7 @@ def export_contragents(
             c.contract_number or "",
             c.contract_date.isoformat() if c.contract_date else "",
             float(c.royalty_percent) if c.royalty_percent is not None else "",
+            c.reg_number or "",
         ])
 
     buffer = io.BytesIO()
@@ -527,6 +616,7 @@ def get_contragent(contragent_id: uuid.UUID, db: Session = Depends(get_session))
         "royalty_percent": (
             float(contragent.royalty_percent) if contragent.royalty_percent is not None else None
         ),
+        "reg_number": contragent.reg_number,
         "nicknames": [n.nickname for n in contragent.nicknames],
     }
 
@@ -542,6 +632,7 @@ def update_contragent(
     contract_date: str | None = Form(None),
     contract_number: str | None = Form(None),
     royalty_percent: str | None = Form(None),
+    reg_number: str | None = Form(None),
     nicknames: str | None = Form(None),
     db: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
@@ -575,6 +666,11 @@ def update_contragent(
 
     nicknames — при непустом значении ПОЛНОСТЬЮ заменяет прежний список
     (через запятую), как и при импорте, а не дополняет его.
+
+    reg_number валидируется под ТЕКУЩИЙ тип контрагента: если contragent_type
+    передан этим же запросом — под новый, иначе под уже сохранённый в
+    карточке. Проверка уникальности исключает саму карточку (можно сохранить
+    то же значение повторно, это не конфликт с самим собой).
 
     Пока доступно только через Swagger — в интерфейсе кнопки правки
     карточки контрагента ещё нет (осознанное решение, см. контекст проекта).
@@ -635,6 +731,24 @@ def update_contragent(
                 )
             contragent.royalty_percent = value
 
+    if reg_number is not None:
+        if not reg_number.strip():
+            contragent.reg_number = None
+        else:
+            type_for_check = contragent.type  # уже обновлён выше, если contragent_type передан
+            value = normalize_reg_number(reg_number, type_for_check)
+            conflict = (
+                db.query(Contragent)
+                .filter(Contragent.reg_number == value, Contragent.id != contragent.id)
+                .one_or_none()
+            )
+            if conflict is not None:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Рег. номер {value!r} уже занят контрагентом {conflict.title!r}",
+                )
+            contragent.reg_number = value
+
     if nicknames is not None:
         for old_nick in list(contragent.nicknames):
             db.delete(old_nick)
@@ -642,7 +756,14 @@ def update_contragent(
         for nick in [n.strip() for n in nicknames.split(",") if n.strip()]:
             db.add(ContragentNickname(contragent_id=contragent.id, nickname=nick))
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail=f"Рег. номер {reg_number!r} уже занят другим контрагентом",
+        )
 
     log_action(
         db, current_user, "contragent.update", entity_type="contragent", entity_id=contragent.id,
@@ -663,6 +784,7 @@ def update_contragent(
         "royalty_percent": (
             float(contragent.royalty_percent) if contragent.royalty_percent is not None else None
         ),
+        "reg_number": contragent.reg_number,
         "nicknames": [n.nickname for n in contragent.nicknames],
     }
 

@@ -17,6 +17,49 @@ COUNTRIES = ["РУ", "КЗ"]
 CONTRAGENT_TYPES = ["СГ", "ИП", "ООО"]
 CONTRACT_FAMILIES = ["РОЯЛТИ", "АВАНС", "АВАНС_ОБЯЗАТЕЛЬСТВО"]
 
+# Единый рег. номер контрагента (contragents.reg_number) — смысл и ожидаемая
+# длина зависят от типа контрагента: ИНН физлица (СГ) — 12 цифр, ОГРНИП —
+# 15, ОГРН — 13. Одна и та же колонка в БД для всех трёх (см. models.py,
+# докстринг Contragent) — это словарь для подписи в UI и для валидации
+# длины, а не отдельные поля.
+REG_NUMBER_META = {
+    "СГ": ("ИНН", 12),
+    "ИП": ("ОГРНИП", 15),
+    "ООО": ("ОГРН", 13),
+}
+
+
+def normalize_reg_number(value: str | None, contragent_type: str | None) -> str | None:
+    """
+    Приводит рег. номер к строке только из цифр и проверяет длину,
+    ожидаемую для данного типа контрагента (см. REG_NUMBER_META).
+
+    contragent_type может быть None (напр. тип ещё не выбран/не заполнен
+    при "неполном" импорте) — тогда проверяется только "только цифры",
+    без проверки длины: не с чем сверять.
+
+    Пустая строка/None -> None (поле не задано, контрагент "неполный").
+    """
+    if value is None or not value.strip():
+        return None
+    digits = value.strip()
+    if not digits.isdigit():
+        raise HTTPException(
+            status_code=400,
+            detail=f"Рег. номер должен состоять только из цифр: {value!r}",
+        )
+    if contragent_type and contragent_type in REG_NUMBER_META:
+        label, length = REG_NUMBER_META[contragent_type]
+        if len(digits) != length:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"{label} для типа {contragent_type} должен содержать "
+                    f"{length} цифр, получено {len(digits)}: {value!r}"
+                ),
+            )
+    return digits
+
 
 def normalize_tag(value: str, allowed: list[str], field_name: str) -> str:
     """
