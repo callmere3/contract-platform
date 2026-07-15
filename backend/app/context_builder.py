@@ -67,6 +67,26 @@ def build_name_short(full_name: str) -> str:
     return f"{inits}. {surname}"
 
 
+def build_name_short_table(full_name: str) -> str:
+    """
+    'Иванов Иван Иванович' -> 'Иванов И.И.'  (фамилия первая — для таблиц,
+    например колонок "Автор музыки"/"Автор текста"/"Изготовитель Фонограммы"
+    в Приложении шаблона СГ_аванс_обязательство).
+
+    НЕ путать с build_name_short() выше — там обратный порядок (инициалы
+    первыми, "И.И. Иванов"), это для строки подписи под документом, а не
+    для табличных колонок.
+    """
+    parts = [p for p in full_name.split() if p]
+    if not parts:
+        return ""
+    if len(parts) == 1:
+        return parts[0]
+    surname = parts[0]
+    inits = ".".join(p[0].upper() for p in parts[1:])
+    return f"{surname} {inits}."
+
+
 def build_contragent_title(name: str, contragent_type: str) -> str:
     """
     Вычисляет title контрагента при создании карточки (этап 4, база
@@ -843,6 +863,10 @@ def build_context(raw: dict, doc_type: str | None = None) -> dict:
 
     # Краткое имя для подписи — тоже из ФИО
     name_short = raw.get("name_short") or build_name_short(full_name)
+    # Краткое имя в "табличном" порядке (Фамилия первая) — для колонок
+    # типа "Автор музыки"/"Изготовитель Фонограммы" в Приложении
+    # СГ_аванс_обязательство (см. build_name_short_table).
+    name_short_table = raw.get("name_short_table") or build_name_short_table(full_name)
 
     # ШАГ 1. Пропускаем все пользовательские поля как есть.
     # Это важно: договор содержит десятки простых меток (npd, birthday,
@@ -856,6 +880,7 @@ def build_context(raw: dict, doc_type: str | None = None) -> dict:
     context.update({
         "contract": contract,
         "name_short": name_short,
+        "name_short_table": name_short_table,
 
         # даты — в документ печатается русский формат, а не ISO из календаря.
         #   contract-пакет: оператор вводит c_date, date дублирует его

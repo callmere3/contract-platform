@@ -33,7 +33,8 @@ from datetime import date as _date
 # computed_fields_for() ниже, которая убирает их из этого множества.
 COMPUTED_FIELDS = {
     "contract",         # комбинированный Договор: из даты + инициалов ФИО
-    "name_short",       # из ФИО
+    "name_short",       # из ФИО ("И.И. Иванов" — для строки подписи)
+    "name_short_table", # из ФИО ("Иванов И.И." — для табличных колонок)
     "profanity_note",   # из галочек НЛ у треков
     "performer_note",   # из списка исполнителей
     "release_label",    # из release_type
