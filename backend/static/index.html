@@ -401,6 +401,11 @@
         <select id="new-c-contragent-type"></select>
       </div>
       <div class="field">
+        <label for="new-c-reg-number" id="new-c-reg-number-label">Рег. номер</label>
+        <input type="text" id="new-c-reg-number" placeholder="только цифры">
+        <div class="hint" id="new-c-reg-number-hint">Сначала выбери тип контрагента</div>
+      </div>
+      <div class="field">
         <label for="new-c-contract-family">Тип договора</label>
         <select id="new-c-contract-family"></select>
       </div>
@@ -713,7 +718,7 @@ function clearMsg() { $('#msg').className = 'msg'; }
 // ---------- теги подбора документов (country/contragent_type/contract_family) ----------
 // Единственный источник правды — GET /tags (то же самое, что валидирует
 // бэкенд при сохранении, см. app/tags.py) — селекты не хранят список сами.
-let tagOptions = { countries: [], contragent_types: [], contract_families: [] };
+let tagOptions = { countries: [], contragent_types: [], contract_families: [], reg_number_meta: {} };
 
 function fillTagSelect(select, values) {
   select.innerHTML = '';
@@ -937,6 +942,26 @@ async function searchContragents() {
 }
 
 // ---------- контрагенты: создание (модалка) ----------
+
+// Подпись и подсказка длины у поля рег. номера зависят от выбранного типа
+// контрагента (ИНН/12 цифр для СГ, ОГРНИП/15 для ИП, ОГРН/13 для ООО) —
+// единственный источник правды: GET /tags -> reg_number_meta (см.
+// app/tags.py: REG_NUMBER_META), чтобы значения не расходились с тем, что
+// реально проверяет бэкенд при сохранении (см. normalize_reg_number).
+function updateRegNumberHint() {
+  const type = $('#new-c-contragent-type').value;
+  const meta = tagOptions.reg_number_meta[type];
+  const label = $('#new-c-reg-number-label');
+  const hint = $('#new-c-reg-number-hint');
+  if (meta) {
+    label.textContent = meta.label;
+    hint.textContent = `${meta.length} цифр, необязательно — можно дозаполнить позже`;
+  } else {
+    label.textContent = 'Рег. номер';
+    hint.textContent = 'Сначала выбери тип контрагента';
+  }
+}
+
 function openContragentModal() {
   $('#new-c-name').value = '';
   $('#new-c-country').selectedIndex = 0;
@@ -945,6 +970,8 @@ function openContragentModal() {
   $('#new-c-date').value = new Date().toISOString().slice(0, 10);
   $('#new-c-royalty').value = '70';
   $('#new-c-nicknames').value = '';
+  $('#new-c-reg-number').value = '';
+  updateRegNumberHint();
   $('#new-c-duplicates').textContent = '';
   $('#new-c-duplicates').style.color = '';
   $('#contragent-backdrop').hidden = false;
@@ -1015,6 +1042,7 @@ async function submitContragent() {
   const date = $('#new-c-date').value;
   const royalty = $('#new-c-royalty').value.trim();
   const nicknames = $('#new-c-nicknames').value.trim();
+  const regNumber = $('#new-c-reg-number').value.trim();
 
   if (!name) { showMsg('Укажите ФИО/название.'); return; }
   if (!country || !contragentType || !contractFamily) {
@@ -1025,6 +1053,14 @@ async function submitContragent() {
   const royaltyNum = parseFloat(royalty.replace(',', '.'));
   if (isNaN(royaltyNum) || royaltyNum < 0 || royaltyNum > 100) {
     showMsg('Роялти должно быть числом от 0 до 100.'); return;
+  }
+  if (regNumber && !/^\d+$/.test(regNumber)) {
+    showMsg('Рег. номер должен состоять только из цифр.'); return;
+  }
+  const regMeta = tagOptions.reg_number_meta[contragentType];
+  if (regNumber && regMeta && regNumber.length !== regMeta.length) {
+    showMsg(`${regMeta.label} должен содержать ${regMeta.length} цифр, сейчас ${regNumber.length}.`);
+    return;
   }
 
   // Жёсткая блокировка дублей через эту форму — по ФИО (name), не только
@@ -1047,6 +1083,7 @@ async function submitContragent() {
       contract_date: date, royalty_percent: String(royaltyNum),
     });
     if (nicknames) body.append('nicknames', nicknames);
+    if (regNumber) body.append('reg_number', regNumber);
     const r = await apiFetch(`${API}/contragents`, { method: 'POST', body });
     if (!r.ok) {
       const detail = await r.json().catch(() => null);
@@ -1073,6 +1110,7 @@ const CARD_ROWS = [
   ['name', 'ФИО / название'],
   ['country', 'Страна'],
   ['type', 'Тип контрагента'],
+  ['reg_number', 'Рег. номер'],   // подпись переопределяется под тип ниже, см. openContragentCard
   ['contract_family', 'Тип договора'],
   ['contract_number', 'Номер договора'],
   ['contract_date', 'Дата договора'],
@@ -1101,8 +1139,11 @@ async function openContragentCard(c) {
   body.textContent = '';
   CARD_ROWS.forEach(([key, label]) => {
     const value = detail[key];
+    const rowLabel = key === 'reg_number'
+      ? (tagOptions.reg_number_meta[detail.type]?.label || label)
+      : label;
     body.append(el('tr', {},
-      el('td', { style: 'color:var(--ink-3);padding:5px 0;white-space:nowrap' }, label),
+      el('td', { style: 'color:var(--ink-3);padding:5px 0;white-space:nowrap' }, rowLabel),
       el('td', { style: 'text-align:right;padding:5px 0' },
         value == null || value === '' ? '—' : String(value))));
   });
@@ -2084,6 +2125,7 @@ $('#btn-new-contragent').addEventListener('click', openContragentModal);
 $('#btn-c-cancel').addEventListener('click', closeContragentModal);
 $('#btn-c-submit').addEventListener('click', submitContragent);
 $('#new-c-name').addEventListener('input', debounce(checkContragentDuplicates, 400));
+$('#new-c-contragent-type').addEventListener('change', updateRegNumberHint);
 $('#contragent-backdrop').addEventListener('click', e => {
   if (e.target.id === 'contragent-backdrop') closeContragentModal();  // клик по фону — закрыть
 });
