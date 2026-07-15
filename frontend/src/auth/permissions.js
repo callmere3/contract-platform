@@ -25,6 +25,7 @@
  *   папки/шаблоны: управление     |   +   |    -     |     -       |   -
  *   пользователи (вкладка)        |   +   |    -     |     -       |   -
  *   просмотр audit_log            |   +   |    +     |     -       |   -
+ *   история генерации (вкладка)   |   +   |    +     |     -       |   -
  */
 export const ADMIN = 'admin';
 export const DIRECTOR = 'director';
@@ -66,3 +67,6 @@ export const canManageUsers = (role) => is(role, ADMIN);
 // доступного, поэтому прячем её саму, а не только поле импорта внутри
 // (у director она видна, но блок импорта внутри скрыт — см. canImport).
 export const canOpenImportExport = (role) => canExport(role) || canImport(role);
+
+// backend: CAN_VIEW_GENERATION_HISTORY = (ADMIN, DIRECTOR) — вкладка "История генерации"
+export const canViewGenerationHistory = (role) => is(role, ADMIN, DIRECTOR);

@@ -33,6 +33,8 @@ backend/
     routers_contragents.py  /contragents
     routers_templates.py    /folders, /templates
     routers_tags.py         /tags — справочники для фронта
+    routers_generation_history.py  /generation-history — вкладка "История генерации"
+    audit.py                log_action() → audit_log, log_generation() → generated_documents
     template_analysis.py    разбор .docx → схема полей формы
     context_builder.py      сырые данные формы → контекст для docxtpl (вычисляемые поля)
     generation.py           рендер документа
@@ -47,7 +49,7 @@ frontend/                   исходники React (Vite + React 19 + Tailwind
   src/
     api/        client.js (JWT+refresh), contragents.js, templates.js, users.js, TagsContext.jsx
     auth/       AuthContext.jsx, permissions.js (зеркало roles.py)
-    pages/      Login, Search, Database, Folders, DocForm, Users
+    pages/      Login, Search, Database, Folders, DocForm, Users, GenerationHistory
     modals/     ModalProvider/ModalRoot + 10 модалок
     components/ui/  Button, Card, Field, Badge, Modal, EditableTable, FieldRenderer, ...
     theme/      ThemeContext.jsx
@@ -115,6 +117,7 @@ ssh root@64.188.98.101 "cd ~/contract-platform && docker compose exec api alembi
 | папки/шаблоны: управление | + | – | – | – |
 | вкладка «Пользователи» | + | – | – | – |
 | просмотр audit_log | + | + | – | – |
+| вкладка «История генерации» | + | + | – | – |
 | смена своего пароля | + | + | + | + |
 
 `top_manager` — менеджер с расширенными правами: как `manager`, плюс
@@ -152,6 +155,16 @@ audit_log (в отличие от `director`) — сознательно, см. 
 НОВАЯ карточка, значение живёт всё время жизни записи.
 
 **title и contract_number вычисляет сервер**, руками не вводятся и не редактируются.
+
+**Готовые документы нигде не хранятся.** `POST /templates/{id}/generate` рендерит
+docx/pdf "на лету" и не кладёт результат ни в MinIO, ни куда-либо ещё (было
+осознанное решение ещё на этапе 6 — см. `models.py`: раньше там был явный
+комментарий "generated_documents сознательно НЕТ"). На этапе 7 это решение
+пересмотрено под конкретную задачу — вкладку "История генерации": вместо файла
+таблица `generated_documents` хранит payload формы + template_id, и результат
+можно воссоздать по требованию тем же `render_document()`. Если шаблон с
+момента генерации перезалили — воссозданный документ будет соответствовать
+НОВОЙ версии шаблона, это ожидаемый компромисс (см. докстринг `GeneratedDocument`).
 
 ---
 
@@ -224,6 +237,13 @@ docker compose exec db bash -c 'psql -U contracts_app -d contracts -c "\d contra
   `frontend/.gitignore` — не удалять его.
 - Старый `backend/static/index.html` — когда новый интерфейс подтвердится, решить
   судьбу.
+- **Файл `Контекст_проекта.md` отсутствует в репозитории** (16.07.2026): на него
+  ссылается раздел "Быстрый старт для агента" выше как на источник истории решений,
+  но ни на диске, ни в git-истории его нет. Пока актуальной истории решений, кроме
+  комментариев в коде и самого CLAUDE.md, не существует.
+- **История генерации, этап 2** (просмотр/пересоздание документа по сохранённому
+  payload) — не реализован, готова только инфраструктура (таблица
+  `generated_documents` копит payload с этапа 1, эндпоинт пока только отдаёт список).
 
 ---
 

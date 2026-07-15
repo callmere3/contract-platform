@@ -22,7 +22,9 @@
                                            для полей шаблона (ручной ввод /
                                            автоподстановка из контрагента)
     POST   /templates/{id}/generate     — сгенерировать документ
-                                           (?format=docx|pdf, по умолчанию docx)
+                                           (?format=docx|pdf, по умолчанию docx;
+                                           ?contragent_id=... — только для истории
+                                           генерации, на сам документ не влияет)
 """
 import io
 import uuid
@@ -32,7 +34,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from app.audit import log_action
+from app.audit import log_generation
 from app.auth import get_current_user, require_role
 from app.config import settings
 from app.context_builder import build_context, find_missing_variables
@@ -567,6 +569,7 @@ def generate_document(
     template_id: uuid.UUID,
     data: dict,
     format: str = Query("docx", pattern="^(docx|pdf)$"),
+    contragent_id: uuid.UUID | None = Query(None),
     db: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> StreamingResponse:
@@ -584,6 +587,13 @@ def generate_document(
     Перед рендерингом проверяем, что все метки шаблона заполнены, иначе
     docxtpl молча подставит пустые строки и в договоре будет
     «Дата рождения: » без значения.
+
+    contragent_id — необязателен (из "Папок" документ генерируют без
+    привязки к контрагенту, см. DocFormPage) и, как и в GET .../fields,
+    рендеринг никак не затрагивает — используется только для истории
+    генерации (см. GeneratedDocument): какой контрагент показывать в
+    списке. Источник истины для самого документа — по-прежнему только
+    тело запроса (см. брейншторм про maps_to).
     """
     template = db.get(Template, template_id)
     if template is None:
@@ -621,9 +631,14 @@ def generate_document(
 
     result_bytes = render_document(docx_bytes, context)
 
-    log_action(
-        db, current_user, "document.generate", entity_type="template", entity_id=template_id,
-        meta={"format": format, "template_name": template.name},
+    contragent_title = None
+    if contragent_id is not None:
+        contragent = db.get(Contragent, contragent_id)
+        contragent_title = contragent.title if contragent is not None else None
+
+    log_generation(
+        db, current_user, template.id, template.name, format, data,
+        contragent_id=contragent_id, contragent_title=contragent_title,
     )
 
     if format == "docx":

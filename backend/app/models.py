@@ -11,8 +11,7 @@
   users                   — пользователи и роли (этап 6, брейншторм ролей)
   refresh_tokens          — выданные refresh-токены (для logout/отзыва сессии)
   audit_log               — журнал действий (кто/что/когда), этап 6
-
-Таблицы generated_documents сознательно НЕТ — см. брейншторм.
+  generated_documents     — история генерации (этап 7), доступна Admin/Director
 
 ВАЖНО про doc_type: это НЕ то же самое, что папка. Папки — организация
 для человека (как удобно ориентироваться в каталоге, глубина любая).
@@ -301,12 +300,68 @@ class AuditLog(Base):
     # пользователя, не нужно джойнить users, чтобы прочитать лог осмысленно
 
     action: Mapped[str] = mapped_column(String(64))
-    # напр. 'contragent.create', 'contragent.delete', 'document.generate'
+    # напр. 'contragent.create', 'contragent.delete', 'user.update'.
+    # generate_document сюда больше не пишет — см. GeneratedDocument ниже.
 
     entity_type: Mapped[str | None] = mapped_column(String(32))  # 'contragent' | 'template' | 'user'
     entity_id: Mapped[str | None] = mapped_column(String(64))
 
     meta: Mapped[dict | None] = mapped_column(JSONB)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class GeneratedDocument(Base):
+    """
+    История генерации документов — вкладка "История генерации" (Admin, Director).
+
+    Готовый .docx/.pdf НИГДЕ не хранится (ни в MinIO, ни где-либо ещё) —
+    вместо этого запоминаем payload (сырые данные формы, ровно то, что
+    пришло в теле POST /templates/{id}/generate) и template_id. Чтобы
+    посмотреть документ повторно, он воссоздаётся на лету тем же
+    render_document(), что и при первой генерации (см. app/generation.py) —
+    это этап 2 фичи, само поле уже здесь, чтобы не делать вторую миграцию.
+
+    template_id/contragent_id/user_id — nullable + ondelete="SET NULL":
+    шаблон могут удалить, контрагента — тоже, пользователя — деактивировать
+    (как и в AuditLog выше). Запись в истории не должна пропадать вместе с
+    ними, только терять привязку к конкретной записи. Имя/название на
+    момент генерации сохраняются отдельными колонками-снимками — история
+    должна оставаться читаемой даже после переименования/удаления.
+
+    Пересоздание документа по СТАРОМУ template_id, если шаблон с тех пор
+    изменили (перезалит файл, другие метки) — вернёт другой результат,
+    чем был исходно. Это осознанный компромисс: хранить сам файл шаблона
+    на каждую генерацию было бы избыточно, а метки редко меняются настолько,
+    чтобы старый payload перестал подходить.
+    """
+    __tablename__ = "generated_documents"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    user_username: Mapped[str | None] = mapped_column(String(255))
+
+    template_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("templates.id", ondelete="SET NULL")
+    )
+    template_name: Mapped[str] = mapped_column(String(255))
+
+    contragent_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("contragents.id", ondelete="SET NULL")
+    )
+    contragent_title: Mapped[str | None] = mapped_column(String(255))
+    # Nullable: шаблон можно сгенерировать и без привязки к контрагенту
+    # (напрямую из "Папок", см. DocFormPage — contragentId там необязателен)
+
+    format: Mapped[str] = mapped_column(String(8))  # 'docx' | 'pdf'
+    payload: Mapped[dict] = mapped_column(JSONB)  # сырые данные формы — для пересоздания (этап 2)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

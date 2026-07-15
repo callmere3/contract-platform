@@ -216,7 +216,7 @@ export function DocFormPage() {
   }
 
   async function download(id, filename) {
-    const blob = await generateDocument(id, collect(), format);
+    const blob = await generateDocument(id, collect(), format, contragentId);
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;

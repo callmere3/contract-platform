@@ -1,7 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { ThemeProvider } from './theme/ThemeContext';
 import { AuthProvider, useAuth } from './auth/AuthContext';
-import { canManageUsers } from './auth/permissions';
+import { canManageUsers, canViewGenerationHistory } from './auth/permissions';
 import { TagsProvider } from './api/TagsContext';
 import { ModalProvider } from './modals/ModalProvider';
 import { ModalRoot } from './modals/ModalRoot';
@@ -12,6 +12,7 @@ import { DatabasePage } from './pages/DatabasePage';
 import { FoldersPage } from './pages/FoldersPage';
 import { DocFormPage } from './pages/DocFormPage';
 import { UsersPage } from './pages/UsersPage';
+import { GenerationHistoryPage } from './pages/GenerationHistoryPage';
 
 /**
  * Фронт отдаётся с того же FastAPI по пути /app (см. base в vite.config.js) —
@@ -48,6 +49,18 @@ function AppShell() {
         <Route
           path="/users"
           element={canManageUsers(user?.role) ? <UsersPage /> : <Navigate to="/search" replace />}
+        />
+        {/* История генерации — Admin/Director, та же защита от прямого
+            захода по адресу, что и у "Пользователей" выше. */}
+        <Route
+          path="/generation-history"
+          element={
+            canViewGenerationHistory(user?.role) ? (
+              <GenerationHistoryPage />
+            ) : (
+              <Navigate to="/search" replace />
+            )
+          }
         />
         {/* Неизвестный адрес — не 404-экран, а тихий возврат на поиск:
             для внутреннего инструмента отдельная страница ошибки избыточна. */}

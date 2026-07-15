@@ -97,10 +97,12 @@ export function updateTemplateFields(templateId, mapping) {
 
 /**
  * Генерация документа. Возвращает Blob (файл), поэтому apiFetch напрямую.
- * format: 'docx' | 'pdf'.
+ * format: 'docx' | 'pdf'. contragentId необязателен — на сам документ не
+ * влияет, только на то, какой контрагент будет виден в "Истории генерации".
  */
-export async function generateDocument(templateId, payload, format = 'docx') {
-  const r = await apiFetch(`${API}/templates/${templateId}/generate?format=${format}`, {
+export async function generateDocument(templateId, payload, format = 'docx', contragentId) {
+  const qs = contragentId ? `&contragent_id=${contragentId}` : '';
+  const r = await apiFetch(`${API}/templates/${templateId}/generate?format=${format}${qs}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),

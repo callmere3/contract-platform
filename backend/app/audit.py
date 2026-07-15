@@ -1,16 +1,18 @@
 """
-Запись в audit_log (этап 6, доступен на просмотр Admin и Director).
+Запись в audit_log и generated_documents (этап 6/7, доступны на просмотр
+Admin и Director).
 
-log_action() вызывается прямо из роутеров сразу после db.commit() основного
-действия — если сам audit_log не запишется, это не должно ронять запрос
+Обе функции вызываются прямо из роутеров сразу после основного действия —
+если сама запись в журнал не удастся, это не должно ронять запрос
 пользователя (см. try/except внутри): лучше документ сгенерируется без
-записи в лог, чем пользователь получит 500 из-за постороннего журнала.
+записи в историю, чем пользователь получит 500 из-за постороннего журнала.
 """
 import logging
+import uuid
 
 from sqlalchemy.orm import Session
 
-from app.models import AuditLog, User
+from app.models import AuditLog, GeneratedDocument, User
 
 logger = logging.getLogger("audit")
 
@@ -38,3 +40,32 @@ def log_action(
     except Exception:
         db.rollback()
         logger.exception("Не удалось записать audit_log: action=%s", action)
+
+
+def log_generation(
+    db: Session,
+    user: User,
+    template_id: uuid.UUID,
+    template_name: str,
+    format: str,
+    payload: dict,
+    contragent_id: uuid.UUID | None = None,
+    contragent_title: str | None = None,
+) -> None:
+    try:
+        db.add(
+            GeneratedDocument(
+                user_id=user.id,
+                user_username=user.username,
+                template_id=template_id,
+                template_name=template_name,
+                contragent_id=contragent_id,
+                contragent_title=contragent_title,
+                format=format,
+                payload=payload,
+            )
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception("Не удалось записать generated_documents: template_id=%s", template_id)
