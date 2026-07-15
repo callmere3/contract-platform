@@ -53,6 +53,48 @@ def index() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
 
 
+# --- React-интерфейс (этап 7) на /app, рядом со старым, а не вместо него ---
+#
+# Собранная сборка кладётся в backend/static/app/ (см. frontend/deploy.sh).
+# Папка backend/static уже смонтирована в контейнер как volume, поэтому
+# сборка попадает внутрь без пересборки образа — как и обычная статика.
+#
+# Почему /app, а не корень: 15.07.2026 недоделанный React-скетч выложили
+# поверх backend/static/index.html и сломали вход на рабочем сервисе. Пока
+# новый интерфейс не проверен живьём, старый обязан оставаться доступным
+# на "/" — это откат в один клик, а не восстановление из git.
+APP_DIR = STATIC_DIR / "app"
+
+
+@app.get("/app", include_in_schema=False)
+@app.get("/app/{path:path}", include_in_schema=False)
+def spa(path: str = "") -> FileResponse:
+    """
+    Отдаёт React-приложение. Все пути внутри /app (/app/search, /app/doc/<id>
+    и т.д.) — клиентские роуты react-router, на сервере их не существует,
+    поэтому на любой из них возвращаем index.html: роутер сам разберётся,
+    что показать (обычная схема отдачи SPA).
+
+    Исключение — реальные файлы сборки (assets/*.js, *.css, favicon):
+    их отдаём как есть, иначе браузер получит HTML вместо скрипта.
+    """
+    if not APP_DIR.exists():
+        raise HTTPException(
+            status_code=404,
+            detail="React-интерфейс не собран. См. frontend/deploy.sh",
+        )
+
+    # Защита от выхода за пределы APP_DIR (../../etc/passwd и т.п.):
+    # resolve() разворачивает ".." до реального пути, дальше проверяем,
+    # что он всё ещё внутри разрешённой папки.
+    if path:
+        candidate = (APP_DIR / path).resolve()
+        if candidate.is_file() and candidate.is_relative_to(APP_DIR.resolve()):
+            return FileResponse(candidate)
+
+    return FileResponse(APP_DIR / "index.html")
+
+
 @app.on_event("startup")
 def on_startup() -> None:
     ensure_bucket_exists()
