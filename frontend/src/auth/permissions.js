@@ -23,6 +23,7 @@
  *   импорт из Excel               |   +   |    -     |   -
  *   папки/шаблоны: просмотр       |   +   |    +     |   +
  *   папки/шаблоны: управление     |   +   |    -     |   -
+ *   пользователи (вкладка)        |   +   |    -     |   -
  */
 export const ADMIN = 'admin';
 export const DIRECTOR = 'director';
@@ -53,6 +54,10 @@ export const canImport = (role) => is(role, ADMIN);
 
 // backend: CAN_MANAGE_TEMPLATES = (ADMIN,) — создание/правка/удаление папок и шаблонов
 export const canManageTemplates = (role) => is(role, ADMIN);
+
+// backend: все эндпоинты /users защищены require_role(ADMIN) —
+// список, создание и правка пользователей доступны только админу
+export const canManageUsers = (role) => is(role, ADMIN);
 
 // Кнопка "Импорт/экспорт" целиком: у manager внутри неё нет ничего
 // доступного, поэтому прячем её саму, а не только поле импорта внутри

@@ -210,6 +210,22 @@ def update_user(
     if user is None:
         raise HTTPException(status_code=404, detail="Пользователь не найден")
 
+    # Защита от самоблокировки: снять с себя роль Admin или деактивировать
+    # себя же — билет в один конец. Восстановить будет нечем: POST /users
+    # сам требует роль Admin, а bootstrap-админ создаётся только когда в
+    # таблице нет ВООБЩЕ ни одного пользователя (см. ensure_bootstrap_admin),
+    # то есть при живой базе он не поможет. Единственным выходом остался бы
+    # ручной UPDATE в psql на сервере.
+    # Сменить себе имя или пароль при этом можно — они доступ не отбирают.
+    if user.id == current_user.id:
+        if body.role is not None and body.role != user.role:
+            raise HTTPException(
+                status_code=400,
+                detail="Нельзя менять роль самому себе — можно потерять доступ безвозвратно",
+            )
+        if body.is_active is False:
+            raise HTTPException(status_code=400, detail="Нельзя деактивировать самого себя")
+
     changes = {}
     if body.full_name is not None:
         user.full_name = body.full_name

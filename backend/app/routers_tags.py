@@ -10,6 +10,7 @@ contract_family) и метаданные рег. номера (reg_number_meta) 
 from fastapi import APIRouter, Depends
 
 from app.auth import get_current_user
+from app.roles import ROLES
 from app.tags import CONTRAGENT_TYPES, CONTRACT_FAMILIES, COUNTRIES, REG_NUMBER_META
 
 tags_router = APIRouter(prefix="/tags", tags=["tags"])
@@ -27,4 +28,8 @@ def get_tags() -> dict:
         "reg_number_meta": {
             k: {"label": label, "length": length} for k, (label, length) in REG_NUMBER_META.items()
         },
+        # Список ролей для селекта на вкладке "Пользователи" — из того же
+        # единственного источника правды (app/roles.py: ROLES), которым
+        # валидируется роль при создании/правке пользователя.
+        "roles": list(ROLES),
     }
