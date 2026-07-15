@@ -1,7 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import { useTheme } from '../theme/ThemeContext';
 import { useAuth } from '../auth/AuthContext';
-import { ROLE_LABELS } from '../auth/permissions';
 
 // Все три вкладки видны всем ролям (см. ТЗ: "менеджер видит все вкладки").
 // Ограничения — не на уровне доступа к вкладке, а на уровне действий
@@ -49,9 +48,6 @@ export function Header({ companyName = 'ML Docs' }) {
         </button>
         <div className="flex items-center gap-1.5 text-[13px] text-text-secondary">
           <span>{user?.full_name || user?.username}</span>
-          <span className="px-2 py-0.5 border border-border rounded-[5px] text-[11px] text-text-muted">
-            {ROLE_LABELS[user?.role] ?? user?.role}
-          </span>
         </div>
         <button
           onClick={logout}

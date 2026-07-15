@@ -5,9 +5,9 @@ const ThemeContext = createContext(null);
 const STORAGE_KEY = 'ml_theme';
 
 /**
- * Тема ML Docs: dark по умолчанию, переключение ручное (иконка в шапке).
- * Выбор сохраняется в localStorage — иначе тема слетала бы на dark при
- * каждой перезагрузке страницы.
+ * Тема ML Docs: light по умолчанию, переключение ручное (иконка в шапке).
+ * Выбор сохраняется в localStorage — иначе тема слетала бы при каждой
+ * перезагрузке страницы.
  *
  * prefers-color-scheme намеренно НЕ используется как источник правды:
  * по дизайн-системе переключение ручное. Системную тему берём только как
@@ -16,11 +16,11 @@ const STORAGE_KEY = 'ml_theme';
 function readInitialTheme(defaultTheme) {
   const saved = localStorage.getItem(STORAGE_KEY);
   if (saved === 'dark' || saved === 'light') return saved;
-  if (window.matchMedia?.('(prefers-color-scheme: light)').matches) return 'light';
+  if (window.matchMedia?.('(prefers-color-scheme: dark)').matches) return 'dark';
   return defaultTheme;
 }
 
-export function ThemeProvider({ defaultTheme = 'dark', children }) {
+export function ThemeProvider({ defaultTheme = 'light', children }) {
   const [theme, setTheme] = useState(() => readInitialTheme(defaultTheme));
 
   useEffect(() => {

@@ -71,7 +71,7 @@ function AuthGate() {
 
 export default function App() {
   return (
-    <ThemeProvider defaultTheme="dark">
+    <ThemeProvider defaultTheme="light">
       <BrowserRouter basename={BASENAME}>
         <AuthProvider>
           <AuthGate />

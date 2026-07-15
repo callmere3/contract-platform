@@ -202,7 +202,7 @@ def ensure_bootstrap_admin(db: Session) -> None:
         User(
             username=settings.bootstrap_admin_username,
             password_hash=hash_password(settings.bootstrap_admin_password),
-            full_name="Администратор (bootstrap)",
+            full_name="Администратор",
             role=ADMIN,
         )
     )
