@@ -1565,25 +1565,36 @@ function syncPerformers() {
     });
   });
 
-  // уже введённые ФИО — сохраняем по никнейму, чтобы не терять при пересборке
+  // уже введённые ФИО и отметка «Группа» — сохраняем по никнейму, чтобы
+  // не терять при пересборке (раньше сохранялось только ФИО, отметка
+  // «Группа» слетала при любом изменении в треках).
   const perfBody = perfWrap.querySelector('tbody');
-  const savedFio = new Map();
+  const saved = new Map(); // nickname.toLowerCase() -> { fio, isGroup }
   perfBody.querySelectorAll('tr').forEach(tr => {
     const nk = tr.querySelector('[data-col="nickname"]');
     const fio = tr.querySelector('[data-col="fio"]');
-    if (nk && nk.value.trim()) savedFio.set(nk.value.trim().toLowerCase(), fio ? fio.value : '');
+    const grp = tr.querySelector('[data-col="is_group"]');
+    if (nk && nk.value.trim()) {
+      saved.set(nk.value.trim().toLowerCase(), {
+        fio: fio ? fio.value : '',
+        isGroup: grp ? grp.checked : false,
+      });
+    }
   });
 
   const cols = currentFields.find(f => f.name === 'performers').item_fields;
   perfBody.textContent = '';
-  if (!nicks.length) { addRow(perfBody, cols, false); renumber(perfBody); return; }
+  if (!nicks.length) { addRow(perfBody, cols, false, 'performers'); renumber(perfBody); return; }
   nicks.forEach(nick => {
-    addRow(perfBody, cols, false);
+    addRow(perfBody, cols, false, 'performers');
     const tr = perfBody.lastElementChild;
     const nk = tr.querySelector('[data-col="nickname"]');
     const fio = tr.querySelector('[data-col="fio"]');
+    const grp = tr.querySelector('[data-col="is_group"]');
+    const savedRow = saved.get(nick.toLowerCase());
     if (nk) nk.value = nick;
-    if (fio) fio.value = savedFio.get(nick.toLowerCase()) || '';
+    if (fio) fio.value = savedRow ? savedRow.fio : '';
+    if (grp) grp.checked = savedRow ? savedRow.isGroup : false;
   });
   renumber(perfBody);
 }
