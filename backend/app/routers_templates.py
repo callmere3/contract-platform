@@ -453,7 +453,18 @@ def _resolve_contragent_value(maps_to: str, contragent: Contragent) -> str:
     if maps_to == "contragent.reg_number":
         return contragent.reg_number or ""
     if maps_to == "contragent.royalty_percent":
-        return str(contragent.royalty_percent) if contragent.royalty_percent is not None else ""
+        # В БД это Numeric(5,2), поэтому str(Decimal("65.00")) даёт "65.00" —
+        # а build_context при генерации требует ЦЕЛОЕ (int("65.00") падает,
+        # см. _royalty_words в context_builder.py). Без нормализации здесь
+        # автоподстановка ломала бы генерацию: форма выглядит заполненной,
+        # а "Сформировать" отдаёт 400 на ровном месте.
+        # Дробную часть отбрасываем только если она нулевая (65.00 -> "65");
+        # 65.50 оставляем как есть — пусть лучше оператор увидит явную
+        # ошибку, чем мы молча округлим процент в договоре.
+        if contragent.royalty_percent is None:
+            return ""
+        value = contragent.royalty_percent
+        return str(int(value)) if value == value.to_integral_value() else str(value)
     if maps_to == "contragent.contract_number":
         return contragent.contract_number or ""
     return ""
