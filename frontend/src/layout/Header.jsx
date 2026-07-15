@@ -12,7 +12,7 @@ import { useModal } from '../modals/ModalProvider';
 // доступны не всем ролям (первая — только ADMIN, вторая — ADMIN/DIRECTOR),
 // поэтому остальным вкладка показала бы только ошибку 403. Прячем целиком.
 const TABS = [
-  { to: '/search', label: 'Поиск' },
+  { to: '/search', label: 'Генерация' },
   { to: '/database', label: 'База контрагентов' },
   { to: '/folders', label: 'Папки' },
 ];
