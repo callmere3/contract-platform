@@ -90,7 +90,7 @@ export function DatabasePage() {
               key={c.id}
               contragent={c}
               onClick={() =>
-                openModal('contragentCard', { contragentId: c.id, onDeleted: refetch })
+                openModal('contragentCard', { contragentId: c.id, onChanged: refetch })
               }
             />
           ))}

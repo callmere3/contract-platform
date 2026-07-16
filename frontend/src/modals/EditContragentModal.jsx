@@ -18,10 +18,16 @@ import { updateContragent } from '../api/contragents';
  *
  * title и contract_number не редактируются — их пересчитывает сервер при
  * смене name/type (см. update_contragent), поэтому их здесь нет.
- * nicknames тоже не здесь: сервер заменяет ими весь список целиком, это
- * отдельная операция, а не "поле формы" (см. докстринг на бэкенде).
+ *
+ * nicknames редактируются: непустое значение (через запятую) ПОЛНОСТЬЮ
+ * заменяет прежний список, пустое — очищает его (см. update_contragent).
+ * Как и остальные поля, отправляется только если реально изменилось.
+ *
+ * onSaved — колбэк обновления списка контрагентов (refetch из DatabasePage):
+ * после сохранения список должен обновиться сразу (напр. сбросить красную
+ * подсветку неполной карточки), а не ждать перезагрузки/смены вкладки.
  */
-export function EditContragentModal({ contragent, level, isTop }) {
+export function EditContragentModal({ contragent, level, isTop, onSaved }) {
   const { closeModal } = useModal();
   const {
     countries,
@@ -41,6 +47,7 @@ export function EditContragentModal({ contragent, level, isTop }) {
       : String(contragent.royalty_percent),
   );
   const [regNumber, setRegNumber] = useState(contragent.reg_number ?? '');
+  const [nicknames, setNicknames] = useState((contragent.nicknames ?? []).join(', '));
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -72,6 +79,14 @@ export function EditContragentModal({ contragent, level, isTop }) {
     put('contract_date', contractDate, contragent.contract_date);
     put('royalty_percent', royalty.trim(), contragent.royalty_percent);
     put('reg_number', regNumber.trim(), contragent.reg_number);
+
+    // Псевдонимы: нормализуем обе стороны (убираем лишние пробелы/пустые),
+    // чтобы правка "IVAN,PETROV" -> "IVAN, PETROV" не считалась изменением.
+    // Пустая строка при изменении = очистить весь список (см. бэкенд).
+    const nickInput = nicknames.split(',').map((n) => n.trim()).filter(Boolean).join(', ');
+    const nickOriginal = (contragent.nicknames ?? []).join(', ');
+    if (nickInput !== nickOriginal) fields.nicknames = nickInput;
+
     return fields;
   }
 
@@ -90,6 +105,7 @@ export function EditContragentModal({ contragent, level, isTop }) {
     setError('');
     try {
       await updateContragent(contragent.id, fields);
+      onSaved?.(); // обновить список сразу — сбросить красную подсветку и т.п.
       // Закрываем и эту модалку, и карточку под ней: карточка показывает
       // данные, загруженные ДО правки, и после сохранения они устарели.
       // Проще закрыть обе, чем перезагружать карточку под спойлером.
@@ -177,6 +193,16 @@ export function EditContragentModal({ contragent, level, isTop }) {
         />
 
         <Field label="Роялти %" value={royalty} onChange={(e) => setRoyalty(e.target.value)} />
+
+        <div className="col-span-2">
+          <Field
+            label="Псевдоним(ы)"
+            value={nicknames}
+            onChange={(e) => setNicknames(e.target.value)}
+            placeholder="July Jones, Vladimir Ivanov"
+            hint="через запятую; заменяет весь список, пусто — очистить"
+          />
+        </div>
       </div>
 
       {error && <div className="text-[13px] text-accent mt-4 leading-snug">{error}</div>}
