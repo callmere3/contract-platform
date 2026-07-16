@@ -707,29 +707,50 @@ def update_contragent(
     """
     Правит существующую карточку контрагента.
 
-    title теперь МОЖНО редактировать (пересмотрено): изначально title
-    исключался из правки по брейншторму (менялся только напрямую в БД).
-    Причина пересмотра — реальный кейс: один и тот же человек может иметь
-    ДВА отдельных контрагента в базе — один с contract_family=АВАНС,
-    другой с РОЯЛТИ (два разных контракта, две карточки). При создании оба
-    получают ОДИНАКОВЫЙ title (формула title не зависит от contract_family,
-    только от name+type), это ожидаемо и не блокируется (нет unique-
-    constraint на title, см. models.py) — но их нужно разделить после
-    создания вручную, например "Иванов И. И. (СГ, аванс)" и
-    "Иванов И. И. (СГ, роялти)", иначе не различить в поиске/списках.
+    title ПЕРЕСОБИРАЕТСЯ САМ при смене name или type — по той же формуле
+    build_contragent_title(), что и при создании карточки. Это вычисляемая
+    подпись для поиска и списков, а не самостоятельное поле: после правки
+    ФИО или типа прежнее значение просто врёт, поэтому "оставить как было"
+    здесь не вариант.
+
+    Явно переданный title побеждает пересчёт — это ручной override под
+    реальный кейс: один и тот же человек может иметь ДВА отдельных
+    контрагента в базе — один с contract_family=АВАНС, другой с РОЯЛТИ
+    (два разных контракта, две карточки). При создании оба получают
+    ОДИНАКОВЫЙ title (формула зависит только от name+type, не от
+    contract_family), это ожидаемо и не блокируется (нет unique-constraint
+    на title, см. models.py) — но их нужно разделить вручную, например
+    "Иванов И. И. (СГ, аванс)" и "Иванов И. И. (СГ, роялти)", иначе не
+    различить в поиске/списках. Такой title переживёт любую правку, где
+    name/type не менялись; при смене name он будет пересобран — и это
+    правильно, иначе подпись сохранила бы уже неверное ФИО.
+
     title не может быть пустой строкой — это NOT NULL в БД, попытка
-    очистить возвращает 400, а не тихо ломает запись.
+    очистить возвращает 400, а не тихо ломает запись. Если name или type
+    пусты (карточка заведена "неполной" через импорт), пересчёт
+    пропускается: формулу не к чему применить, прежний title остаётся.
 
     Семантика остальных полей — та же, что и в PATCH /templates/{id}:
       - параметр не передан в форме -> не трогаем, значение остаётся как было
       - передана пустая строка -> поле очищается (None)
       - передано непустое значение -> валидируется/парсится и сохраняется
 
-    contract_date/contract_number здесь — независимые "сырые" поля, как
-    при импорте (см. import_contragents), НЕ пересчитываются друг из
-    друга. Это ручная правка на случай ошибки при вводе, а не обычный
-    рабочий путь — в обычном пути contract_date фиксируется один раз при
-    создании и дальше не меняется (см. брейншторм).
+    contract_number пересобирается по тому же принципу, но от ТРЁХ полей:
+    формула build_contract_number() ('МЛ-01/01/26-ИИИ/СГ') зависит от ФИО
+    (инициалы), типа и даты договора — значит правка любого из трёх
+    пересобирает номер. Явно переданный contract_number, как и title,
+    побеждает пересчёт.
+
+    ВНИМАНИЕ (осознанное решение владельца сервиса, 16.07.2026): номер
+    договора может быть уже напечатан в подписанных документах, и пересчёт
+    задним числом с ними разойдётся. Принято считать карточку единственным
+    источником истины, а правку ФИО/типа/даты — исправлением ошибки ввода,
+    а не изменением действующего договора. Если номер нужно сохранить
+    прежним при правке ФИО — передать его явно тем же запросом.
+
+    Если contract_date очищена, номер пересобрать не из чего — прежнее
+    значение остаётся как есть: тихо стереть номер договора опаснее, чем
+    оставить (сам по себе он от очистки даты не становится неверным).
 
     nicknames — при непустом значении ПОЛНОСТЬЮ заменяет прежний список
     (через запятую), как и при импорте, а не дополняет его.
@@ -738,19 +759,17 @@ def update_contragent(
     передан этим же запросом — под новый, иначе под уже сохранённый в
     карточке. Проверка уникальности исключает саму карточку (можно сохранить
     то же значение повторно, это не конфликт с самим собой).
-
-    Пока доступно только через Swagger — в интерфейсе кнопки правки
-    карточки контрагента ещё нет (осознанное решение, см. контекст проекта).
     """
     contragent = db.get(Contragent, contragent_id)
     if contragent is None:
         raise HTTPException(status_code=404, detail="Контрагент не найден")
 
-    if title is not None:
-        stripped_title = title.strip()
-        if not stripped_title:
-            raise HTTPException(status_code=400, detail="title не может быть пустым")
-        contragent.title = stripped_title
+    # Снимок полей, из которых считаются title и contract_number: по нему
+    # ниже видно, менялись ли исходные данные, и надо ли пересобирать
+    # вычисляемые поля (см. докстринг).
+    name_before = contragent.name
+    type_before = contragent.type
+    contract_date_before = contragent.contract_date
 
     if name is not None:
         contragent.name = name.strip() or None
@@ -766,9 +785,6 @@ def update_contragent(
             contract_family, CONTRACT_FAMILIES, "contract_family"
         )
 
-    if contract_number is not None:
-        contragent.contract_number = contract_number.strip() or None
-
     if contract_date is not None:
         if not contract_date.strip():
             contragent.contract_date = None
@@ -781,6 +797,37 @@ def update_contragent(
                 )
             day, month, year_full = parsed
             contragent.contract_date = _date(int(year_full), int(month), int(day))
+
+    # ---- Вычисляемые поля: title и contract_number ----
+    # Считаются теми же формулами, что и при создании карточки, и
+    # пересобираются, как только меняются их исходные данные: иначе после
+    # правки ФИО подпись и номер продолжали бы врать. Явно переданное
+    # значение всегда побеждает пересчёт — это ручной override
+    # (см. докстринг). Стоит здесь, а не рядом с остальными полями:
+    # name/type/contract_date к этому моменту уже приняли новые значения.
+    identity_changed = contragent.name != name_before or contragent.type != type_before
+
+    if title is not None:
+        stripped_title = title.strip()
+        if not stripped_title:
+            raise HTTPException(status_code=400, detail="title не может быть пустым")
+        contragent.title = stripped_title
+    elif identity_changed and contragent.name and contragent.type:
+        contragent.title = build_contragent_title(contragent.name, contragent.type)
+
+    if contract_number is not None:
+        contragent.contract_number = contract_number.strip() or None
+    elif (identity_changed or contragent.contract_date != contract_date_before) and (
+        contragent.name and contragent.type and contragent.contract_date
+    ):
+        signed_on = contragent.contract_date
+        contragent.contract_number = build_contract_number(
+            day=str(signed_on.day),
+            month=str(signed_on.month),
+            year=str(signed_on.year)[-2:],
+            full_name=contragent.name,
+            doc_kind=contragent.type,
+        )
 
     if royalty_percent is not None:
         if not royalty_percent.strip():
