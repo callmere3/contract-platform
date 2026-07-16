@@ -14,7 +14,10 @@ import { useModal } from '../modals/ModalProvider';
 const TABS = [
   { to: '/search', label: 'Генерация' },
   { to: '/database', label: 'База контрагентов' },
-  { to: '/folders', label: 'Папки' },
+  // Вкладка называется "Шаблоны", а маршрут остался /folders: переименование
+  // чисто в подписи — внутри по-прежнему дерево папок с шаблонами, и кнопка
+  // "+ Папка" там на месте. Менять URL ради подписи незачем.
+  { to: '/folders', label: 'Шаблоны' },
 ];
 
 export function Header({ companyName = 'ML Docs' }) {
