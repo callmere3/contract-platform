@@ -4,6 +4,8 @@ export function Badge({ children, variant = 'accent', className = '' }) {
     accent: 'bg-accent-soft text-accent font-semibold',
     // мета-бейдж (роль пользователя и т.п.) — нейтральная обводка
     neutral: 'border border-border text-text-muted',
+    // предупреждение (неполная карточка контрагента и т.п.) — красный
+    danger: 'bg-danger-soft text-danger font-semibold',
     // pill-бейдж hero-блока
     pill: 'bg-accent-soft text-accent font-semibold rounded-full',
   };

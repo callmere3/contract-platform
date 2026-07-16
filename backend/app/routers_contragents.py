@@ -86,6 +86,37 @@ EXCEL_COLUMNS = [
 # REG_NUMBER_META. Одна колонка на все три смысла, как и в самой БД.
 
 
+def _contragent_is_complete(c: Contragent) -> bool:
+    """
+    Карточка заполнена ПОЛНОСТЬЮ = заполнены поля, которые менеджер видит в
+    карточке контрагента (ContragentCardModal.ROWS на фронте): ФИО, страна,
+    тип, рег.номер, тип договора, номер и дата договора, роялти.
+
+    Псевдоним НЕ входит: он тоже показывается в карточке, но легально бывает
+    пустым ("если нет — оставьте пустым") — согласовано с пользователем.
+    reg_number, наоборот, входит, хоть и необязателен при создании: карточка
+    без ИНН/ОГРН считается неполной (это сигнал дозаполнить).
+
+    Используется для подсветки неполных карточек в "Базе контрагентов"
+    (ContragentRow) — контрагент может быть заведён "неполным" через импорт
+    (большинство полей nullable, см. докстринг Contragent). royalty_percent
+    и contract_date проверяем на None явно: 0% роялти — валидное значение,
+    а не "пусто".
+    """
+    return all(
+        [
+            c.name,
+            c.country,
+            c.type,
+            c.reg_number,
+            c.contract_family,
+            c.contract_number,
+            c.contract_date is not None,
+            c.royalty_percent is not None,
+        ]
+    )
+
+
 def _contragent_summary(c: Contragent) -> dict:
     """Краткое представление для списков поиска — title крупно, никнеймы мелко (см. брейншторм)."""
     return {
@@ -97,6 +128,8 @@ def _contragent_summary(c: Contragent) -> dict:
         "type": c.type,
         "contract_family": c.contract_family,
         "reg_number": c.reg_number,
+        # флаг для подсветки неполных карточек в списке (см. _contragent_is_complete)
+        "is_complete": _contragent_is_complete(c),
     }
 
 

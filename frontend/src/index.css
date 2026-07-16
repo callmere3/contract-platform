@@ -18,6 +18,8 @@
   --color-input-bg: var(--c-input-bg);
   --color-accent: var(--c-accent);
   --color-accent-soft: var(--c-accent-soft);
+  --color-danger: var(--c-danger);
+  --color-danger-soft: var(--c-danger-soft);
 
   --radius-card: 14px;
   --radius-btn: 10px;
@@ -44,6 +46,8 @@
   --card-shadow-value: 0 8px 24px rgba(0, 0, 0, 0.4);
   --c-accent: #f59e0b;
   --c-accent-soft: rgba(245, 158, 11, 0.18);
+  --c-danger: #f87171;
+  --c-danger-soft: rgba(248, 113, 113, 0.14);
 }
 
 /* ---- Палитра light ---- */
@@ -62,6 +66,8 @@
   --card-shadow-value: 0 8px 24px rgba(0, 0, 0, 0.06);
   --c-accent: #6366f1;
   --c-accent-soft: rgba(99, 102, 241, 0.1);
+  --c-danger: #dc2626;
+  --c-danger-soft: rgba(220, 38, 38, 0.07);
 }
 
 body {
