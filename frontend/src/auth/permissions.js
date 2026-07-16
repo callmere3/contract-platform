@@ -13,45 +13,54 @@
  *
  * Матрица (согласована с ТЗ и бэкендом):
  *
- *   действие                      | admin | director | top_manager | manager
- *   ------------------------------|-------|----------|-------------|--------
- *   генерация документов          |   +   |    +     |     +       |   +
- *   создание контрагента          |   +   |    +     |     +       |   +
- *   редактирование карточки       |   +   |    +     |     +       |   -
- *   удаление контрагента          |   +   |    -     |     -       |   -
- *   экспорт в Excel               |   +   |    +     |     +       |   -
- *   импорт из Excel               |   +   |    -     |     -       |   -
- *   папки/шаблоны: просмотр       |   +   |    +     |     +       |   +
- *   папки/шаблоны: управление     |   +   |    -     |     -       |   -
- *   пользователи (вкладка)        |   +   |    -     |     -       |   -
- *   просмотр audit_log            |   +   |    +     |     -       |   -
- *   история генерации (вкладка)   |   +   |    +     |     -       |   -
+ *   действие                      | admin | director | top_manager | tester | manager
+ *   ------------------------------|-------|----------|-------------|--------|--------
+ *   генерация документов          |   +   |    +     |     +       |   +    |   +
+ *   создание контрагента          |   +   |    +     |     +       |   +    |   +
+ *   редактирование карточки       |   +   |    +     |     +       |   +    |   -
+ *   удаление контрагента          |   +   |    -     |     -       |   -    |   -
+ *   экспорт в Excel               |   +   |    +     |     +       |   +    |   -
+ *   импорт из Excel               |   +   |    -     |     -       |   -    |   -
+ *   папки/шаблоны: просмотр       |   +   |    +     |     +       |   +    |   +
+ *   папки/шаблоны: управление     |   +   |    -     |     -       |   -    |   -
+ *   пользователи (вкладка)        |   +   |    -     |     -       |   -    |   -
+ *   просмотр audit_log            |   +   |    +     |     -       |   -    |   -
+ *   история генерации (вкладка)   |   +   |    +     |     -       |   -    |   -
+ *   кнопка "Тестовые данные"      |   +   |    -     |     -       |   +    |   -
+ *
+ * TESTER по правам ДОСТУПА совпадает с TOP_MANAGER строка в строку —
+ * отличается только последней строкой таблицы. Это осознанно: роль заведена
+ * ради проверки шаблонов, а кнопка "Тестовые данные" не право, а удобство
+ * (см. canFillDemoData ниже).
  */
 export const ADMIN = 'admin';
 export const DIRECTOR = 'director';
 export const TOP_MANAGER = 'top_manager';
+export const TESTER = 'tester';
 export const MANAGER = 'manager';
 
 export const ROLE_LABELS = {
   [ADMIN]: 'ADMIN',
   [DIRECTOR]: 'DIRECTOR',
   [TOP_MANAGER]: 'TOP MANAGER',
+  [TESTER]: 'TESTER',
   [MANAGER]: 'MANAGER',
 };
 
 const is = (role, ...allowed) => allowed.includes(role);
 
-// backend: CAN_CREATE_CONTRAGENTS = (ADMIN, DIRECTOR, TOP_MANAGER, MANAGER)
-export const canCreateContragents = (role) => is(role, ADMIN, DIRECTOR, TOP_MANAGER, MANAGER);
+// backend: CAN_CREATE_CONTRAGENTS = (ADMIN, DIRECTOR, TOP_MANAGER, TESTER, MANAGER)
+export const canCreateContragents = (role) =>
+  is(role, ADMIN, DIRECTOR, TOP_MANAGER, TESTER, MANAGER);
 
-// backend: CAN_EDIT_CONTRAGENTS = (ADMIN, DIRECTOR, TOP_MANAGER) — правка карточки и никнеймов
-export const canEditContragents = (role) => is(role, ADMIN, DIRECTOR, TOP_MANAGER);
+// backend: CAN_EDIT_CONTRAGENTS = (ADMIN, DIRECTOR, TOP_MANAGER, TESTER) — карточка и никнеймы
+export const canEditContragents = (role) => is(role, ADMIN, DIRECTOR, TOP_MANAGER, TESTER);
 
 // backend: CAN_DELETE_CONTRAGENTS = (ADMIN,)
 export const canDeleteContragents = (role) => is(role, ADMIN);
 
-// backend: CAN_EXPORT_CONTRAGENTS = (ADMIN, DIRECTOR, TOP_MANAGER)
-export const canExport = (role) => is(role, ADMIN, DIRECTOR, TOP_MANAGER);
+// backend: CAN_EXPORT_CONTRAGENTS = (ADMIN, DIRECTOR, TOP_MANAGER, TESTER)
+export const canExport = (role) => is(role, ADMIN, DIRECTOR, TOP_MANAGER, TESTER);
 
 // backend: CAN_IMPORT = (ADMIN,)
 export const canImport = (role) => is(role, ADMIN);
@@ -80,4 +89,7 @@ export const canViewGenerationHistory = (role) => is(role, ADMIN, DIRECTOR);
 // не привилегия, а набор кликов, который менеджер и так может сделать
 // руками. Ограничение чисто UX: кнопка нужна для проверки шаблонов, в
 // рабочем потоке менеджера она только мешала бы.
-export const canFillDemoData = (role) => is(role, ADMIN);
+//
+// TESTER — роль, заведённая ровно ради этой кнопки: по правам доступа она
+// копия TOP_MANAGER, а вся разница здесь.
+export const canFillDemoData = (role) => is(role, ADMIN, TESTER);

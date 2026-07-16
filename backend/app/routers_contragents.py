@@ -44,7 +44,12 @@ from app.auth import get_current_user, require_role
 from app.context_builder import build_contract_number, build_contragent_title, parse_date
 from app.db import get_session
 from app.models import Contragent, ContragentNickname, Template, User
-from app.roles import ADMIN, CAN_EXPORT_CONTRAGENTS, DIRECTOR, MANAGER, TOP_MANAGER
+from app.roles import (
+    ADMIN,
+    CAN_CREATE_CONTRAGENTS,
+    CAN_EDIT_CONTRAGENTS,
+    CAN_EXPORT_CONTRAGENTS,
+)
 from app.tags import (
     COUNTRIES,
     CONTRACT_FAMILIES,
@@ -53,16 +58,6 @@ from app.tags import (
     normalize_reg_number,
     normalize_tag,
 )
-
-# Создание контрагента — рабочее действие, доступно всем ролям кроме
-# перечисленных ниже исключений.
-# Редактирование существующей карточки — НЕ для Manager: он заводит новых
-# контрагентов и генерирует по ним документы, но правка уже заведённой
-# карточки (в т.ч. reg_number — точного идентификатора) остаётся за
-# Admin/Director/TopManager. Удаление и импорт — только Admin, экспорт —
-# Admin/Director/TopManager (см. CAN_EXPORT_CONTRAGENTS в app/roles.py).
-CAN_CREATE_CONTRAGENTS = (ADMIN, DIRECTOR, TOP_MANAGER, MANAGER)
-CAN_EDIT_CONTRAGENTS = (ADMIN, DIRECTOR, TOP_MANAGER)
 
 contragents_router = APIRouter(prefix="/contragents", tags=["contragents"])
 
