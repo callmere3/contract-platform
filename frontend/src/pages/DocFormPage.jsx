@@ -38,6 +38,29 @@ const newRow = (cols, preset = {}) => ({
   ...preset,
 });
 
+/**
+ * "Пустое" значение — то, в котором нечего терять: ни данных карточки
+ * контрагента, ни ввода оператора. Снятая галочка (false) пустой НЕ
+ * считается — это осознанный выбор, а не пропуск.
+ */
+const isBlank = (value) => value === null || value === undefined || String(value).trim() === '';
+
+/**
+ * Накладывает источники на строку таблицы, заполняя ТОЛЬКО пустые ячейки:
+ * первый источник побеждает следующие, а введённое оператором — все сразу.
+ * Тот же принцип, что и в setValue при выборе псевдонима: подстановка
+ * никогда не затирает то, что в ячейке уже есть.
+ */
+function fillBlanks(row, ...sources) {
+  const patch = {};
+  sources.forEach((source) => {
+    Object.entries(source).forEach(([key, value]) => {
+      if (key in row && isBlank(row[key]) && isBlank(patch[key])) patch[key] = value;
+    });
+  });
+  return Object.keys(patch).length ? { ...row, ...patch } : row;
+}
+
 // Уникальные никнеймы исполнителей из столбца «Исполнитель» таблицы треков,
 // в порядке появления. Несколько исполнителей в одной ячейке через запятую
 // («IVAN, PETROV») считаются РАЗНЫМИ исполнителями (как в боевом index.html:
@@ -311,6 +334,12 @@ export function DocFormPage() {
    * работает одинаково для договора, приложения и акта: у каждого свой
    * набор меток, и каждое поле знает своё демо-значение само.
    *
+   * ЗАПОЛНЯЮТСЯ ТОЛЬКО ПУСТЫЕ ПОЛЯ. Демо — нижний слой: всё, что уже
+   * подставлено из карточки контрагента (ФИО, ИНН, номер договора, роялти —
+   * поля с maps_to) или введено оператором, побеждает. Иначе кнопка
+   * подменяла контрагента выдуманным Ивановым: имя переставало быть его
+   * именем, а номер договора — расходиться с карточкой.
+   *
    * Поля без demo не трогаем: у c_date/delivery_date уже есть автодефолт,
    * а term_end/penalty пересчитаются сами из подставленных c_date и
    * advance/count — их и надо проверять расчётом, а не подставленным
@@ -323,12 +352,34 @@ export function DocFormPage() {
   function fillDemo() {
     if (!schema) return;
 
+    // Псевдоним, под которым заполнится вся форма, включая колонку
+    // "Исполнитель" в таблицах: выбранный оператором → любой из карточки →
+    // и только для формы без контрагента — демо-значение из схемы.
+    //
+    // Когда псевдонимов несколько, сервер намеренно не выбирает за
+    // оператора (default не приходит, см. get_template_fields) — но взять
+    // здесь вместо этого "Ivanov" из DEMO_VALUES нельзя: он принадлежит
+    // выдуманному Иванову и для реального контрагента просто неверен.
+    // Первый псевдоним карточки — единственный вариант, который заведомо
+    // его собственный; оператор всё ещё может сменить его в селекте.
+    const nickField = schema.fields.find((f) => f.name === 'nickname');
+    const nickname =
+      values.nickname || nickField?.nickname_options?.[0] || nickField?.demo || '';
+
     setValues((prev) => {
       const next = { ...prev };
       schema.fields.forEach((f) => {
         if (f.type === 'list' || f.locked) return;
         if (f.demo === null || f.demo === undefined) return;
-        next[f.name] = f.demo;
+        // Галочки и выпадающие списки пустыми не бывают (снятая галочка и
+        // первый вариант списка — тоже значения), а данные карточки в них
+        // не попадают: все maps_to — текстовые поля (CONTRAGENT_MAPPED_FIELDS
+        // в app/tags.py). Затирать тут нечего, поэтому заполняем всегда —
+        // иначе демо перестало бы разворачивать блоки ЭДО/SMM/релиза, ради
+        // которых флаги и стоят в True.
+        const alwaysFill = f.type === 'flag' || f.type === 'choice';
+        if (!alwaysFill && !isBlank(next[f.name])) return;
+        next[f.name] = f.name === 'nickname' ? nickname : f.demo;
       });
       return next;
     });
@@ -337,14 +388,26 @@ export function DocFormPage() {
       const next = { ...prev };
       schema.fields.forEach((f) => {
         if (f.type !== 'list' || !f.demo?.length) return;
-        // newRow заполнит все колонки пустыми и наложит демо-строку сверху —
-        // так строка получит id и колонки, которых в демо нет.
-        next[f.name] = f.demo.map((row) => newRow(columnsFor(f), row));
+        const cols = columnsFor(f);
+        const rows = prev[f.name] ?? [];
+        // Порядок слоёв в строке тот же, что и в полях: оператор → карточка
+        // → демо. Поэтому исполнителем трека остаётся псевдоним контрагента,
+        // а не "Ivanov" из демо-строки.
+        const preset = presetForRow(f, contragent, nickname);
+        // Демо-строк может быть больше, чем есть в таблице (у треков их две):
+        // недостающие создаём так же, как их создала бы кнопка "+ Добавить
+        // строку" — иначе новая строка не получила бы id и колонки, которых
+        // в демо нет.
+        const filled = f.demo.map((demoRow, i) =>
+          fillBlanks(rows[i] ?? newRow(cols), preset, demoRow),
+        );
+        // Строки сверх демо оператор добавил сам — не трогаем и не удаляем.
+        next[f.name] = [...filled, ...rows.slice(f.demo.length)];
       });
       return next;
     });
 
-    setNotice('Форма заполнена тестовыми данными.');
+    setNotice('Пустые поля заполнены тестовыми данными.');
   }
 
   function presetForRow(field, detail, nickname) {
