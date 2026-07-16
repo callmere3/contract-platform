@@ -1,7 +1,9 @@
 """
 /generation-history — журнал сгенерированных документов (Admin, Director).
 
-  GET  /generation-history               — список (см. list_generation_history)
+  GET  /generation-history               — список (см. list_generation_history);
+                                             ?filter_type=contragent|nickname|user
+                                             + ?filter_value=... — единый фильтр
   GET  /generation-history/{id}/recreate  — воссоздать документ по сохранённому
                                              payload (?format=docx|pdf, этап 2)
 
@@ -24,17 +26,31 @@ from app.routers_templates import build_document_response
 generation_history_router = APIRouter(prefix="/generation-history", tags=["generation-history"])
 
 
+# Единый фильтр вместо трёх отдельных полей: сначала выбирается ТИП
+# (по какой колонке искать), затем вводится значение — один filter_type
+# + filter_value вместо contragent_id/nickname/user_username по отдельности.
+FILTER_COLUMNS = {
+    "contragent": GeneratedDocument.contragent_title,
+    "nickname": GeneratedDocument.nickname,
+    "user": GeneratedDocument.user_username,
+}
+
+
 @generation_history_router.get(
     "", dependencies=[Depends(require_role(*CAN_VIEW_GENERATION_HISTORY))]
 )
 def list_generation_history(
     limit: int = Query(100, le=500),
-    contragent_id: str | None = None,
+    filter_type: str | None = Query(None, pattern="^(contragent|nickname|user)$"),
+    filter_value: str | None = Query(None),
     db: Session = Depends(get_session),
 ) -> list[dict]:
     query = db.query(GeneratedDocument)
-    if contragent_id is not None:
-        query = query.filter(GeneratedDocument.contragent_id == contragent_id)
+    if filter_type is not None and filter_value:
+        # ILIKE — подстрока без учёта регистра: искать по точному
+        # UUID/логину человек не будет, ищут по части названия/имени.
+        column = FILTER_COLUMNS[filter_type]
+        query = query.filter(column.ilike(f"%{filter_value}%"))
 
     entries = query.order_by(GeneratedDocument.created_at.desc()).limit(limit).all()
     return [
@@ -45,6 +61,7 @@ def list_generation_history(
             "template_name": e.template_name,
             "contragent_id": str(e.contragent_id) if e.contragent_id else None,
             "contragent_title": e.contragent_title,
+            "nickname": e.nickname,
             "format": e.format,
             "created_at": e.created_at.isoformat(),
         }

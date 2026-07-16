@@ -701,9 +701,14 @@ def generate_document(
         contragent = db.get(Contragent, contragent_id)
         contragent_title = contragent.title if contragent is not None else None
 
+    # nickname — тот же ключ формы, что и в build_context()/optional-полях
+    # выше: конкретный псевдоним, для которого сгенерирован ИМЕННО этот
+    # документ (у контрагента их может быть несколько, см. GeneratedDocument).
+    nickname = data.get("nickname") or None
+
     log_generation(
         db, current_user, template.id, template.name, format, data,
-        contragent_id=contragent_id, contragent_title=contragent_title,
+        contragent_id=contragent_id, contragent_title=contragent_title, nickname=nickname,
     )
 
     return response

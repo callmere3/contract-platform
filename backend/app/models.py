@@ -360,6 +360,13 @@ class GeneratedDocument(Base):
     # Nullable: шаблон можно сгенерировать и без привязки к контрагенту
     # (напрямую из "Папок", см. DocFormPage — contragentId там необязателен)
 
+    nickname: Mapped[str | None] = mapped_column(String(255))
+    # Псевдоним, ДЛЯ КОТОРОГО сгенерирован именно этот документ — берётся
+    # прямо из payload формы (поле 'nickname'), а не из карточки контрагента:
+    # у контрагента псевдонимов может быть несколько (см. ContragentNickname),
+    # и разные генерации по одному контрагенту законно используют разные.
+    # Nullable: не у каждого шаблона есть метка nickname.
+
     format: Mapped[str] = mapped_column(String(8))  # 'docx' | 'pdf'
     payload: Mapped[dict] = mapped_column(JSONB)  # сырые данные формы — для пересоздания (этап 2)
 

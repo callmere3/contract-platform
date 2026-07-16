@@ -51,6 +51,7 @@ def log_generation(
     payload: dict,
     contragent_id: uuid.UUID | None = None,
     contragent_title: str | None = None,
+    nickname: str | None = None,
 ) -> None:
     try:
         db.add(
@@ -61,6 +62,7 @@ def log_generation(
                 template_name=template_name,
                 contragent_id=contragent_id,
                 contragent_title=contragent_title,
+                nickname=nickname,
                 format=format,
                 payload=payload,
             )

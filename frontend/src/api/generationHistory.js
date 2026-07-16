@@ -3,10 +3,20 @@ import { API, apiFetch, apiJson } from './client';
 /**
  * GET /generation-history — только Admin и Director (см. app/roles.py:
  * CAN_VIEW_GENERATION_HISTORY). Показывает факт генерации (контрагент,
- * шаблон, кто сгенерировал) — сам payload формы сюда не отдаётся.
+ * псевдоним, шаблон, кто сгенерировал) — сам payload формы сюда не отдаётся.
+ *
+ * filterType/filterValue — единый фильтр вместо трёх отдельных полей:
+ * filterType — 'contragent' | 'nickname' | 'user', filterValue — подстрока
+ * (без учёта регистра, см. ILIKE на бэкенде).
  */
-export function listGenerationHistory() {
-  return apiJson(`${API}/generation-history`);
+export function listGenerationHistory({ filterType, filterValue } = {}) {
+  const params = new URLSearchParams();
+  if (filterType && filterValue) {
+    params.set('filter_type', filterType);
+    params.set('filter_value', filterValue);
+  }
+  const qs = params.toString();
+  return apiJson(`${API}/generation-history${qs ? `?${qs}` : ''}`);
 }
 
 /**
