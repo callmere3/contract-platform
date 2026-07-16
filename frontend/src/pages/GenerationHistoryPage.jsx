@@ -2,13 +2,22 @@ import { useEffect, useState } from 'react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { listGenerationHistory, recreateGeneratedDocument } from '../api/generationHistory';
-import { useModal } from '../modals/ModalProvider';
 
 const FILTER_TYPES = [
   { value: 'contragent', label: 'Контрагент' },
   { value: 'nickname', label: 'Псевдоним' },
   { value: 'user', label: 'Пользователь' },
 ];
+
+/** Название шаблона уходит в <title> вкладки предпросмотра — это HTML, а не
+ *  JSX, экранирование React здесь не работает. Названия задаёт админ, но
+ *  собирать HTML из непроверенной строки всё равно нельзя. */
+function escapeHtml(value) {
+  return String(value).replace(
+    /[&<>"']/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c],
+  );
+}
 
 /**
  * "История генерации" — только Admin и Director (см. app/roles.py:
@@ -31,7 +40,6 @@ export function GenerationHistoryPage() {
   // `${entryId}:${format}` — какая именно кнопка сейчас скачивает, чтобы
   // не блокировать всю строку из-за соседней кнопки docx/pdf.
   const [downloading, setDownloading] = useState(null);
-  const { openModal } = useModal();
 
   useEffect(() => {
     setLoading(true);
@@ -64,6 +72,65 @@ export function GenerationHistoryPage() {
       a.remove();
       URL.revokeObjectURL(url);
     } catch (e) {
+      setError(e.message);
+    } finally {
+      setDownloading(null);
+    }
+  }
+
+  /**
+   * Открывает документ в новой вкладке — встроенным просмотрщиком браузера,
+   * без скачивания.
+   *
+   * Всегда PDF, даже если документ генерировали в .docx: показать .docx
+   * браузер не умеет, встроенный просмотрщик есть только у PDF.
+   *
+   * ПОРЯДОК ВАЖЕН. Вкладку открываем СРАЗУ по клику, до await: если позвать
+   * window.open() после конвертации, браузер уже не считает вызов жестом
+   * пользователя и блокирует вкладку как всплывающее окно. Поэтому сначала
+   * открываем пустую с заглушкой, а документ досылаем в неё, когда он готов.
+   *
+   * Прямую ссылку на эндпоинт сюда не подставить: он закрыт JWT, а вкладка
+   * не отправит заголовок Authorization — получили бы 401. Поэтому качаем
+   * через apiFetch (он приложит токен и обновит его при 401) и отдаём
+   * вкладке blob:-ссылку.
+   */
+  async function preview(entry) {
+    const key = `${entry.id}:preview`;
+    setDownloading(key);
+    setError('');
+
+    const tab = window.open('', '_blank');
+    if (!tab) {
+      setError('Браузер заблокировал новую вкладку — разрешите всплывающие окна для этого сайта.');
+      setDownloading(null);
+      return;
+    }
+    tab.document.write(
+      '<title>Готовим документ…</title>' +
+        '<p style="font:14px system-ui,sans-serif;color:#666;padding:24px">' +
+        'Собираем документ и конвертируем в PDF…</p>',
+    );
+
+    try {
+      const blob = await recreateGeneratedDocument(entry.id, 'pdf');
+      const url = URL.createObjectURL(blob);
+      // Не location.replace(url), а обёртка с iframe — только ради заголовка
+      // вкладки: у blob-ссылки его нет, и во вкладке светился бы UUID вместо
+      // названия документа. Когда открыто несколько документов сразу, это
+      // разница между "какой из них какой" и вкладками-близнецами.
+      tab.document.open();
+      tab.document.write(
+        `<title>${escapeHtml(entry.template_name)}</title>` +
+          '<style>html,body{margin:0;height:100%}iframe{border:0;width:100%;height:100%}</style>' +
+          `<iframe src="${url}"></iframe>`,
+      );
+      tab.document.close();
+      // URL сознательно НЕ освобождаем: он нужен открытой вкладке. Браузер
+      // уберёт его сам, когда закроется или перезагрузится эта страница —
+      // blob живёт ровно столько, сколько документ, который его создал.
+    } catch (e) {
+      tab.close();
       setError(e.message);
     } finally {
       setDownloading(null);
@@ -134,15 +201,16 @@ export function GenerationHistoryPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  {/* Превью — всегда PDF: .docx браузер показать не умеет
-                      (см. DocumentPreviewModal). Кнопки скачивания рядом
-                      остаются, они отдают оба формата. */}
+                  {/* Просмотр — всегда PDF, открывается в новой вкладке
+                      (см. preview() выше). Кнопки скачивания рядом остаются,
+                      они отдают оба формата. */}
                   <Button
                     variant="secondary"
                     size="sm"
-                    onClick={() => openModal('documentPreview', { entry: e })}
+                    disabled={downloading === `${e.id}:preview`}
+                    onClick={() => preview(e)}
                   >
-                    Просмотр
+                    {downloading === `${e.id}:preview` ? '…' : 'Просмотр'}
                   </Button>
                   <Button
                     variant="secondary"
