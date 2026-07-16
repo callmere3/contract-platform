@@ -114,6 +114,36 @@ export async function apiFetch(url, options = {}) {
  * ошибки именно туда — см. HTTPException(detail=...) по всему бэкенду).
  * Кидает Error с человекочитаемым сообщением, которое можно показать как есть.
  */
+/**
+ * Имя файла из заголовка Content-Disposition ответа.
+ *
+ * Имя придумывает СЕРВЕР (см. build_document_filename в context_builder.py):
+ * только у него есть сразу тип документа, вычисленный номер договора и титл
+ * контрагента. Фронт его не собирает, а только достаёт отсюда — иначе
+ * генерация, история и предпросмотр называли бы один и тот же документ
+ * по-разному.
+ *
+ * Кириллица приезжает в filename*=UTF-8''... (RFC 5987) — в обычный
+ * filename="..." по стандарту влезает только ASCII, поэтому сервер шлёт оба,
+ * и звёздочный вариант надо смотреть ПЕРВЫМ: в filename= лежит вычищенный
+ * до ASCII огрызок вроде " - .docx".
+ */
+export function filenameFromResponse(response, fallback = 'document') {
+  const header = response.headers.get('Content-Disposition') || '';
+
+  const utf8 = /filename\*=UTF-8''([^;]+)/i.exec(header);
+  if (utf8) {
+    try {
+      return decodeURIComponent(utf8[1]);
+    } catch {
+      /* битая кодировка — падать из-за имени файла не стоит, берём фолбэк ниже */
+    }
+  }
+
+  const ascii = /filename="([^"]*)"/i.exec(header);
+  return ascii?.[1] || fallback;
+}
+
 export async function apiJson(url, options = {}) {
   const r = await apiFetch(url, options);
   if (!r.ok) {

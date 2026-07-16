@@ -62,11 +62,14 @@ export function GenerationHistoryPage() {
     setDownloading(key);
     setError('');
     try {
-      const blob = await recreateGeneratedDocument(entry.id, format);
+      // Имя — с сервера (Content-Disposition), собрано по титлу-снимку из
+      // истории: тот же файл, что скачали в первый раз. Раньше здесь стояло
+      // название шаблона, и оно расходилось с именем при генерации.
+      const { blob, filename } = await recreateGeneratedDocument(entry.id, format);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${entry.template_name}.${format}`;
+      a.download = filename;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -113,7 +116,7 @@ export function GenerationHistoryPage() {
     );
 
     try {
-      const blob = await recreateGeneratedDocument(entry.id, 'pdf');
+      const { blob, filename } = await recreateGeneratedDocument(entry.id, 'pdf');
       const url = URL.createObjectURL(blob);
       // Не location.replace(url), а обёртка с iframe — только ради заголовка
       // вкладки: у blob-ссылки его нет, и во вкладке светился бы UUID вместо
@@ -121,7 +124,10 @@ export function GenerationHistoryPage() {
       // разница между "какой из них какой" и вкладками-близнецами.
       tab.document.open();
       tab.document.write(
-        `<title>${escapeHtml(entry.template_name)}</title>` +
+        // Заголовок вкладки — настоящее имя документа с сервера, а не
+        // название шаблона: когда открыто несколько договоров, по нему их
+        // и различают.
+        `<title>${escapeHtml(filename)}</title>` +
           '<style>html,body{margin:0;height:100%}iframe{border:0;width:100%;height:100%}</style>' +
           `<iframe src="${url}"></iframe>`,
       );

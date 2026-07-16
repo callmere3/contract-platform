@@ -1,4 +1,4 @@
-import { API, apiFetch, apiJson } from './client';
+import { API, apiFetch, apiJson, filenameFromResponse } from './client';
 
 /**
  * GET /generation-history — только Admin и Director (см. app/roles.py:
@@ -24,6 +24,10 @@ export function listGenerationHistory({ filterType, filterValue } = {}) {
  * хранился — это рендер "на лету", такой же, каким был оригинал, но
  * выполненный сейчас (см. build_document_response на бэкенде). Не создаёт
  * новую запись в истории.
+ *
+ * Возвращает { blob, filename }: имя приходит из Content-Disposition и
+ * собрано сервером по титлу-снимку из истории — то есть совпадает с тем,
+ * под которым документ скачали в первый раз.
  */
 export async function recreateGeneratedDocument(entryId, format = 'docx') {
   const r = await apiFetch(`${API}/generation-history/${entryId}/recreate?format=${format}`);
@@ -37,5 +41,5 @@ export async function recreateGeneratedDocument(entryId, format = 'docx') {
     }
     throw new Error(detail);
   }
-  return r.blob();
+  return { blob: await r.blob(), filename: filenameFromResponse(r) };
 }

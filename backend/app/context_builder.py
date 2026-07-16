@@ -111,13 +111,115 @@ def build_contragent_title(name: str, contragent_type: str) -> str:
     if contragent_type == "ООО":
         return f"{name} ({contragent_type})"
 
+    label = build_contragent_label(name)
+    if not label:
+        return f"({contragent_type})"
+    return f"{label} ({contragent_type})"
+
+
+def build_contragent_label(name: str) -> str:
+    """
+    'Иванов Иван Иванович' -> 'Иванов И. И.'
+
+    Ровно та часть, что и в build_contragent_title(), но без "(тип)".
+    Нужна отдельно для имени файла, когда документ генерируют БЕЗ карточки
+    контрагента (из вкладки "Шаблоны"): титла тогда не существует, а тип
+    контрагента в форме не спрашивается — собрать "(СГ)" не из чего.
+    ФИО же оператор вводит всегда, поэтому имя файла всё равно получается
+    узнаваемым (см. build_document_filename ниже).
+    """
     parts = [p for p in name.split() if p]
     if not parts:
-        return f"({contragent_type})"
+        return ""
     surname = parts[0]
     initials = " ".join(f"{p[0].upper()}." for p in parts[1:])
-    label = f"{surname} {initials}".strip()
-    return f"{label} ({contragent_type})"
+    return f"{surname} {initials}".strip()
+
+
+# Человекочитаемые названия типов документа для имени файла.
+# doc_type может быть None (шаблон "прочего" типа, см. models.Template) —
+# тогда берётся имя самого шаблона, см. build_document_filename.
+DOC_TYPE_LABELS = {
+    "contract": "Договор",
+    "appendix": "Приложение",
+    "act": "Акт",
+}
+
+
+def sanitize_filename(value: str) -> str:
+    """
+    Приводит строку к виду, пригодному для имени файла.
+
+    Слэши -> точки. Это НЕ защита от странных данных, а штатный путь: номер
+    договора имеет вид 'МЛ-01/01/26-ИИИ/СГ', слэши в нём всегда, а в именах
+    файлов они запрещены (и в Windows, и в Linux — там это разделитель пути).
+    Точка выбрана вместо дефиса осознанно: в номере уже есть дефисы, а дата
+    внутри при этом читается привычно — 'МЛ-01.01.26-ИИИ.СГ'.
+
+    Остальные запрещённые Windows символы (<>:"|?*) просто убираем —
+    в наших данных они не встречаются, это страховка от неожиданного ввода.
+    Хвостовые точки и пробелы тоже убираем: Windows молча их отрезает и
+    может выдать неожиданное имя.
+    """
+    value = value.replace("/", ".").replace("\\", ".")
+    value = re.sub(r'[<>:"|?*]', "", value)
+    value = re.sub(r"\s+", " ", value)
+    return value.strip(" .")
+
+
+def build_document_filename(
+    doc_type: str | None,
+    template_name: str,
+    context: dict,
+    data: dict,
+    contragent_title: str | None = None,
+) -> str:
+    """
+    Имя готового файла (без расширения):
+
+        "{титл} - {тип документа}{ номер} {номер договора}"
+
+        Иванов И. И. (СГ) - Договор МЛ-01.01.26-ИИИ.СГ
+        Иванов И. И. (СГ) - Приложение 1 МЛ-01.01.26-ИИИ.СГ
+        Иванов И. И. (СГ) - Акт 1 МЛ-01.01.26-ИИИ.СГ
+
+    Номер (appendix_no/act_no) — только у Приложения и Акта: у Договора
+    такого поля нет, его номер и есть номер договора.
+
+    Номер договора берётся из context, а не из data: у Договора он
+    ВЫЧИСЛЯЕМЫЙ (build_contract_number из даты и ФИО, в форме его нет), а у
+    Приложения/Акта — введённый оператором. В context он уже приведён к
+    единому виду в обоих случаях (см. build_context).
+
+    Титл: из карточки контрагента, если документ генерируют по ней. Если
+    карточки нет (генерация из "Шаблонов") — собираем из ФИО в форме, но
+    без "(тип)": тип контрагента в форме не спрашивается.
+
+    Все части необязательны — если чего-то нет, кусок просто выпадает, а
+    не оставляет дыру: документ без ФИО и номера получит имя вида
+    "Договор", и это лучше, чем " - Договор ".
+    """
+    parts: list[str] = []
+
+    title = (contragent_title or "").strip()
+    if not title:
+        title = build_contragent_label(str(data.get("name") or "").strip())
+    if title:
+        parts.append(f"{title} -")
+
+    label = DOC_TYPE_LABELS.get(doc_type or "") or template_name
+    number = ""
+    if doc_type == "appendix":
+        number = str(data.get("appendix_no") or "").strip()
+    elif doc_type == "act":
+        number = str(data.get("act_no") or "").strip()
+    parts.append(f"{label} {number}".strip())
+
+    contract = str(context.get("contract") or "").strip()
+    if contract:
+        parts.append(contract)
+
+    return sanitize_filename(" ".join(parts)) or "document"
 
 
 MONTHS_RU = {

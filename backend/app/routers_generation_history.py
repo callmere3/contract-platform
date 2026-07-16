@@ -105,4 +105,8 @@ def recreate_generated_document(
             detail="Шаблон, по которому создавался документ, был удалён — пересоздать нечем",
         )
 
-    return build_document_response(template, entry.payload, format)
+    # contragent_title — снимок на момент генерации, а не текущий титл
+    # карточки: имя файла должно совпадать с тем, что скачали тогда, даже
+    # если карточку с тех пор переименовали или удалили (тогда titl остался
+    # только здесь, contragent_id обнулился по ondelete=SET NULL).
+    return build_document_response(template, entry.payload, format, entry.contragent_title)

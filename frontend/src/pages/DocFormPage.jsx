@@ -453,12 +453,17 @@ export function DocFormPage() {
     return data;
   }
 
-  async function download(id, filename) {
-    const blob = await generateDocument(id, collect(), format, contragentId);
+  // Имя файла приходит с сервера в Content-Disposition — уже с расширением
+  // и по формуле "{титл} - {тип документа}{ номер} {номер договора}"
+  // (см. build_document_filename на бэкенде). Здесь его не собираем: раньше
+  // фронт подставлял название шаблона ("Договор_СГ_роялти.docx"), и у
+  // истории генерации имя выходило другим.
+  async function download(id) {
+    const { blob, filename } = await generateDocument(id, collect(), format, contragentId);
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${filename}.${format}`;
+    a.download = filename;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -470,10 +475,10 @@ export function DocFormPage() {
     setError('');
     setNotice('');
     try {
-      await download(templateId, schema.name);
+      await download(templateId);
       if (pairedAct && wantsPairedAct) {
         try {
-          await download(pairedAct.id, pairedAct.name);
+          await download(pairedAct.id);
           setNotice('Приложение и Акт сформированы и скачаны.');
         } catch (e) {
           // Основной документ уже скачан — не откатываем его, просто

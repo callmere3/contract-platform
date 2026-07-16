@@ -1,4 +1,4 @@
-import { API, apiFetch, apiJson } from './client';
+import { API, apiFetch, apiJson, filenameFromResponse } from './client';
 
 /**
  * Вызовы к /folders и /templates.
@@ -96,9 +96,17 @@ export function updateTemplateFields(templateId, mapping) {
 }
 
 /**
- * Генерация документа. Возвращает Blob (файл), поэтому apiFetch напрямую.
+ * Генерация документа. Возвращает { blob, filename }, поэтому apiFetch
+ * напрямую (apiJson тут не годится — тело файл, а не JSON).
+ *
+ * filename придумывает сервер и шлёт в Content-Disposition (см.
+ * build_document_filename на бэкенде) — здесь его только достаём. Раньше имя
+ * собирал фронт из названия шаблона, и у каждого места скачивания оно
+ * получалось своё.
+ *
  * format: 'docx' | 'pdf'. contragentId необязателен — на сам документ не
- * влияет, только на то, какой контрагент будет виден в "Истории генерации".
+ * влияет, только на то, какой контрагент будет виден в "Истории генерации"
+ * и попадёт ли титл в имя файла.
  */
 export async function generateDocument(templateId, payload, format = 'docx', contragentId) {
   const qs = contragentId ? `&contragent_id=${contragentId}` : '';
@@ -117,5 +125,5 @@ export async function generateDocument(templateId, payload, format = 'docx', con
     }
     throw new Error(detail);
   }
-  return r.blob();
+  return { blob: await r.blob(), filename: filenameFromResponse(r) };
 }

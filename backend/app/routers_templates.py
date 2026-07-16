@@ -27,7 +27,9 @@
                                            генерации, на сам документ не влияет)
 """
 import io
+import re
 import uuid
+from urllib.parse import quote
 
 import httpx
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
@@ -37,7 +39,7 @@ from sqlalchemy.orm import Session
 from app.audit import log_generation
 from app.auth import get_current_user, require_role
 from app.config import settings
-from app.context_builder import build_context, find_missing_variables
+from app.context_builder import build_context, build_document_filename, find_missing_variables
 from app.db import get_session
 from app.generation import fix_tables_for_pdf, render_document, scan_placeholders
 from app.models import Contragent, Template, TemplateField, TemplateFolder, User, folder_path
@@ -582,7 +584,32 @@ def get_template_fields(
     }
 
 
-def build_document_response(template: Template, data: dict, format: str) -> StreamingResponse:
+def _content_disposition(filename: str) -> str:
+    """
+    Content-Disposition для имени файла с кириллицей.
+
+    В обычном filename="..." по RFC 6266 допустим только ASCII, а у нас там
+    "Иванов И. И. (СГ) - Договор ...". Поэтому в заголовке два варианта
+    сразу: filename= — вычищенный до ASCII фолбэк (для клиентов, не знающих
+    RFC 5987), и filename*=UTF-8'' — настоящее имя. Все живые браузеры
+    берут второе, фолбэк на практике не всплывает, но заголовок без него
+    формально некорректен.
+    """
+    ascii_fallback = filename.encode("ascii", "ignore").decode("ascii")
+    # кавычки и обратные слэши сломали бы сам заголовок
+    ascii_fallback = re.sub(r'["\\]', "", ascii_fallback).strip(" .") or "document"
+    return (
+        f'attachment; filename="{ascii_fallback}"; '
+        f"filename*=UTF-8''{quote(filename, safe='')}"
+    )
+
+
+def build_document_response(
+    template: Template,
+    data: dict,
+    format: str,
+    contragent_title: str | None = None,
+) -> StreamingResponse:
     """
     Общее ядро рендера — валидация + docxtpl + (для pdf) конвертация.
     Переиспользуется в /generate (шаг 1) и /generation-history/{id}/recreate
@@ -592,6 +619,17 @@ def build_document_response(template: Template, data: dict, format: str) -> Stre
     вызывающей стороны: пересоздание уже существующей записи истории не
     должно плодить новую (иначе "кто сгенерировал" исказится на того, кто
     просто посмотрел документ повторно).
+
+    Имя файла собирается ЗДЕСЬ, а не на фронте (17.07.2026): только тут есть
+    сразу и тип документа, и вычисленный номер договора, и титл. Раньше имя
+    придумывал фронт ("Договор_СГ_роялти.docx" — просто название шаблона), и
+    у каждого места скачивания оно было своё. Теперь и генерация, и
+    пересоздание из истории, и предпросмотр дают одинаковое имя, а фронт
+    только читает его из Content-Disposition.
+
+    contragent_title — титл из карточки, если документ генерируют по ней.
+    None (генерация из "Шаблонов") — не ошибка: имя соберётся из ФИО в форме,
+    см. build_document_filename.
     """
     docx_bytes = get_file(template.storage_key)
 
@@ -625,11 +663,15 @@ def build_document_response(template: Template, data: dict, format: str) -> Stre
 
     result_bytes = render_document(docx_bytes, context)
 
+    filename = build_document_filename(
+        template.doc_type, template.name, context, data, contragent_title
+    )
+
     if format == "docx":
         return StreamingResponse(
             io.BytesIO(result_bytes),
             media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            headers={"Content-Disposition": 'attachment; filename="document.docx"'},
+            headers={"Content-Disposition": _content_disposition(f"{filename}.docx")},
         )
 
     # format == "pdf" — отдаём docx на конвертацию отдельному сервису.
@@ -673,7 +715,7 @@ def build_document_response(template: Template, data: dict, format: str) -> Stre
     return StreamingResponse(
         io.BytesIO(response.content),
         media_type="application/pdf",
-        headers={"Content-Disposition": 'attachment; filename="document.pdf"'},
+        headers={"Content-Disposition": _content_disposition(f"{filename}.pdf")},
     )
 
 
@@ -712,12 +754,14 @@ def generate_document(
     if template is None:
         raise HTTPException(status_code=404, detail="Шаблон не найден")
 
-    response = build_document_response(template, data, format)
-
+    # Титл нужен ДО рендера: из него собирается имя файла (см.
+    # build_document_response). Заодно он же уходит в историю снимком.
     contragent_title = None
     if contragent_id is not None:
         contragent = db.get(Contragent, contragent_id)
         contragent_title = contragent.title if contragent is not None else None
+
+    response = build_document_response(template, data, format, contragent_title)
 
     # nickname — тот же ключ формы, что и в build_context()/optional-полях
     # выше: конкретный псевдоним, для которого сгенерирован ИМЕННО этот
