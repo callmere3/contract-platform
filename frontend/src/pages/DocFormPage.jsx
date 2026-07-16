@@ -273,8 +273,12 @@ export function DocFormPage() {
   /**
    * Автоподстановка в строки списков. Логика перенесена из боевой версии:
    *  - в таблице треков колонка "исполнитель" заполняется псевдонимом;
-   *  - в сноске "Исполнители" в одной строке сразу и псевдоним, и ФИО —
-   *    раз контрагент известен, ФИО для той же строки тоже известно.
+   *  - в сноске "Исполнители" ФИО подставляется ТОЛЬКО вместе с псевдонимом —
+   *    то есть когда исполнитель действительно выбран из псевдонимов
+   *    контрагента: только тогда мы наверняка знаем его ФИО. Без выбранного
+   *    псевдонима (например, у контрагента вообще нет псевдонимов, или строка
+   *    добавлена пустой) ФИО НЕ предзаполняем — иначе в сноске появлялось бы
+   *    ФИО контрагента при пустом исполнителе.
    * Значения остаются редактируемыми — это стартовое значение, не блокировка.
    *
    * nickname передаётся аргументом, а не берётся из схемы: при старте это
@@ -282,11 +286,11 @@ export function DocFormPage() {
    * реально выбрал в поле "Псевдоним".
    */
   function presetForRow(field, detail, nickname) {
-    if (!detail) return {};
+    if (!detail || !nickname) return {};
     const preset = {};
     const cols = (field.item_fields ?? []).map((c) => c.name);
-    if (cols.includes('performer') && nickname) preset.performer = nickname;
-    if (cols.includes('nickname') && nickname) preset.nickname = nickname;
+    if (cols.includes('performer')) preset.performer = nickname;
+    if (cols.includes('nickname')) preset.nickname = nickname;
     if (cols.includes('fio') && detail.name) preset.fio = detail.name;
     return preset;
   }
