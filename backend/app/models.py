@@ -234,6 +234,13 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(16))  # см. app/roles.py: ROLES
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
+    # Время последнего авторизованного запроса — обновляется в
+    # get_current_user (с троттлингом ~60с, см. auth.py). По нему вкладка
+    # "Пользователи" показывает "в сети" (< 5 мин) / "был(а) тогда-то".
+    # Nullable: у пользователя, ни разу не заходившего после ввода фичи,
+    # значения ещё нет.
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

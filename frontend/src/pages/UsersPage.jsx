@@ -8,6 +8,30 @@ import { useAuth } from '../auth/AuthContext';
 import { ROLE_LABELS } from '../auth/permissions';
 import { useModal } from '../modals/ModalProvider';
 
+// "В сети" = был запрос в последние 5 минут. Сервер обновляет last_seen_at на
+// каждом авторизованном запросе (с троттлингом), поэтому если у пользователя
+// просто открыта страница без действий — через 5 минут он станет оффлайн.
+const ONLINE_WINDOW_MS = 5 * 60 * 1000;
+// Как часто тихо перезапрашиваем список, чтобы статусы других были живыми.
+const REFRESH_MS = 30 * 1000;
+
+function isOnline(user) {
+  if (!user.is_active || !user.last_seen_at) return false;
+  return Date.now() - Date.parse(user.last_seen_at) < ONLINE_WINDOW_MS;
+}
+
+function lastSeenText(user) {
+  if (!user.last_seen_at) return 'ещё не заходил(а)';
+  const dt = new Date(user.last_seen_at).toLocaleString('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+  return `был(а) ${dt}`;
+}
+
 /**
  * "Пользователи" — только для admin (все три эндпоинта /users защищены
  * require_role(ADMIN)). Вкладка в шапке тоже показывается только ему.
@@ -43,6 +67,19 @@ export function UsersPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Тихое фоновое обновление статусов "в сети" — без спиннера/ошибок, чтобы
+  // не мигало. Заодно перевод пользователя в оффлайн по истечении 5 минут
+  // происходит на следующем таком тике (isOnline пересчитывается от свежего
+  // времени при ре-рендере).
+  useEffect(() => {
+    const t = setInterval(() => {
+      listUsers()
+        .then(setUsers)
+        .catch(() => {});
+    }, REFRESH_MS);
+    return () => clearInterval(t);
+  }, []);
 
   async function changeRole(user, role) {
     setSavingId(user.id);
@@ -88,6 +125,7 @@ export function UsersPage() {
           users.map((u) => {
             const isMe = u.id === me?.id;
             const busy = savingId === u.id;
+            const online = isOnline(u);
             return (
               <div
                 key={u.id}
@@ -99,7 +137,18 @@ export function UsersPage() {
                     {isMe && <Badge variant="neutral">это вы</Badge>}
                     {!u.is_active && <Badge variant="neutral">отключён</Badge>}
                   </div>
-                  <div className="text-[13px] text-text-muted mt-0.5 truncate">{u.username}</div>
+                  <div className="text-[13px] text-text-muted mt-0.5 truncate flex items-center gap-1.5">
+                    <span>{u.username}</span>
+                    <span className="text-border">·</span>
+                    <span
+                      className={`inline-block w-2 h-2 rounded-full flex-shrink-0 ${
+                        online ? 'bg-success' : 'bg-danger'
+                      }`}
+                    />
+                    <span className={online ? 'text-success' : ''}>
+                      {online ? 'в сети' : lastSeenText(u)}
+                    </span>
+                  </div>
                 </div>
 
                 <div className="flex items-center gap-2.5 flex-shrink-0">

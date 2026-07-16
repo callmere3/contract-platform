@@ -250,6 +250,9 @@ def list_users(db: Session = Depends(get_session)) -> list[dict]:
             "full_name": u.full_name,
             "role": u.role,
             "is_active": u.is_active,
+            # ISO-время последнего запроса; фронт по нему считает "в сети"
+            # (< 5 мин) и показывает время последнего использования.
+            "last_seen_at": u.last_seen_at.isoformat() if u.last_seen_at else None,
         }
         for u in users
     ]

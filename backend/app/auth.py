@@ -157,7 +157,35 @@ def get_current_user(
     user = db.get(User, uuid.UUID(payload["sub"]))
     if user is None or not user.is_active:
         raise HTTPException(status_code=401, detail="Пользователь не найден или деактивирован")
+
+    _touch_last_seen(db, user)
     return user
+
+
+# Как часто обновляем last_seen_at: чаще писать в БД на каждый запрос
+# незачем — статус "в сети" считается с порогом 5 минут, точность до минуты
+# избыточна. 60с — компромисс между свежестью и нагрузкой на запись.
+_LAST_SEEN_THROTTLE_SECONDS = 60
+
+
+def _touch_last_seen(db: Session, user: User) -> None:
+    """
+    Обновляет user.last_seen_at (не чаще раза в минуту). Best-effort: если
+    запись не удалась, глотаем ошибку и откатываем — статус "в сети" не
+    настолько важен, чтобы из-за него падал реальный запрос пользователя
+    (тот же принцип, что и у audit_log).
+    """
+    now = datetime.now(timezone.utc)
+    last = user.last_seen_at
+    if last is not None and last.tzinfo is None:
+        last = last.replace(tzinfo=timezone.utc)
+    if last is not None and (now - last).total_seconds() < _LAST_SEEN_THROTTLE_SECONDS:
+        return
+    try:
+        user.last_seen_at = now
+        db.commit()
+    except Exception:
+        db.rollback()
 
 
 def require_role(*allowed_roles: str):
