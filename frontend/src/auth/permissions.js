@@ -70,3 +70,14 @@ export const canOpenImportExport = (role) => canExport(role) || canImport(role);
 
 // backend: CAN_VIEW_GENERATION_HISTORY = (ADMIN, DIRECTOR) — вкладка "История генерации"
 export const canViewGenerationHistory = (role) => is(role, ADMIN, DIRECTOR);
+
+// Кнопка "Заполнить тестовыми" в форме генерации.
+//
+// ЕДИНСТВЕННОЕ право в этом файле БЕЗ пары в roles.py — и это осознанно.
+// Остальные скрывают кнопку, которая вернула бы 403; здесь защищать нечего:
+// демо-значения приходят в схеме полей всем ролям (см. DEMO_VALUES в
+// template_analysis.py), они заведомо ненастоящие, и "заполнить форму" —
+// не привилегия, а набор кликов, который менеджер и так может сделать
+// руками. Ограничение чисто UX: кнопка нужна для проверки шаблонов, в
+// рабочем потоке менеджера она только мешала бы.
+export const canFillDemoData = (role) => is(role, ADMIN);

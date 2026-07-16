@@ -7,6 +7,8 @@ import { EditableTable } from '../components/ui/EditableTable';
 import { FieldRenderer } from '../components/ui/FieldRenderer';
 import { generateDocument, getTemplateFields } from '../api/templates';
 import { getContragent, getContragentTemplates } from '../api/contragents';
+import { useAuth } from '../auth/AuthContext';
+import { canFillDemoData } from '../auth/permissions';
 
 // Ширины узких колонок в псевдотаблицах: № и галочки не должны съедать
 // место у осмысленных колонок (название трека, ФИО).
@@ -156,6 +158,7 @@ export function DocFormPage() {
   const contragentId = searchParams.get('contragent');
   const navigate = useNavigate();
 
+  const { user } = useAuth();
   const [schema, setSchema] = useState(null);
   const [values, setValues] = useState({});
   const [lists, setLists] = useState({}); // {fieldName: [row, ...]}
@@ -298,6 +301,52 @@ export function DocFormPage() {
    * default с сервера, а для строк, добавленных позже — уже то, что оператор
    * реально выбрал в поле "Псевдоним".
    */
+  /**
+   * Заполняет форму демо-данными (кнопка только у админа, см.
+   * canFillDemoData). Значения берутся ИЗ СХЕМЫ — поле `demo`, которое
+   * сервер кладёт рядом с label/hint (см. DEMO_VALUES в
+   * template_analysis.py). Здесь их сознательно нет: форма строится из
+   * .docx, и списка полей на фронте быть не должно — иначе кнопка
+   * потребовала бы правки при каждом новом шаблоне (ИП/ООО). Так же она
+   * работает одинаково для договора, приложения и акта: у каждого свой
+   * набор меток, и каждое поле знает своё демо-значение само.
+   *
+   * Поля без demo не трогаем: у c_date/delivery_date уже есть автодефолт,
+   * а term_end/penalty пересчитаются сами из подставленных c_date и
+   * advance/count — их и надо проверять расчётом, а не подставленным
+   * числом.
+   *
+   * locked-поля пропускаем: дата, зафиксированная в карточке контрагента,
+   * не редактируется в принципе — затирать её демо-значением значило бы
+   * обойти собственное правило (см. get_template_fields на бэкенде).
+   */
+  function fillDemo() {
+    if (!schema) return;
+
+    setValues((prev) => {
+      const next = { ...prev };
+      schema.fields.forEach((f) => {
+        if (f.type === 'list' || f.locked) return;
+        if (f.demo === null || f.demo === undefined) return;
+        next[f.name] = f.demo;
+      });
+      return next;
+    });
+
+    setLists((prev) => {
+      const next = { ...prev };
+      schema.fields.forEach((f) => {
+        if (f.type !== 'list' || !f.demo?.length) return;
+        // newRow заполнит все колонки пустыми и наложит демо-строку сверху —
+        // так строка получит id и колонки, которых в демо нет.
+        next[f.name] = f.demo.map((row) => newRow(columnsFor(f), row));
+      });
+      return next;
+    });
+
+    setNotice('Форма заполнена тестовыми данными.');
+  }
+
   function presetForRow(field, detail, nickname) {
     if (!detail || !nickname) return {};
     const preset = {};
@@ -494,9 +543,18 @@ export function DocFormPage() {
               <div className="text-[11px] text-text-muted mt-0.5 truncate">{contragent.title}</div>
             )}
           </div>
-          <Button variant="secondary" size="sm" onClick={() => navigate(-1)}>
-            ← Назад
-          </Button>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {/* Только админу: кнопка для проверки шаблонов, в рабочем потоке
+                менеджера она бы только мешала (см. canFillDemoData). */}
+            {canFillDemoData(user?.role) && (
+              <Button variant="secondary" size="sm" onClick={fillDemo}>
+                Тестовые данные
+              </Button>
+            )}
+            <Button variant="secondary" size="sm" onClick={() => navigate(-1)}>
+              ← Назад
+            </Button>
+          </div>
         </div>
 
         <div className="px-6 py-6">
