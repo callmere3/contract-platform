@@ -547,11 +547,14 @@ export function DocFormPage() {
                         label: c.label,
                         width: NARROW_COLUMNS[c.name],
                         // Галочки внутри строк: НЛ у трека, "группа" у исполнителя.
+                        // Колонка исполнителя — combo: свободный ввод + подсказки
+                        // из псевдонимов контрагента (можно выбрать ИЛИ вписать
+                        // своё). Без псевдонимов combo без подсказок = обычный ввод.
                         type:
                           c.name === 'has_profanity' || c.name === 'is_group'
                             ? 'flag'
-                            : (c.name === 'performer' || c.name === 'nickname') && nicknameOptions?.length
-                              ? 'select'
+                            : c.name === 'performer' || c.name === 'nickname'
+                              ? 'combo'
                               : 'text',
                         options: nicknameOptions,
                       }))}

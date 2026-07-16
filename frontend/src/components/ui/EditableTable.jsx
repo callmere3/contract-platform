@@ -11,6 +11,18 @@
 export function EditableTable({ columns, rows, onChangeCell, onRemoveRow, onAddRow, addLabel }) {
   return (
     <div className="mb-5 border border-border rounded-input overflow-hidden">
+      {/* Подсказки для комбо-колонок (исполнитель): один datalist на колонку,
+          общий для всех строк. Ячейка ниже — обычный input со свободным вводом
+          плюс list=... с этими подсказками (выбрать из списка ИЛИ вписать своё). */}
+      {columns
+        .filter((c) => c.type === 'combo' && c.options?.length)
+        .map((c) => (
+          <datalist key={c.key} id={`dl-${c.key}`}>
+            {c.options.map((o) => (
+              <option key={o} value={o} />
+            ))}
+          </datalist>
+        ))}
       <div style={{ display: 'table', tableLayout: 'fixed', width: '100%' }}>
         {/* Заголовок — подложка чуть темнее полотна, чтобы отделить шапку.
             Границы вешаем на ЯЧЕЙКИ, а не на table-row: по спецификации CSS
@@ -47,9 +59,9 @@ export function EditableTable({ columns, rows, onChangeCell, onRemoveRow, onAddR
               >
                 {/* Тип ячейки диктует схема поля с сервера:
                     flag  — is_group / has_profanity (галочка внутри строки);
-                    select — колонка исполнителя, когда у контрагента есть
-                             псевдонимы (тогда выбираем из них, а не пишем
-                             руками);
+                    combo — колонка исполнителя: свободный ввод + подсказки из
+                            псевдонимов контрагента (datalist), можно и выбрать,
+                            и вписать своё (напр. приглашённого артиста);
                     иначе — обычный текстовый ввод. */}
                 {col.type === 'flag' ? (
                   <input
@@ -58,23 +70,11 @@ export function EditableTable({ columns, rows, onChangeCell, onRemoveRow, onAddR
                     onChange={(e) => onChangeCell(row.id, col.key, e.target.checked)}
                     className="w-4 h-4 accent-accent block mx-auto"
                   />
-                ) : col.type === 'select' ? (
-                  <select
-                    value={row[col.key] ?? ''}
-                    onChange={(e) => onChangeCell(row.id, col.key, e.target.value)}
-                    className="w-full bg-transparent border-none outline-none text-[13px] text-text font-sans"
-                  >
-                    <option value="">—</option>
-                    {col.options?.map((o) => (
-                      <option key={o} value={o}>
-                        {o}
-                      </option>
-                    ))}
-                  </select>
                 ) : (
                   <input
                     value={row[col.key] ?? ''}
                     onChange={(e) => onChangeCell(row.id, col.key, e.target.value)}
+                    list={col.type === 'combo' && col.options?.length ? `dl-${col.key}` : undefined}
                     className="w-full bg-transparent border-none outline-none text-[13px] text-text font-sans"
                   />
                 )}
