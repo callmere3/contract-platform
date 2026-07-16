@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { listGenerationHistory, recreateGeneratedDocument } from '../api/generationHistory';
+import { useModal } from '../modals/ModalProvider';
 
 const FILTER_TYPES = [
   { value: 'contragent', label: 'Контрагент' },
@@ -30,6 +31,7 @@ export function GenerationHistoryPage() {
   // `${entryId}:${format}` — какая именно кнопка сейчас скачивает, чтобы
   // не блокировать всю строку из-за соседней кнопки docx/pdf.
   const [downloading, setDownloading] = useState(null);
+  const { openModal } = useModal();
 
   useEffect(() => {
     setLoading(true);
@@ -132,6 +134,16 @@ export function GenerationHistoryPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5">
+                  {/* Превью — всегда PDF: .docx браузер показать не умеет
+                      (см. DocumentPreviewModal). Кнопки скачивания рядом
+                      остаются, они отдают оба формата. */}
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => openModal('documentPreview', { entry: e })}
+                  >
+                    Просмотр
+                  </Button>
                   <Button
                     variant="secondary"
                     size="sm"
