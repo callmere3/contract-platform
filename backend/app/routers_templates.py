@@ -41,7 +41,7 @@ from app.context_builder import build_context, find_missing_variables
 from app.db import get_session
 from app.generation import fix_tables_for_pdf, render_document, scan_placeholders
 from app.models import Contragent, Template, TemplateField, TemplateFolder, User, folder_path
-from app.roles import ADMIN, DIRECTOR, MANAGER, TOP_MANAGER
+from app.roles import ADMIN, CAN_GENERATE
 from app.storage import delete_file, get_file, put_file
 from app.tags import (
     CONTRAGENT_MAPPED_FIELDS,
@@ -52,10 +52,6 @@ from app.tags import (
     normalize_optional_tag,
 )
 from app.template_analysis import analyze_template, fields_to_dict
-
-# управление структурой (папки/шаблоны) — только Admin (см. брейншторм ролей);
-# генерация документов — рабочее действие, доступно всем ролям
-CAN_GENERATE = (ADMIN, DIRECTOR, TOP_MANAGER, MANAGER)
 
 folders_router = APIRouter(prefix="/folders", tags=["folders"])
 templates_router = APIRouter(prefix="/templates", tags=["templates"])
