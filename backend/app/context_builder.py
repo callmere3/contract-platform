@@ -246,7 +246,11 @@ def build_profanity_note(tracks: list[dict]) -> str:
     Логика (по требованиям юриста):
       - ни у одного трека нет НЛ  -> "нет"
       - у всех треков есть НЛ      -> "да"
-      - частично                    -> "№1, 3 – нет, №2, 4 – да"
+      - частично                    -> "№1, 3 – да, №2, 4 – нет"
+
+    Порядок групп задаёт ПЕРВЫЙ трек: сначала группа с его значением НЛ,
+    затем остальные. Например, если у трека №1 есть НЛ — сноска начинается
+    с группы «да» (раньше «нет» всегда шло первым независимо от треков).
     """
     with_nl = [i + 1 for i, t in enumerate(tracks) if t.get("has_profanity")]
     without_nl = [i + 1 for i, t in enumerate(tracks) if not t.get("has_profanity")]
@@ -256,13 +260,16 @@ def build_profanity_note(tracks: list[dict]) -> str:
     if not without_nl:
         return "да"
 
+    first_has = bool(tracks[0].get("has_profanity"))
+    ordered = (
+        [(with_nl, "да"), (without_nl, "нет")]
+        if first_has
+        else [(without_nl, "нет"), (with_nl, "да")]
+    )
     parts = []
-    if without_nl:
-        nums = ", ".join(f"№{n}" if i == 0 else str(n) for i, n in enumerate(without_nl))
-        parts.append(f"{nums} – нет")
-    if with_nl:
-        nums = ", ".join(f"№{n}" if i == 0 else str(n) for i, n in enumerate(with_nl))
-        parts.append(f"{nums} – да")
+    for nums, label in ordered:
+        s = ", ".join(f"№{n}" if i == 0 else str(n) for i, n in enumerate(nums))
+        parts.append(f"{s} – {label}")
     return ", ".join(parts)
 
 

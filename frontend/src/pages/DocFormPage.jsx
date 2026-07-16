@@ -36,6 +36,59 @@ const newRow = (cols, preset = {}) => ({
   ...preset,
 });
 
+// Уникальные никнеймы исполнителей из столбца «Исполнитель» таблицы треков,
+// в порядке появления. Несколько исполнителей в одной ячейке через запятую
+// («IVAN, PETROV») считаются РАЗНЫМИ исполнителями (как в боевом index.html:
+// syncPerformers) — каждый попадёт в сноску отдельной строкой.
+function uniquePerformerNicks(tracksRows) {
+  const nicks = [];
+  const seen = new Set();
+  (tracksRows ?? []).forEach((row) => {
+    String(row.performer ?? '')
+      .split(',')
+      .forEach((part) => {
+        const v = part.trim();
+        const key = v.toLowerCase();
+        if (v && !seen.has(key)) {
+          seen.add(key);
+          nicks.push(v);
+        }
+      });
+  });
+  return nicks;
+}
+
+// Пересобирает строки сноски «Исполнители» из уникальных исполнителей
+// таблицы треков (зеркало syncPerformers из index.html). ФИО и отметку
+// «Группа» сохраняем по никнейму, чтобы не терять уже введённое оператором.
+// Если исполнителей в треках ещё нет — сноску не трогаем (там обычно одна
+// пустая строка, которую оператор может заполнить руками).
+//
+// Возвращает ТОТ ЖЕ массив (prevRows) когда состав не изменился — чтобы не
+// провоцировать лишний ре-рендер и не сбрасывать фокус при правках треков.
+function rebuildPerformers(tracksRows, prevRows, perfColumns) {
+  const nicks = uniquePerformerNicks(tracksRows);
+  if (!nicks.length) return prevRows;
+
+  const byNick = new Map();
+  (prevRows ?? []).forEach((r) => {
+    const key = (r.nickname ?? '').trim().toLowerCase();
+    if (key && !byNick.has(key)) byNick.set(key, r);
+  });
+
+  const rebuilt = nicks.map((nick) => {
+    const existing = byNick.get(nick.toLowerCase());
+    if (existing) return existing.nickname === nick ? existing : { ...existing, nickname: nick };
+    return newRow(perfColumns, { nickname: nick });
+  });
+
+  const unchanged =
+    prevRows &&
+    rebuilt.length === prevRows.length &&
+    rebuilt.every((r, i) => r === prevRows[i]);
+  return unchanged ? prevRows : rebuilt;
+}
+
 // Кварталы — как в build_term_end на бэкенде (app/context_builder.py):
 // срок действия всегда до конца квартала, а не произвольного числа.
 const QUARTER_ENDS = { 1: '31 марта', 2: '30 июня', 3: '30 сентября', 4: '31 декабря' };
@@ -202,6 +255,20 @@ export function DocFormPage() {
     if (!schema?.fields.some((f) => f.name === 'penalty')) return;
     setValues((s) => ({ ...s, penalty: computePenalty(values.advance, values.count) }));
   }, [values.advance, values.count, penaltyTouched, schema]);
+
+  // Синхронизация сноски «Исполнители» с таблицей треков: любой исполнитель,
+  // появившийся в треках (в т.ч. второй, и каждый из перечисленных через
+  // запятую), автоматически попадает в сноску. Зависит только от lists.tracks,
+  // поэтому правки самой сноски (ФИО, «Группа») её не пересобирают.
+  useEffect(() => {
+    const perfField = schema?.fields.find((f) => f.name === 'performers');
+    if (!perfField || !schema.fields.some((f) => f.name === 'tracks')) return;
+    const perfColumns = columnsFor(perfField);
+    setLists((s) => {
+      const next = rebuildPerformers(s.tracks, s.performers, perfColumns);
+      return next === s.performers ? s : { ...s, performers: next };
+    });
+  }, [lists.tracks, schema]);
 
   /**
    * Автоподстановка в строки списков. Логика перенесена из боевой версии:
