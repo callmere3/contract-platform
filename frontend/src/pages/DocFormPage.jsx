@@ -19,6 +19,44 @@ const newRow = (cols, preset = {}) => ({
   ...preset,
 });
 
+// Кварталы — как в build_term_end на бэкенде (app/context_builder.py):
+// срок действия всегда до конца квартала, а не произвольного числа.
+const QUARTER_ENDS = { 1: '31 марта', 2: '30 июня', 3: '30 сентября', 4: '31 декабря' };
+
+/**
+ * Живой пересчёт "Срок действия" — зеркало build_term_end() на бэкенде:
+ * +5 лет от даты документа, до конца квартала. День исходной даты на
+ * результат не влияет (только месяц определяет квартал, год — год+5),
+ * поэтому в отличие от Python-версии не нужно даже отдельно обрабатывать
+ * 29 февраля — это чисто техническая деталь работы с датами в Python,
+ * которая не отражается на итоговом тексте.
+ */
+function computeTermEnd(isoDate) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDate || '');
+  if (!m) return '';
+  const month = Number(m[2]);
+  const futureYear = Number(m[1]) + 5;
+  const quarter = Math.floor((month - 1) / 3) + 1;
+  return `${QUARTER_ENDS[quarter]} ${futureYear} г.`;
+}
+
+/** Целое неотрицательное число из строки формы (пробелы/неразрывные пробелы игнорируются) — null, если не число. */
+function parseFormAmount(raw) {
+  if (raw == null) return null;
+  const s = String(raw).trim().replace(/\s/g, '');
+  if (!s) return null;
+  if (!/^\d+$/.test(s)) return null;
+  return Number(s);
+}
+
+/** Живой пересчёт "Штраф за непереданный трек" — зеркало resolve_penalty_raw() на бэкенде: сумма аванса / количество треков. */
+function computePenalty(advanceRaw, countRaw) {
+  const advance = parseFormAmount(advanceRaw);
+  const count = parseFormAmount(countRaw);
+  if (advance === null || !count) return '';
+  return String(Math.round(advance / count));
+}
+
 /**
  * Форма генерации документа.
  *
@@ -49,6 +87,15 @@ export function DocFormPage() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
+
+  // "Тронуто" = оператор сам вписал значение в term_end/penalty — тогда
+  // живой пересчёт останавливается и не перезаписывает его выбор.
+  // Если поле потом ОЧИЩЕНО обратно — снова считаем полем "в авторежиме"
+  // (см. setValue ниже): то же правило "пусто = авто", что и на бэкенде
+  // (resolve_penalty_raw/term_end в build_context — там оно решается по
+  // тому же признаку: явное значение или пустая строка).
+  const [termEndTouched, setTermEndTouched] = useState(false);
+  const [penaltyTouched, setPenaltyTouched] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -84,6 +131,8 @@ export function DocFormPage() {
         });
         setValues(initial);
         setLists(initialLists);
+        setTermEndTouched(false);
+        setPenaltyTouched(false);
 
         // Парный Акт: только для Приложения, открытого по контрагенту.
         // Ищем среди документов ЭТОГО контрагента — они уже отфильтрованы
@@ -104,6 +153,31 @@ export function DocFormPage() {
       cancelled = true;
     };
   }, [templateId, contragentId]);
+
+  // Приложение/Акт (LINKED_DOC_TYPES на бэкенде) — своя дата "date", у
+  // комбинированного Договора срок действия считается от "c_date".
+  const termEndSourceDate = schema && ['appendix', 'act'].includes(schema.doc_type)
+    ? values.date
+    : values.c_date;
+
+  // Живой пересчёт "Срок действия" при изменении даты документа — пока
+  // оператор не вписал в term_end что-то своё (см. touched выше). Условие
+  // на schema гарантирует, что это выполнится только для шаблонов, где
+  // term_end реально есть в форме (иначе пишем в values ключ, которым
+  // никто не воспользуется — не вредно, но незачем).
+  useEffect(() => {
+    if (termEndTouched) return;
+    if (!schema?.fields.some((f) => f.name === 'term_end')) return;
+    setValues((s) => ({ ...s, term_end: computeTermEnd(termEndSourceDate) }));
+  }, [termEndSourceDate, termEndTouched, schema]);
+
+  // Живой пересчёт "Штраф за непереданный трек" = сумма аванса / количество
+  // треков, пока оператор не вписал в penalty что-то своё.
+  useEffect(() => {
+    if (penaltyTouched) return;
+    if (!schema?.fields.some((f) => f.name === 'penalty')) return;
+    setValues((s) => ({ ...s, penalty: computePenalty(values.advance, values.count) }));
+  }, [values.advance, values.count, penaltyTouched, schema]);
 
   /**
    * Автоподстановка в строки списков. Логика перенесена из боевой версии:
@@ -129,6 +203,13 @@ export function DocFormPage() {
   const setValue = useCallback(
     (name, v) => {
       setValues((s) => ({ ...s, [name]: v }));
+
+      // Прямой ввод оператора в term_end/penalty — отмечаем "тронуто", чтобы
+      // эффекты живого пересчёта ниже перестали его перезаписывать. Пустое
+      // значение снимает пометку — оператор фактически вернул поле в
+      // авторежим (см. комментарий у useState выше).
+      if (name === 'term_end') setTermEndTouched(Boolean(v));
+      if (name === 'penalty') setPenaltyTouched(Boolean(v));
 
       // Выбор псевдонима подхватывают таблицы: колонка исполнителя в треках
       // и псевдоним в сноске "Исполнители". Заполняем только ПУСТЫЕ ячейки —
@@ -311,8 +392,15 @@ export function DocFormPage() {
                       onChange={(v) => setValue(f.name, v)}
                       // Номер договора при генерации по контрагенту берётся
                       // из карточки и не редактируется — визуально обычный
-                      // input (см. design-tokens §6.1).
-                      readOnly={f.name === 'contract' && f.maps_to === 'contragent.contract_number' && Boolean(contragentId)}
+                      // input (см. design-tokens §6.1). f.locked — то же
+                      // самое для c_date, когда дата договора уже
+                      // зафиксирована в карточке (см. get_template_fields
+                      // на бэкенде) — там уже готов и подставлен hint с
+                      // объяснением, почему поле нередактируемо.
+                      readOnly={
+                        (f.name === 'contract' && f.maps_to === 'contragent.contract_number' && Boolean(contragentId)) ||
+                        Boolean(f.locked)
+                      }
                     />
                   ))}
               </div>

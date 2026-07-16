@@ -24,6 +24,8 @@ import zipfile
 from dataclasses import dataclass, field
 from datetime import date as _date
 
+from app.context_builder import default_delivery_date
+
 # Поля, которые вычисляет context_builder — в форме не показываются.
 # Синхронизировано с context_builder.build_context()
 #
@@ -163,7 +165,9 @@ DEFAULT_VALUES = {
 # Приложения/Акта (для них это дата подписания ИМЕННО ЭТОГО документа,
 # а не договора-родителя — сегодня естественный дефолт).
 #
-# НЕ входят: delivery_date (это дедлайн в будущем, не сегодняшняя дата),
+# НЕ входят: delivery_date — тоже плавающий дефолт, но не сегодняшняя
+# дата, а год вперёд до конца месяца (см. default_delivery_date() в
+# context_builder.py и отдельную ветку в fields_to_dict() ниже);
 # birthday/pas_date (исторические даты контрагента, никак не связаны
 # с сегодня).
 TODAY_DEFAULT_FIELDS = {"c_date", "date"}
@@ -492,6 +496,8 @@ def fields_to_dict(fields: list[FormField], doc_type: str | None = None) -> list
 
         if f.name in TODAY_DEFAULT_FIELDS and f.type == "date":
             default = _date.today().isoformat()  # 2026-07-12 — ISO, как ждёт <input type="date">
+        elif f.name == "delivery_date":
+            default = default_delivery_date()
         else:
             default = DEFAULT_VALUES.get(f.name, "")
 

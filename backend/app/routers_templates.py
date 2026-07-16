@@ -509,7 +509,12 @@ def get_template_fields(
       - поле nickname с maps_to="contragent.nickname" вместо одного default
         получает список "nickname_options" — все никнеймы контрагента —
         для выпадающего списка на фронте (см. app/tags.py, коммент к
-        CONTRAGENT_MAPPED_FIELDS про особый случай).
+        CONTRAGENT_MAPPED_FIELDS про особый случай);
+      - поле c_date, если у контрагента уже есть дата договора в карточке,
+        получает её вместо сегодняшней и дополнительно помечается
+        "locked": true (встроенное правило, не через maps_to — см. ниже
+        в коде) — фронт делает его нередактируемым, аналогично тому, как
+        уже блокируется "contract" у Приложения/Акта.
 
     Подставленный default — это ТОЛЬКО предзаполнение обычного
     редактируемого инпута (как и все остальные default'ы в этой форме,
@@ -540,6 +545,23 @@ def get_template_fields(
     for item in form_fields:
         maps_to = maps_to_by_placeholder.get(item["name"], "manual")
         item["maps_to"] = maps_to
+
+        # c_date по умолчанию — сегодня (TODAY_DEFAULT_FIELDS в
+        # fields_to_dict), но если у контрагента в карточке уже есть дата
+        # договора — комбинированный Договор для него уже существует и
+        # дата уже зафиксирована (см. докстринг Contragent.contract_date
+        # в models.py: "фиксируется один раз... номер в шапке и дата в
+        # преамбуле никогда не разъедутся"). Поэтому поле не просто
+        # предзаполняется, а БЛОКИРУЕТСЯ для правки — та же логика, что
+        # уже применяется к "contract" (номер договора) у Приложения/Акта
+        # чуть ниже (maps_to="contragent.contract_number"), только здесь
+        # это встроенное правило, а не настраиваемый maps_to: contract_date
+        # не входит в CONTRAGENT_MAPPED_FIELDS (app/tags.py) специально —
+        # это не то поле, которое admin может переназначить на другой атрибут.
+        if item["name"] == "c_date" and contragent is not None and contragent.contract_date:
+            item["default"] = contragent.contract_date.isoformat()
+            item["locked"] = True
+            item["hint"] = "Дата зафиксирована в карточке контрагента и не редактируется здесь."
 
         if contragent is None or maps_to == "manual":
             continue

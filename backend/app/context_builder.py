@@ -10,6 +10,7 @@
 Функция build_context() принимает "сырые" данные от оператора и возвращает
 готовый словарь для docxtpl.
 """
+import calendar
 import re
 from datetime import date as _date
 
@@ -754,6 +755,24 @@ def build_term_end(document_date_raw) -> str:
     return f"{QUARTER_ENDS[quarter]} {future.year} г."
 
 
+def default_delivery_date() -> str:
+    """
+    Дефолт для "Срок предоставления исходников" (шаблон СГ_аванс с
+    обязательством на будущие треки) — год от сегодня, до конца ТОГО ЖЕ
+    месяца (месяц не меняется — плюс год не сдвигает месяц, только год):
+    сегодня 16.07.2026 -> '2027-07-31'.
+
+    Возвращает ISO-дату — тот же формат, что и раньше приходил от
+    <input type="date"> (см. TODAY_DEFAULT_FIELDS в template_analysis.py,
+    откуда этот дефолт подставляется в форму), и что ожидает
+    format_date_ru() ниже при рендере, если оператор оставил поле пустым.
+    """
+    today = _date.today()
+    year = today.year + 1
+    last_day = calendar.monthrange(year, today.month)[1]
+    return _date(year, today.month, last_day).isoformat()
+
+
 def build_context(raw: dict, doc_type: str | None = None) -> dict:
     """
     Превращает данные формы в готовый контекст для docxtpl.
@@ -938,8 +957,11 @@ def build_context(raw: dict, doc_type: str | None = None) -> dict:
 
         # срок предоставления исходников (шаблон СГ_аванс с обязательством
         # на будущие треки) — независимая дата, приходит из календаря в ISO,
-        # печатается в тексте как «15» марта 2026 г., как и остальные даты
-        "delivery_date": format_date_ru(raw.get("delivery_date", "")),
+        # печатается в тексте как «15» марта 2026 г., как и остальные даты.
+        # Форма уже предзаполняет её через default_delivery_date() (см.
+        # template_analysis.py), но fallback и здесь — на случай прямого
+        # вызова API в обход формы, чтобы пустая дата не ушла в документ.
+        "delivery_date": format_date_ru(raw.get("delivery_date") or default_delivery_date()),
 
         # таблицы
         "tracks": tracks,
