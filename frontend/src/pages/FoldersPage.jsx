@@ -127,15 +127,12 @@ export function FoldersPage() {
             <div
               key={folder.id}
               onClick={() => setFolderId(folder.id)}
-              className="flex items-center justify-between px-5 py-4 border-b border-border last:border-b-0 hover:bg-surface-hover cursor-pointer transition-colors"
+              className="flex items-center px-5 py-4 border-b border-border last:border-b-0 hover:bg-surface-hover cursor-pointer transition-colors"
             >
               <div className="flex items-center gap-3.5 min-w-0">
                 <FolderIcon />
                 <span className="text-[15px] font-semibold text-text truncate">{folder.name}</span>
               </div>
-              <span className="w-7 h-7 rounded-full border border-border flex items-center justify-center text-xs text-text-secondary flex-shrink-0">
-                →
-              </span>
             </div>
           ))}
 

@@ -99,17 +99,14 @@ export function ContragentDocsModal({ contragentId, level, isTop }) {
                 <div
                   key={tpl.id}
                   onClick={() => openDocForm(tpl)}
-                  className="flex items-center justify-between px-4 py-3 border-b border-border last:border-b-0 cursor-pointer hover:bg-surface-hover transition-colors"
+                  className="px-4 py-3 border-b border-border last:border-b-0 cursor-pointer hover:bg-surface-hover transition-colors"
                 >
-                  <div className="min-w-0 pr-3">
+                  <div className="min-w-0">
                     <div className="text-sm font-semibold text-text truncate">{tpl.name}</div>
                     <div className="text-[11px] text-text-muted mt-0.5 tracking-[0.03em]">
                       {DOC_TYPE_LABELS[tpl.doc_type] ?? tpl.doc_type ?? '—'}
                     </div>
                   </div>
-                  <span className="w-7 h-7 rounded-full border border-border flex items-center justify-center text-text-secondary text-xs flex-shrink-0">
-                    ↗
-                  </span>
                 </div>
               ))}
             </div>
