@@ -12,6 +12,23 @@ import { getContragent, getContragentTemplates } from '../api/contragents';
 // место у осмысленных колонок (название трека, ФИО).
 const NARROW_COLUMNS = { has_profanity: 56, is_group: 64 };
 
+// Чекбоксы-колонки, которых НЕТ в схеме с сервера (item_fields), но которые
+// нужны чисто на фронте: НЛ (ненормативная лексика) у каждого трека и
+// «Группа» у каждого исполнителя в сноске. Backend ждёт их в payload
+// (build_profanity_note/build_performer_note в context_builder.py), поэтому
+// они добавляются к колонкам таблицы и попадают в collect() — см. columnsFor.
+const EXTRA_CHECKBOX_COLUMN = {
+  tracks: { name: 'has_profanity', label: 'НЛ' },
+  performers: { name: 'is_group', label: 'Группа' },
+};
+
+// Полный список колонок поля-списка: колонки из схемы + фронтовый чекбокс.
+function columnsFor(field) {
+  const base = field.item_fields ?? [];
+  const extra = EXTRA_CHECKBOX_COLUMN[field.name];
+  return extra ? [...base, extra] : base;
+}
+
 let rowSeq = 0;
 const newRow = (cols, preset = {}) => ({
   id: `r${++rowSeq}`,
@@ -119,12 +136,19 @@ export function DocFormPage() {
         const startNickname = data.fields.find((f) => f.name === 'nickname')?.default || '';
         data.fields.forEach((f) => {
           if (f.type === 'list') {
-            const cols = f.item_fields ?? [];
+            const cols = columnsFor(f);
             // Одна пустая строка сразу — иначе оператор видит пустую
             // таблицу и должен догадаться нажать "+ Добавить строку".
             initialLists[f.name] = [newRow(cols, presetForRow(f, detail, startNickname))];
           } else if (f.type === 'flag') {
             initial[f.name] = Boolean(f.default);
+          } else if (f.type === 'choice') {
+            // Без явного default выбираем ПЕРВЫЙ вариант, а не пустую строку:
+            // иначе select показывает первый вариант (напр. «Сингл»), но в
+            // state лежит '', и на бэкенд уходит '' — а там release_type
+            // != 'none' истинно, и блок релиза попал бы в документ даже
+            // для сингла. С 'none' форма, состояние и бэкенд согласованы.
+            initial[f.name] = f.default || f.choices?.[0]?.value || '';
           } else {
             initial[f.name] = f.default ?? '';
           }
@@ -252,7 +276,7 @@ export function DocFormPage() {
         ...s,
         // values.nickname — то, что реально выбрано СЕЙЧАС, а не default из
         // схемы: новая строка должна подхватить текущий выбор оператора.
-        [field.name]: [...s[field.name], newRow(field.item_fields ?? [], presetForRow(field, contragent, values.nickname))],
+        [field.name]: [...s[field.name], newRow(columnsFor(field), presetForRow(field, contragent, values.nickname))],
       })),
     [contragent, values.nickname],
   );
@@ -281,7 +305,7 @@ export function DocFormPage() {
     const data = {};
     schema.fields.forEach((f) => {
       if (f.type === 'list') {
-        const cols = (f.item_fields ?? []).map((c) => c.name);
+        const cols = columnsFor(f).map((c) => c.name);
         data[f.name] = (lists[f.name] ?? [])
           .map((row) => Object.fromEntries(cols.map((c) => [c, typeof row[c] === 'boolean' ? row[c] : (row[c] ?? '').trim()])))
           .filter((item) =>
@@ -350,6 +374,23 @@ export function DocFormPage() {
     return order.map((name) => ({ name, fields: byGroup.get(name) }));
   }, [schema]);
 
+  // Условная видимость полей — зеркало wireupReleaseVisibility в старом
+  // index.html. В шаблоне эти блоки под {% if %}, поэтому скрытое просто
+  // не попадёт в документ; здесь прячем их и в форме, чтобы не путать
+  // оператора полями, которые ни на что не влияют при текущем выборе.
+  //   release_name/release_year — только для ЕР/альбома, не для сингла
+  //   videoclips — только когда отмечен чекбокс «Есть видеоклип»
+  //   smm — только когда отмечена «Маркетинговая кампания» (шаблон аванса)
+  function isFieldHidden(field) {
+    if (field.name === 'release_name' || field.name === 'release_year') {
+      // release_type пустой (стартовое состояние) = «Сингл» (первый вариант)
+      return !values.release_type || values.release_type === 'none';
+    }
+    if (field.name === 'videoclips') return !values.has_videoclip;
+    if (field.name === 'smm') return !values.marketing;
+    return false;
+  }
+
   if (loading) {
     return <div className="max-w-[980px] mx-auto px-8 pt-12 text-[13px] text-text-muted">Загрузка формы…</div>;
   }
@@ -375,41 +416,50 @@ export function DocFormPage() {
         </div>
 
         <div className="px-6 py-6">
-          {groups.map((group) => (
-            <div key={group.name} className="mb-8 last:mb-0">
-              <div className="text-[11px] font-bold tracking-[0.08em] text-text-muted mb-[18px] uppercase">
-                {group.name}
-              </div>
+          {groups.map((group) => {
+            // Скрытые поля (сингл без релиза, видеоклип без галочки, SMM
+            // без маркетинга) убираем целиком. Если в группе не осталось
+            // ни одного видимого поля — не рисуем и её заголовок (так
+            // прячется весь раздел «Видеоклипы», а не пустая шапка).
+            const visible = group.fields.filter((f) => !isFieldHidden(f));
+            if (visible.length === 0) return null;
+            const textFields = visible.filter((f) => f.type !== 'list' && f.type !== 'flag');
+            const flagFields = visible.filter((f) => f.type === 'flag');
+            const listFields = visible.filter((f) => f.type === 'list');
+            const nicknameOptions = schema.fields.find((x) => x.name === 'nickname')?.nickname_options;
+            return (
+              <div key={group.name} className="mb-8 last:mb-0">
+                <div className="text-[11px] font-bold tracking-[0.08em] text-text-muted mb-[18px] uppercase">
+                  {group.name}
+                </div>
 
-              <div className="grid grid-cols-3 gap-5">
-                {group.fields
-                  .filter((f) => f.type !== 'list' && f.type !== 'flag')
-                  .map((f) => (
-                    <FieldRenderer
-                      key={f.name}
-                      field={f}
-                      value={values[f.name]}
-                      onChange={(v) => setValue(f.name, v)}
-                      // Номер договора при генерации по контрагенту берётся
-                      // из карточки и не редактируется — визуально обычный
-                      // input (см. design-tokens §6.1). f.locked — то же
-                      // самое для c_date, когда дата договора уже
-                      // зафиксирована в карточке (см. get_template_fields
-                      // на бэкенде) — там уже готов и подставлен hint с
-                      // объяснением, почему поле нередактируемо.
-                      readOnly={
-                        (f.name === 'contract' && f.maps_to === 'contragent.contract_number' && Boolean(contragentId)) ||
-                        Boolean(f.locked)
-                      }
-                    />
-                  ))}
-              </div>
+                {textFields.length > 0 && (
+                  <div className="grid grid-cols-3 gap-5">
+                    {textFields.map((f) => (
+                      <FieldRenderer
+                        key={f.name}
+                        field={f}
+                        value={values[f.name]}
+                        onChange={(v) => setValue(f.name, v)}
+                        // Номер договора при генерации по контрагенту берётся
+                        // из карточки и не редактируется — визуально обычный
+                        // input (см. design-tokens §6.1). f.locked — то же
+                        // самое для c_date, когда дата договора уже
+                        // зафиксирована в карточке (см. get_template_fields
+                        // на бэкенде) — там уже готов и подставлен hint с
+                        // объяснением, почему поле нередактируемо.
+                        readOnly={
+                          (f.name === 'contract' && f.maps_to === 'contragent.contract_number' && Boolean(contragentId)) ||
+                          Boolean(f.locked)
+                        }
+                      />
+                    ))}
+                  </div>
+                )}
 
-              {group.fields.filter((f) => f.type === 'flag').length > 0 && (
-                <div className="grid grid-cols-2 gap-4 mt-5">
-                  {group.fields
-                    .filter((f) => f.type === 'flag')
-                    .map((f) => (
+                {flagFields.length > 0 && (
+                  <div className="grid grid-cols-2 gap-4 mt-5">
+                    {flagFields.map((f) => (
                       <CheckboxCard
                         key={f.name}
                         label={f.label}
@@ -418,16 +468,14 @@ export function DocFormPage() {
                         onChange={(e) => setValue(f.name, e.target.checked)}
                       />
                     ))}
-                </div>
-              )}
+                  </div>
+                )}
 
-              {group.fields
-                .filter((f) => f.type === 'list')
-                .map((f) => (
+                {listFields.map((f) => (
                   <div key={f.name} className="mt-5">
                     <div className="text-xs text-text-secondary mb-2">{f.label}</div>
                     <EditableTable
-                      columns={(f.item_fields ?? []).map((c) => ({
+                      columns={columnsFor(f).map((c) => ({
                         key: c.name,
                         label: c.label,
                         width: NARROW_COLUMNS[c.name],
@@ -435,11 +483,10 @@ export function DocFormPage() {
                         type:
                           c.name === 'has_profanity' || c.name === 'is_group'
                             ? 'flag'
-                            : (c.name === 'performer' || c.name === 'nickname') &&
-                                schema.fields.find((x) => x.name === 'nickname')?.nickname_options?.length
+                            : (c.name === 'performer' || c.name === 'nickname') && nicknameOptions?.length
                               ? 'select'
                               : 'text',
-                        options: schema.fields.find((x) => x.name === 'nickname')?.nickname_options,
+                        options: nicknameOptions,
                       }))}
                       rows={lists[f.name] ?? []}
                       onChangeCell={(rowId, key, v) => changeCell(f.name, rowId, key, v)}
@@ -451,8 +498,9 @@ export function DocFormPage() {
                     )}
                   </div>
                 ))}
-            </div>
-          ))}
+              </div>
+            );
+          })}
 
           {pairedAct && (
             <div className="mb-6">
@@ -466,6 +514,12 @@ export function DocFormPage() {
           )}
 
           <div className="flex items-center gap-3 pt-6 border-t border-border">
+            {/* Единственная кнопка с акцентной заливкой во всём приложении —
+                финальное действие генерации (см. design-tokens §6.1).
+                Идёт первой, выбор формата — справа от неё. */}
+            <Button variant="accent" size="sm" onClick={handleGenerate} disabled={busy}>
+              {busy ? 'Формируем…' : 'Сформировать документ'}
+            </Button>
             <select
               value={format}
               onChange={(e) => setFormat(e.target.value)}
@@ -474,11 +528,6 @@ export function DocFormPage() {
               <option value="docx">Word (.docx)</option>
               <option value="pdf">PDF</option>
             </select>
-            {/* Единственная кнопка с акцентной заливкой во всём приложении —
-                финальное действие генерации (см. design-tokens §6.1). */}
-            <Button variant="accent" size="sm" onClick={handleGenerate} disabled={busy}>
-              {busy ? 'Формируем…' : 'Сформировать документ'}
-            </Button>
             {notice && !error && <span className="text-[13px] text-text-muted">{notice}</span>}
             {error && <span className="text-[13px] text-accent">{error}</span>}
           </div>
