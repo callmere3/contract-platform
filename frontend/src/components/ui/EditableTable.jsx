@@ -1,5 +1,8 @@
+import { ComboCell } from './ComboCell';
+
 /**
- * columns: [{ key, label, width }]  — width опционален (для №/НЛ узких колонок)
+ * columns: [{ key, label, width, type?, options? }] — width опционален
+ *   (для №/НЛ узких колонок); type='combo' + options — колонка исполнителя.
  * rows: [{ id, ...значения по key }]
  * onChangeCell(rowId, key, value)
  * onRemoveRow(rowId)
@@ -11,18 +14,6 @@
 export function EditableTable({ columns, rows, onChangeCell, onRemoveRow, onAddRow, addLabel }) {
   return (
     <div className="mb-5 border border-border rounded-input overflow-hidden">
-      {/* Подсказки для комбо-колонок (исполнитель): один datalist на колонку,
-          общий для всех строк. Ячейка ниже — обычный input со свободным вводом
-          плюс list=... с этими подсказками (выбрать из списка ИЛИ вписать своё). */}
-      {columns
-        .filter((c) => c.type === 'combo' && c.options?.length)
-        .map((c) => (
-          <datalist key={c.key} id={`dl-${c.key}`}>
-            {c.options.map((o) => (
-              <option key={o} value={o} />
-            ))}
-          </datalist>
-        ))}
       <div style={{ display: 'table', tableLayout: 'fixed', width: '100%' }}>
         {/* Заголовок — подложка чуть темнее полотна, чтобы отделить шапку.
             Границы вешаем на ЯЧЕЙКИ, а не на table-row: по спецификации CSS
@@ -59,9 +50,9 @@ export function EditableTable({ columns, rows, onChangeCell, onRemoveRow, onAddR
               >
                 {/* Тип ячейки диктует схема поля с сервера:
                     flag  — is_group / has_profanity (галочка внутри строки);
-                    combo — колонка исполнителя: свободный ввод + подсказки из
-                            псевдонимов контрагента (datalist), можно и выбрать,
-                            и вписать своё (напр. приглашённого артиста);
+                    combo — колонка исполнителя: свободный ввод + стрелка ▼ с
+                            подсказками из псевдонимов контрагента (ComboCell) —
+                            можно и выбрать, и вписать своё (напр. приглашённого);
                     иначе — обычный текстовый ввод. */}
                 {col.type === 'flag' ? (
                   <input
@@ -70,11 +61,16 @@ export function EditableTable({ columns, rows, onChangeCell, onRemoveRow, onAddR
                     onChange={(e) => onChangeCell(row.id, col.key, e.target.checked)}
                     className="w-4 h-4 accent-accent block mx-auto"
                   />
+                ) : col.type === 'combo' ? (
+                  <ComboCell
+                    value={row[col.key] ?? ''}
+                    options={col.options ?? []}
+                    onChange={(v) => onChangeCell(row.id, col.key, v)}
+                  />
                 ) : (
                   <input
                     value={row[col.key] ?? ''}
                     onChange={(e) => onChangeCell(row.id, col.key, e.target.value)}
-                    list={col.type === 'combo' && col.options?.length ? `dl-${col.key}` : undefined}
                     className="w-full bg-transparent border-none outline-none text-[13px] text-text font-sans"
                   />
                 )}
