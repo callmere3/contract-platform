@@ -59,25 +59,29 @@ def fix_tables_for_pdf(docx_bytes: bytes) -> bytes:
     Принудительно фиксирует раскладку таблиц (tblLayout=fixed + явный
     tblW) перед конвертацией в PDF через LibreOffice headless.
 
-    ПРИЧИНА (проверено экспериментально, не теоретически): если суммарная
-    заявленная ширина столбцов таблицы (tracks/performers/videoclips)
-    превышает реальную печатную ширину страницы (ширина минус поля),
-    Word на экране это визуально терпит — таблица просто чуть шире, чем
-    "положено", но читается нормально. LibreOffice же при конвертации в
-    PDF пересчитывает и сжимает столбцы по-другому — НЕПРОПОРЦИОНАЛЬНО,
-    из-за чего последний столбец может схлопнуться до одной буквы на
-    строку. Причём tblLayout=fixed САМ ПО СЕБЕ проблему не решает — нужно
-    ещё явно выставить tblW (общую ширину таблицы) вместо "auto", а если
-    сумма ширин столбцов всё равно больше доступной ширины страницы —
-    пропорционально ужать ВСЕ столбцы под неё (сохраняя соотношение),
-    чтобы LibreOffice не делал это сам своим алгоритмом.
+    ЗАЧЕМ. Таблице с tblLayout=auto LibreOffice пересчитывает ширины
+    столбцов своим алгоритмом, и результат расходится с тем, что рисует
+    Word. Явные fixed + tblW не оставляют ему свободы: рендерится ровно
+    то, что записано в документе. (В шаблонах СГ часть таблиц уже
+    объявлена fixed, но не все — например, шапка «ЕР ... год выпуска»
+    идёт с auto, поэтому проход нужен.)
+
+    ЧЕГО ЗДЕСЬ БОЛЬШЕ НЕТ (16.07.2026). Раньше функция вдобавок
+    ПРОПОРЦИОНАЛЬНО УЖИМАЛА таблицы шире печатной области — у шаблонов СГ
+    это 2.7–4.1% (объявлено 10342–10491 twips при печатной ширине 10064).
+    Ужатие было костылём под настоящую причину: в контейнере конвертера
+    не было Times New Roman, LibreOffice подменял его на DejaVu Serif —
+    заметно более широкий, — и без ужатия последний столбец схлопывался
+    до буквы на строку. Причина устранена в converter/Dockerfile (ставим
+    настоящий TNR, Liberation вторым эшелоном), а ужатие убрано: Word
+    такие таблицы НЕ сжимает, он спокойно пускает их на пару миллиметров
+    в правое поле. Раз цель — PDF, неотличимый от .docx, значит и вести
+    себя надо как Word, а не «аккуратнее» него.
 
     Применяется ТОЛЬКО к результату, уходящему в PDF — на скачивание
     .docx никак не влияет (там всё и так рендерится корректно в Word).
     """
     doc = Document(io.BytesIO(docx_bytes))
-    section = doc.sections[0]
-    usable_width = int(section.page_width) - int(section.left_margin) - int(section.right_margin)
 
     for table in doc.tables:
         table.autofit = False  # tblLayout=fixed
@@ -86,15 +90,6 @@ def fix_tables_for_pdf(docx_bytes: bytes) -> bytes:
         if not col_widths or len(col_widths) != len(table.columns):
             continue  # ширины столбцов не заданы явно — нечего фиксировать
         total_width = sum(col_widths)
-
-        if total_width > usable_width:
-            scale = usable_width / total_width
-            col_widths = [int(w * scale) for w in col_widths]
-            for col, w in zip(table.columns, col_widths):
-                col.width = Emu(w)
-                for cell in col.cells:
-                    cell.width = Emu(w)
-            total_width = sum(col_widths)
 
         tbl_pr = table._tbl.tblPr
         tbl_w = tbl_pr.find(qn("w:tblW"))

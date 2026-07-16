@@ -35,6 +35,9 @@ def convert(file: UploadFile = File(...)) -> Response:
     Принимает .docx, возвращает .pdf. Синхронно, без очереди — сервис
     внутренний, объём генерации документов невелик (юридический отдел,
     не массовая рассылка), конвертация одного файла занимает секунды.
+
+    Параллельные запросы безопасны: у каждого свой профиль LibreOffice,
+    см. -env:UserInstallation ниже.
     """
     content = file.file.read()
 
@@ -45,18 +48,33 @@ def convert(file: UploadFile = File(...)) -> Response:
 
         try:
             # --headless: без GUI. --convert-to pdf: сразу в нужный формат.
-            # HOME=/tmp — LibreOffice пытается писать профиль пользователя
-            # в $HOME при первом запуске; в контейнере без явного HOME
-            # с правами на запись падает с ошибкой доступа.
+            #
+            # -env:UserInstallation — СВОЙ профиль на каждый запуск, внутри
+            # временной папки этого же запроса (значит и убирается сам вместе
+            # с ней). Без него все процессы делят один профиль и дерутся за
+            # его блокировку: на двух одновременных запросах второй soffice
+            # либо падает, либо молча цепляется к чужому экземпляру. Раньше
+            # здесь стоял общий HOME=/tmp — ровно этот случай.
+            #
+            # HOME тоже уводим в свою папку: LibreOffice лезет писать в $HOME
+            # при первом запуске, а без права на запись падает с ошибкой
+            # доступа (исходная причина, по которой тут вообще появился HOME).
+            #
+            # Цена — профиль создаётся заново на каждую конвертацию, это
+            # примерно секунда сверху. Осознанный размен: одновременные
+            # конвертации важнее скорости одиночной.
+            profile_dir = tmp_path / "lo_profile"
             result = subprocess.run(
                 [
-                    "soffice", "--headless", "--norestore",
+                    "soffice",
+                    f"-env:UserInstallation=file://{profile_dir}",
+                    "--headless", "--norestore",
                     "--convert-to", "pdf", "--outdir", str(tmp_path),
                     str(docx_path),
                 ],
                 capture_output=True,
                 timeout=60,
-                env={"HOME": "/tmp"},
+                env={"HOME": str(tmp_path)},
             )
         except subprocess.TimeoutExpired:
             raise HTTPException(
