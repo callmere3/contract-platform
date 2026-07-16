@@ -17,24 +17,37 @@ import { exportContragents, importContragents } from '../api/contragents';
  * ней скрыт — ровно как в боевом index.html (applyRolePermissions).
  * У manager кнопки открытия этой модалки нет вовсе.
  */
-export function ImportExportModal({ level, isTop }) {
+export function ImportExportModal({ level, isTop, filters = {} }) {
   const { closeModal } = useModal();
   const { role } = useAuth();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [report, setReport] = useState(null);
 
+  // Активный фильтр списка (страна/тип/поиск) — экспорт выгрузит только его.
+  const filterParts = [
+    filters.country,
+    filters.contragentType,
+    filters.q ? `«${filters.q}»` : null,
+  ].filter(Boolean);
+  const hasFilter = filterParts.length > 0;
+
   async function handleExport() {
     setBusy(true);
     setError('');
     try {
-      const blob = await exportContragents();
+      const blob = await exportContragents(filters);
+      // Имя файла отражает фильтр (страна/тип), чтобы выгрузки не путались.
+      const nameParts = [filters.country, filters.contragentType].filter(Boolean);
+      const filename = nameParts.length
+        ? `contragents_${nameParts.join('_')}.xlsx`
+        : 'contragents_export.xlsx';
       // Скачивание через временную ссылку: сервер отдаёт файл потоком,
       // просто перейти по URL нельзя — запрос требует Authorization.
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'contragents_export.xlsx';
+      a.download = filename;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -66,10 +79,18 @@ export function ImportExportModal({ level, isTop }) {
         <div className={canImport(role) ? 'mb-6 pb-6 border-b border-border' : ''}>
           <div className="text-sm font-semibold text-text mb-1.5">Экспорт</div>
           <div className="text-[13px] text-text-secondary mb-3">
-            Выгрузить всю базу контрагентов в Excel.
+            {hasFilter ? (
+              <>
+                Выгрузить в Excel контрагентов по текущему фильтру:{' '}
+                <span className="text-text font-medium">{filterParts.join(' · ')}</span>. Уберите
+                фильтры в списке, чтобы выгрузить всю базу.
+              </>
+            ) : (
+              'Выгрузить всю базу контрагентов в Excel.'
+            )}
           </div>
           <Button variant="secondary" size="sm" onClick={handleExport} disabled={busy}>
-            {busy ? 'Готовим файл…' : 'Скачать .xlsx'}
+            {busy ? 'Готовим файл…' : hasFilter ? 'Скачать по фильтру' : 'Скачать .xlsx'}
           </Button>
         </div>
       )}

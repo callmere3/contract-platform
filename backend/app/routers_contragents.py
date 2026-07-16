@@ -197,28 +197,22 @@ def _try_normalize_reg_number(value, contragent_type: str | None) -> tuple[str |
         return None, str(exc.detail)
 
 
-@contragents_router.get("", dependencies=[Depends(get_current_user)])
-def search_contragents(
+def _filtered_contragents_query(
+    db: Session,
     q: str | None = None,
     country: str | None = None,
     contragent_type: str | None = None,
-    db: Session = Depends(get_session),
-) -> dict:
+):
     """
-    Поиск по title, name ИЛИ nickname одновременно (см. брейншторм — SQL-
-    запрос там же): не важно, по чему совпало, оператор в любом случае
-    видит и title, и никнеймы сразу. name добавлен отдельно от title,
-    потому что это разные строки (title — вычисленное "Иванов И. И. (СГ)",
-    name — сырое "Иванов Иван Иванович") — поиск/проверка дублей по одному
-    только title могла не найти уже существующего человека, если искать
-    по тому, как его ФИО выглядит целиком.
+    Общий запрос контрагентов с фильтрами q/country/contragent_type —
+    единый источник для поиска (search_contragents) и экспорта
+    (export_contragents), чтобы экспорт выгружал ровно то же, что показано
+    в списке при текущем фильтре. Сортировка по title; без .limit() —
+    ограничение (200 в поиске) навешивает вызывающий, экспорт выгружает всё.
 
-    country/contragent_type — необязательные фильтры по тегам (точное
-    совпадение после нормализации регистра, см. app/tags.py), применяются
-    ДОПОЛНИТЕЛЬНО к q, а не вместо него. contract_family сюда намеренно
-    не добавлен — фильтр по роялти/авансу не нужен (см. запрос пользователя).
-
-    Без q/фильтров — отдаёт весь список (ограничен 200 записями).
+    Поиск по title, name ИЛИ nickname (см. брейншторм): не важно, по чему
+    совпало. country/contragent_type — точное совпадение после нормализации
+    регистра (app/tags.py), применяются ДОПОЛНИТЕЛЬНО к q.
     """
     query = db.query(Contragent)
     if q:
@@ -244,7 +238,33 @@ def search_contragents(
             Contragent.type
             == normalize_optional_tag(contragent_type, CONTRAGENT_TYPES, "contragent_type")
         )
-    contragents = query.order_by(Contragent.title).limit(200).all()
+    return query.order_by(Contragent.title)
+
+
+@contragents_router.get("", dependencies=[Depends(get_current_user)])
+def search_contragents(
+    q: str | None = None,
+    country: str | None = None,
+    contragent_type: str | None = None,
+    db: Session = Depends(get_session),
+) -> dict:
+    """
+    Поиск по title, name ИЛИ nickname одновременно (см. брейншторм — SQL-
+    запрос там же): не важно, по чему совпало, оператор в любом случае
+    видит и title, и никнеймы сразу. name добавлен отдельно от title,
+    потому что это разные строки (title — вычисленное "Иванов И. И. (СГ)",
+    name — сырое "Иванов Иван Иванович") — поиск/проверка дублей по одному
+    только title могла не найти уже существующего человека, если искать
+    по тому, как его ФИО выглядит целиком.
+
+    country/contragent_type — необязательные фильтры по тегам (точное
+    совпадение после нормализации регистра, см. app/tags.py), применяются
+    ДОПОЛНИТЕЛЬНО к q, а не вместо него. contract_family сюда намеренно
+    не добавлен — фильтр по роялти/авансу не нужен (см. запрос пользователя).
+
+    Без q/фильтров — отдаёт весь список (ограничен 200 записями).
+    """
+    contragents = _filtered_contragents_query(db, q, country, contragent_type).limit(200).all()
     return {"contragents": [_contragent_summary(c) for c in contragents]}
 
 
@@ -584,25 +604,34 @@ def import_contragents(
 
 @contragents_router.get("/export", dependencies=[Depends(require_role(*CAN_EXPORT_CONTRAGENTS))])
 def export_contragents(
+    q: str | None = None,
+    country: str | None = None,
+    contragent_type: str | None = None,
     db: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> StreamingResponse:
     """
-    Выгружает всех контрагентов в .xlsx — те же колонки и тот же порядок,
-    что ожидает import_contragents(), файл можно поправить руками и залить
+    Выгружает контрагентов в .xlsx — те же колонки и тот же порядок, что
+    ожидает import_contragents(), файл можно поправить руками и залить
     обратно тем же импортом (см. брейншторм — "Экспорт... симметрично
     формату импорта").
 
-    Доступно Admin и Director (см. брейншторм ролей) — выгрузка полной
-    базы контрагентов наружу считается более "чувствительным" действием,
-    чем обычное создание/редактирование карточки, поэтому не дана Manager.
+    q/country/contragent_type — те же фильтры, что и у поиска
+    (_filtered_contragents_query): экспорт выгружает ровно то, что видно в
+    "Базе контрагентов" при текущем фильтре (напр. только РУ, или только
+    КЗ+ИП). Без фильтров — вся база. В отличие от поиска, без лимита 200:
+    выгружаем всё, что попало под фильтр.
+
+    Доступно Admin/Director/TopManager (см. CAN_EXPORT_CONTRAGENTS) —
+    выгрузка базы наружу считается более "чувствительным" действием, чем
+    обычное создание/редактирование карточки, поэтому не дана Manager.
     """
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Контрагенты"
     ws.append(EXCEL_COLUMNS)
 
-    contragents = db.query(Contragent).order_by(Contragent.title).all()
+    contragents = _filtered_contragents_query(db, q, country, contragent_type).all()
     for c in contragents:
         ws.append([
             c.title,

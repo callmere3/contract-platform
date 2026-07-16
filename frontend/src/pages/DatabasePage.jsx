@@ -70,7 +70,15 @@ export function DatabasePage() {
             ))}
           </select>
           {canOpenImportExport(role) && (
-            <Button variant="primary" size="sm" onClick={() => openModal('importExport')}>
+            <Button
+              variant="primary"
+              size="sm"
+              // Экспорт выгружает контрагентов по ТЕКУЩЕМУ фильтру списка —
+              // передаём его в модалку (см. handleExport там).
+              onClick={() =>
+                openModal('importExport', { filters: { q: q.trim(), country, contragentType } })
+              }
+            >
               Импорт/экспорт
             </Button>
           )}

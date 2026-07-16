@@ -84,11 +84,20 @@ export function importContragents(file) {
 }
 
 /**
- * Экспорт в Excel (admin+director). Возвращает Blob, а не JSON —
+ * Экспорт в Excel (admin/director/top_manager). Возвращает Blob, а не JSON —
  * поэтому идём через apiFetch напрямую, минуя apiJson.
+ *
+ * Принимает те же фильтры, что и searchContragents: экспорт выгружает ровно
+ * то, что показано в "Базе контрагентов" при текущем фильтре (напр. только
+ * РУ, или только КЗ+ИП). Без фильтров — вся база.
  */
-export async function exportContragents() {
-  const r = await apiFetch(`${API}/contragents/export`);
+export async function exportContragents({ q, country, contragentType } = {}) {
+  const params = new URLSearchParams();
+  if (q) params.set('q', q);
+  if (country) params.set('country', country);
+  if (contragentType) params.set('contragent_type', contragentType);
+  const qs = params.toString();
+  const r = await apiFetch(`${API}/contragents/export${qs ? `?${qs}` : ''}`);
   if (!r.ok) throw new Error(`Не удалось выгрузить файл (${r.status})`);
   return r.blob();
 }
