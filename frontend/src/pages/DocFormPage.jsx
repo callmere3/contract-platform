@@ -64,9 +64,15 @@ function uniquePerformerNicks(tracksRows) {
 // Если исполнителей в треках ещё нет — сноску не трогаем (там обычно одна
 // пустая строка, которую оператор может заполнить руками).
 //
+// Если исполнитель, выбранный в треках, — один из псевдонимов контрагента,
+// его ФИО достоверно известно (= ФИО контрагента) и подставляется в новую
+// строку сноски автоматически. Верхнее поле «Псевдоним» при этом может быть
+// не заполнено — важно именно то, что выбрано в таблице треков. Для чужого
+// имени (вписанного вручную, не из списка) ФИО оставляем пустым.
+//
 // Возвращает ТОТ ЖЕ массив (prevRows) когда состав не изменился — чтобы не
 // провоцировать лишний ре-рендер и не сбрасывать фокус при правках треков.
-function rebuildPerformers(tracksRows, prevRows, perfColumns) {
+function rebuildPerformers(tracksRows, prevRows, perfColumns, contragent) {
   const nicks = uniquePerformerNicks(tracksRows);
   if (!nicks.length) return prevRows;
 
@@ -76,10 +82,15 @@ function rebuildPerformers(tracksRows, prevRows, perfColumns) {
     if (key && !byNick.has(key)) byNick.set(key, r);
   });
 
+  const knownNicks = new Set((contragent?.nicknames ?? []).map((n) => n.toLowerCase()));
+  const contragentFio = contragent?.name ?? '';
+
   const rebuilt = nicks.map((nick) => {
     const existing = byNick.get(nick.toLowerCase());
     if (existing) return existing.nickname === nick ? existing : { ...existing, nickname: nick };
-    return newRow(perfColumns, { nickname: nick });
+    const preset = { nickname: nick };
+    if (contragentFio && knownNicks.has(nick.toLowerCase())) preset.fio = contragentFio;
+    return newRow(perfColumns, preset);
   });
 
   const unchanged =
@@ -258,17 +269,19 @@ export function DocFormPage() {
 
   // Синхронизация сноски «Исполнители» с таблицей треков: любой исполнитель,
   // появившийся в треках (в т.ч. второй, и каждый из перечисленных через
-  // запятую), автоматически попадает в сноску. Зависит только от lists.tracks,
-  // поэтому правки самой сноски (ФИО, «Группа») её не пересобирают.
+  // запятую), автоматически попадает в сноску; если он из псевдонимов
+  // контрагента — с подставленным ФИО (см. rebuildPerformers). Зависит только
+  // от lists.tracks/contragent, поэтому правки самой сноски (ФИО, «Группа»)
+  // её не пересобирают.
   useEffect(() => {
     const perfField = schema?.fields.find((f) => f.name === 'performers');
     if (!perfField || !schema.fields.some((f) => f.name === 'tracks')) return;
     const perfColumns = columnsFor(perfField);
     setLists((s) => {
-      const next = rebuildPerformers(s.tracks, s.performers, perfColumns);
+      const next = rebuildPerformers(s.tracks, s.performers, perfColumns, contragent);
       return next === s.performers ? s : { ...s, performers: next };
     });
-  }, [lists.tracks, schema]);
+  }, [lists.tracks, schema, contragent]);
 
   /**
    * Автоподстановка в строки списков. Логика перенесена из боевой версии:
