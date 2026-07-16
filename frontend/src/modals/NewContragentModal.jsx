@@ -89,6 +89,25 @@ export function NewContragentModal({ level, isTop }) {
     setBusy(true);
     setError('');
     try {
+      // Свежая проверка дубля по ФИО прямо перед созданием — на случай, если
+      // оператор кликнул "Создать" раньше, чем отработал дебаунс живой
+      // проверки (или тот упал из-за сетевого сбоя во время ввода). У name
+      // нет unique-констрейнта на бэкенде, это единственная защита от дублей
+      // по ФИО — см. findExistingByName в боевом index.html.
+      const q = name.trim();
+      let exact = null;
+      try {
+        const dup = await searchContragents({ q });
+        const normalized = q.toLowerCase();
+        exact = dup.contragents.find((c) => (c.name || '').trim().toLowerCase() === normalized) || null;
+      } catch {
+        /* сеть недоступна — не блокируем создание из-за сбоя самой проверки */
+      }
+      if (exact) {
+        setError(`Контрагент с таким ФИО уже существует: «${exact.title}».`);
+        return; // finally ниже вернёт busy=false
+      }
+
       const created = await createContragent({
         name: name.trim(),
         country,
