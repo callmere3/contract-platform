@@ -664,7 +664,7 @@ def build_document_response(
     result_bytes = render_document(docx_bytes, context)
 
     filename = build_document_filename(
-        template.doc_type, template.name, context, data, contragent_title
+        template.doc_type, template.name, data, contragent_title
     )
 
     if format == "docx":
