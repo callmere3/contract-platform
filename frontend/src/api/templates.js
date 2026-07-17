@@ -60,6 +60,26 @@ export function updateTemplate(templateId, { name, country, contragentType, cont
   return apiJson(`${API}/templates/${templateId}`, { method: 'PATCH', body });
 }
 
+/**
+ * Скачать исходный .docx шаблона (только admin). Возвращает { blob, filename },
+ * поэтому apiFetch напрямую — тело файл, а не JSON. Имя приходит с сервера в
+ * Content-Disposition (название шаблона + .docx), здесь его только достаём.
+ */
+export async function downloadTemplateFile(templateId) {
+  const r = await apiFetch(`${API}/templates/${templateId}/file`);
+  if (!r.ok) {
+    let detail = `Не удалось скачать шаблон (${r.status})`;
+    try {
+      const body = await r.json();
+      if (body?.detail) detail = typeof body.detail === 'string' ? body.detail : detail;
+    } catch {
+      /* тело не JSON */
+    }
+    throw new Error(detail);
+  }
+  return { blob: await r.blob(), filename: filenameFromResponse(r) };
+}
+
 /** Заменить файл шаблона. maps_to существующих меток переживает замену (см. бэкенд). */
 export function replaceTemplateFile(templateId, file) {
   const fd = new FormData();

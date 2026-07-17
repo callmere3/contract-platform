@@ -11,6 +11,7 @@
 
   Шаблоны:
     POST   /templates                   — загрузить НОВЫЙ шаблон в папку
+    GET    /templates/{id}/file         — скачать исходный .docx шаблона (admin)
     PUT    /templates/{id}/file         — заменить файл у СУЩЕСТВУЮЩЕГО шаблона
     PATCH  /templates/{id}               — переименовать шаблон (только name)
     DELETE /templates/{id}              — удалить шаблон (файл + запись в БД)
@@ -39,7 +40,12 @@ from sqlalchemy.orm import Session
 from app.audit import log_generation
 from app.auth import get_current_user, require_role
 from app.config import settings
-from app.context_builder import build_context, build_document_filename, find_missing_variables
+from app.context_builder import (
+    build_context,
+    build_document_filename,
+    find_missing_variables,
+    sanitize_filename,
+)
 from app.db import get_session
 from app.generation import fix_tables_for_pdf, render_document, scan_placeholders
 from app.models import Contragent, Template, TemplateField, TemplateFolder, User, folder_path
@@ -222,6 +228,41 @@ def upload_template(
         "contract_family": contract_family,
         "fields_found": placeholders,
     }
+
+
+@templates_router.get("/{template_id}/file", dependencies=[Depends(require_role(ADMIN))])
+def download_template_file(
+    template_id: uuid.UUID,
+    db: Session = Depends(get_session),
+) -> StreamingResponse:
+    """
+    Отдаёт ИСХОДНЫЙ .docx шаблона как есть — чтобы админ поправил его у себя
+    и залил обратно через PUT /templates/{id}/file. Замыкает цикл «нашёл
+    ошибку → скачал → поправил → заменил», не отыскивая нужный файл у себя
+    на диске среди прочих версий.
+
+    Отдаём именно то, что лежит в MinIO (никакого рендера/подстановки) —
+    это редактируемый шаблон с метками {{ }}, а не готовый документ.
+
+    Только admin: шаблоны — юридические документы компании, и управление
+    ими (загрузка/замена/удаление) уже под require_role(ADMIN). Скачивание
+    исходника — та же категория, не ниже.
+
+    Имя файла — название шаблона (то же, что видно во вкладке «Шаблоны»),
+    вычищенное под файловую систему. Расширение .docx добавляем сами:
+    в name его обычно нет, а Word без него файл не откроет.
+    """
+    template = db.get(Template, template_id)
+    if template is None:
+        raise HTTPException(status_code=404, detail="Шаблон не найден")
+
+    content = get_file(template.storage_key)
+    filename = sanitize_filename(template.name) or "template"
+    return StreamingResponse(
+        io.BytesIO(content),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": _content_disposition(f"{filename}.docx")},
+    )
 
 
 @templates_router.put("/{template_id}/file", dependencies=[Depends(require_role(ADMIN))])
