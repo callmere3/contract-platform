@@ -1,0 +1,5 @@
+# У разработчика core.autocrlf=true — без этого файла git при checkout
+# превращает LF в CRLF, и shell-скрипт, уехавший на сервер, там не
+# запускается вовсе: `bad interpreter: /bin/bash^M`. Скрипты в ops/
+# выполняются на Linux, поэтому перевод строк у них принудительно LF.
+*.sh text eol=lf
