@@ -46,23 +46,57 @@ docker compose exec -T db pg_dump -U contracts_app --format=plain contracts \
   > "$DIR/db-$DATE.sql.part"
 mv -f "$DIR/db-$DATE.sql.part" "$DIR/db-$DATE.sql"
 
-# 2. Шаблоны — бакет MinIO целиком. Читаем volume напрямую с хоста, а не
-# через контейнер: в образе minio нет ни tar, ни даже which (проверено
-# 17.07.2026). Шаблоны перезаливают редко, поэтому чтение на живой системе
-# безопасно: поймать наполовину записанный объект практически невозможно.
-tar -C /var/lib/docker/volumes/contract-platform_miniodata/_data \
-  -cf "$DIR/minio-$DATE.tar.part" .
-mv -f "$DIR/minio-$DATE.tar.part" "$DIR/minio-$DATE.tar"
+# 2. Шаблоны — обычными .docx, через S3-API самого приложения.
+#
+# Не tar'ом volume'а minio, хотя так проще. MinIO хранит объекты не файлами,
+# а в своём формате: <uuid>.docx/xl.meta, причём мелкие объекты вшиты прямо
+# внутрь метаданных (проверено 17.07.2026: part.1 не существует, всё в
+# xl.meta). Копия volume'а — это байты, которые можно вернуть только в
+# MinIO той же версии; достать оттуда договор руками нельзя. А шаблоны —
+# это юридические документы компании, и бэкап, который нельзя открыть, для
+# них бессмысленен.
+#
+# Ходим через app.storage: у контейнера api уже есть boto3, ключи и бакет —
+# ни mc, ни отдельного образа, ни второй копии credentials не нужно.
+# Плата за это — зависимость от живого api: если он лежит, бэкап шаблонов в
+# этот день не сделается, и set -e остановит скрипт. Это осознанно: дамп
+# базы (шаг 1) к этому моменту уже сохранён, а тихий недобэкап опаснее
+# шумного отказа.
+docker compose exec -T api python - > "$DIR/templates-$DATE.tar.part" <<'PY'
+import sys, io, tarfile
+from app.storage import s3_client
+from app.config import settings
 
-# 3. .env — пароль БД, root-ключ MinIO, JWT-секрет. Без него восстановление
+tar = tarfile.open(fileobj=sys.stdout.buffer, mode="w|")
+pages = s3_client.get_paginator("list_objects_v2").paginate(Bucket=settings.minio_bucket)
+for page in pages:
+    for obj in page.get("Contents", []):
+        body = s3_client.get_object(Bucket=settings.minio_bucket, Key=obj["Key"])["Body"].read()
+        info = tarfile.TarInfo(obj["Key"])
+        info.size = len(body)
+        tar.addfile(info, io.BytesIO(body))
+tar.close()
+PY
+mv -f "$DIR/templates-$DATE.tar.part" "$DIR/templates-$DATE.tar"
+
+# 3. Расшифровка: в бакете шаблоны названы uuid'ами, человеческое имя живёт
+# в БД. Без этого файла восстановленный архив — четырнадцать безымянных
+# .docx, и чтобы понять, где какой, придётся сначала поднимать Postgres.
+docker compose exec -T db psql -U contracts_app -d contracts -t -A -F'	' \
+  > "$DIR/templates-$DATE.txt" <<'SQL'
+select storage_key, coalesce(doc_type, '-'), name from templates order by name;
+SQL
+
+# 4. .env — пароль БД, root-ключ MinIO, JWT-секрет. Без него восстановление
 # превращается в угадайку: дамп разворачивать некуда и нечем.
 cp "$REPO_DIR/.env" "$DIR/env-$DATE.txt"
 
-# 4. Ротация. Заодно подчищает .part, оставшиеся от давних сорванных
+# 5. Ротация. Заодно подчищает .part, оставшиеся от давних сорванных
 # запусков.
 find "$DIR" -maxdepth 1 -type f -mtime "+$KEEP_DAYS" -delete
 
 echo "$(date '+%F %T') OK  db=$(du -h "$DIR/db-$DATE.sql" | cut -f1)" \
-     "minio=$(du -h "$DIR/minio-$DATE.tar" | cut -f1)" \
+     "шаблоны=$(du -h "$DIR/templates-$DATE.tar" | cut -f1)" \
+     "($(tar -tf "$DIR/templates-$DATE.tar" | wc -l) шт.)" \
      "всего=$(du -sh "$DIR" | cut -f1)" \
      "файлов=$(find "$DIR" -maxdepth 1 -type f | wc -l)"
