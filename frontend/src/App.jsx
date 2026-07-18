@@ -5,6 +5,8 @@ import { canManageUsers, canViewGenerationHistory } from './auth/permissions';
 import { TagsProvider } from './api/TagsContext';
 import { ModalProvider } from './modals/ModalProvider';
 import { ModalRoot } from './modals/ModalRoot';
+import { DraftProvider } from './drafts/DraftContext';
+import { DraftDock } from './drafts/DraftDock';
 import { Header } from './layout/Header';
 import { LoginPage } from './pages/LoginPage';
 import { SearchPage } from './pages/SearchPage';
@@ -66,6 +68,7 @@ function AppShell() {
             для внутреннего инструмента отдельная страница ошибки избыточна. */}
         <Route path="*" element={<Navigate to="/search" replace />} />
       </Routes>
+      <DraftDock />
       <ModalRoot />
     </div>
   );
@@ -88,7 +91,9 @@ function AuthGate() {
   return (
     <TagsProvider>
       <ModalProvider>
-        <AppShell />
+        <DraftProvider>
+          <AppShell />
+        </DraftProvider>
       </ModalProvider>
     </TagsProvider>
   );

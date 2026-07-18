@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
@@ -9,6 +9,8 @@ import { generateDocument, getTemplateFields } from '../api/templates';
 import { getContragent, getContragentTemplates } from '../api/contragents';
 import { useAuth } from '../auth/AuthContext';
 import { canFillDemoData } from '../auth/permissions';
+import { useModal } from '../modals/ModalProvider';
+import { useDraft } from '../drafts/DraftContext';
 
 // Ширины узких колонок в псевдотаблицах: № и галочки не должны съедать
 // место у осмысленных колонок (название трека, ФИО).
@@ -182,6 +184,27 @@ export function DocFormPage() {
   const navigate = useNavigate();
 
   const { user } = useAuth();
+  const { openModal } = useModal();
+  const { draft, saveDraft, clearDraft } = useDraft();
+
+  // Восстановление черновика: плашка ведёт сюда с ?restore=1. Читаем один
+  // раз при монтировании (в load-эффекте), а не реактивно — иначе форма
+  // перезагружалась бы на каждое автосохранение.
+  const restore = searchParams.get('restore');
+  const draftRef = useRef(draft);
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
+
+  // "Форма тронута пользователем" — ref, а не state: нужен только для
+  // решения "сохранять ли черновик / показывать ли диалог выхода", в
+  // рендере не участвует. Ставится ТОЛЬКО из действий оператора (setValue,
+  // правки таблиц, fillDemo, смена формата/парного акта) — производные
+  // пересчёты (term_end, penalty, синхронизация исполнителей) его не
+  // трогают, иначе черновик создавался бы от одного открытия формы по
+  // контрагенту, где эти поля заполняются автоматически.
+  const dirtyRef = useRef(false);
+
   const [schema, setSchema] = useState(null);
   const [values, setValues] = useState({});
   const [lists, setLists] = useState({}); // {fieldName: [row, ...]}
@@ -243,10 +266,43 @@ export function DocFormPage() {
             initial[f.name] = f.default ?? '';
           }
         });
-        setValues(initial);
-        setLists(initialLists);
-        setTermEndTouched(false);
-        setPenaltyTouched(false);
+        // Восстановление из черновика (?restore=1 с плашки). Накладываем
+        // сохранённое ПОВЕРХ initial: так поля, которых в черновике нет
+        // (новые метки, если шаблон с тех пор поправили), возьмут дефолт,
+        // а locked-поля — актуальное значение из карточки. Черновик — тот
+        // же пользователь и тот же шаблон (см. draftRef, сверка templateId).
+        const saved = restore && draftRef.current?.templateId === templateId
+          ? draftRef.current
+          : null;
+
+        if (saved) {
+          const restoredLists = {};
+          data.fields.forEach((f) => {
+            if (f.type !== 'list') return;
+            const cols = columnsFor(f);
+            const rows = saved.lists?.[f.name];
+            // newRow заново выдаёт id и добьёт колонки, которых в
+            // сохранённой строке нет. Пустой/отсутствующий список —
+            // возвращаем к одной пустой строке (initialLists), а не к нулю.
+            restoredLists[f.name] =
+              rows && rows.length ? rows.map((r) => newRow(cols, r)) : initialLists[f.name];
+          });
+          setValues({ ...initial, ...saved.values });
+          setLists(restoredLists);
+          setFormat(saved.format ?? 'docx');
+          setWantsPairedAct(saved.wantsPairedAct ?? true);
+          setTermEndTouched(saved.termEndTouched ?? Boolean(saved.values?.term_end));
+          setPenaltyTouched(saved.penaltyTouched ?? Boolean(saved.values?.penalty));
+          // Восстановленная форма считается изменённой: выход спросит про
+          // черновик, автосохранение продолжит держать его свежим.
+          dirtyRef.current = true;
+        } else {
+          setValues(initial);
+          setLists(initialLists);
+          setTermEndTouched(false);
+          setPenaltyTouched(false);
+          dirtyRef.current = false;
+        }
 
         // Парный Акт: только для Приложения, открытого по контрагенту.
         // Ищем среди документов ЭТОГО контрагента — они уже отфильтрованы
@@ -266,7 +322,10 @@ export function DocFormPage() {
     return () => {
       cancelled = true;
     };
-  }, [templateId, contragentId]);
+    // restore читается один раз при загрузке; draft берём через draftRef,
+    // а не из зависимостей, — иначе форма перезагружалась бы на каждое
+    // автосохранение черновика.
+  }, [templateId, contragentId, restore]);
 
   // Приложение/Акт (LINKED_DOC_TYPES на бэкенде) — своя дата "date", у
   // комбинированного Договора срок действия считается от "c_date".
@@ -308,6 +367,67 @@ export function DocFormPage() {
       return next === s.performers ? s : { ...s, performers: next };
     });
   }, [lists.tracks, schema, contragent]);
+
+  // Снимок текущей формы в объект черновика. Заголовок плашки — титл
+  // карточки, либо ФИО из формы (генерация из «Шаблонов» без контрагента),
+  // либо название шаблона: что-то осмысленное есть всегда.
+  const buildDraft = useCallback(() => {
+    const title =
+      contragent?.title || (values.name || '').trim() || schema?.name || 'Документ';
+    return {
+      templateId,
+      templateName: schema?.name ?? '',
+      docType: schema?.doc_type ?? null,
+      contragentId: contragentId ?? null,
+      title,
+      values,
+      lists,
+      format,
+      wantsPairedAct,
+      termEndTouched,
+      penaltyTouched,
+    };
+  }, [
+    contragent,
+    values,
+    lists,
+    format,
+    wantsPairedAct,
+    schema,
+    templateId,
+    contragentId,
+    termEndTouched,
+    penaltyTouched,
+  ]);
+
+  // Проверяем dirtyRef ЗДЕСЬ, а не только при постановке таймера: между
+  // постановкой дебаунса и его срабатыванием документ мог быть сформирован
+  // (dirtyRef → false, черновик очищен). Без этой проверки отложенный таймер
+  // воскресил бы только что убранный черновик.
+  const persist = useCallback(() => {
+    if (schema && dirtyRef.current) saveDraft(buildDraft());
+  }, [schema, saveDraft, buildDraft]);
+
+  // Автосохранение после каждого изменения — с небольшим дебаунсом, чтобы
+  // не писать в localStorage на каждую букву. Пишем только если форму реально
+  // тронул оператор (dirtyRef): открытие формы по контрагенту заполняет
+  // кучу полей автоматически, но черновик из этого создаваться не должен.
+  useEffect(() => {
+    if (!dirtyRef.current) return;
+    const t = setTimeout(persist, 400);
+    return () => clearTimeout(t);
+  }, [values, lists, format, wantsPairedAct, persist]);
+
+  // Закрытие вкладки/переход прочь: досохраняем немедленно, минуя дебаунс —
+  // ровно тот сценарий, ради которого черновик и живёт в localStorage
+  // («если пользователь закроет вкладку, черновик тоже должен сохраниться»).
+  useEffect(() => {
+    const flush = () => {
+      if (dirtyRef.current && schema) saveDraft(buildDraft());
+    };
+    window.addEventListener('pagehide', flush);
+    return () => window.removeEventListener('pagehide', flush);
+  }, [schema, saveDraft, buildDraft]);
 
   /**
    * Автоподстановка в строки списков. Логика перенесена из боевой версии:
@@ -351,6 +471,7 @@ export function DocFormPage() {
    */
   function fillDemo() {
     if (!schema) return;
+    dirtyRef.current = true;
 
     // Псевдоним, под которым заполнится вся форма, включая колонку
     // "Исполнитель" в таблицах: выбранный оператором → любой из карточки →
@@ -422,6 +543,7 @@ export function DocFormPage() {
 
   const setValue = useCallback(
     (name, v) => {
+      dirtyRef.current = true;
       setValues((s) => ({ ...s, [name]: v }));
 
       // Прямой ввод оператора в term_end/penalty — отмечаем "тронуто", чтобы
@@ -457,36 +579,36 @@ export function DocFormPage() {
     [contragent],
   );
 
-  const changeCell = useCallback(
-    (fieldName, rowId, key, v) =>
-      setLists((s) => ({
-        ...s,
-        [fieldName]: s[fieldName].map((r) => (r.id === rowId ? { ...r, [key]: v } : r)),
-      })),
-    [],
-  );
+  const changeCell = useCallback((fieldName, rowId, key, v) => {
+    dirtyRef.current = true;
+    setLists((s) => ({
+      ...s,
+      [fieldName]: s[fieldName].map((r) => (r.id === rowId ? { ...r, [key]: v } : r)),
+    }));
+  }, []);
 
   const addRow = useCallback(
-    (field) =>
+    (field) => {
+      dirtyRef.current = true;
       setLists((s) => ({
         ...s,
         // values.nickname — то, что реально выбрано СЕЙЧАС, а не default из
         // схемы: новая строка должна подхватить текущий выбор оператора.
         [field.name]: [...s[field.name], newRow(columnsFor(field), presetForRow(field, contragent, values.nickname))],
-      })),
+      }));
+    },
     [contragent, values.nickname],
   );
 
-  const removeRow = useCallback(
-    (fieldName, rowId) =>
-      setLists((s) => ({
-        ...s,
-        // Последнюю строку не удаляем: пустая таблица без единой строки —
-        // тупик, из которого видно только кнопку "+ Добавить".
-        [fieldName]: s[fieldName].length > 1 ? s[fieldName].filter((r) => r.id !== rowId) : s[fieldName],
-      })),
-    [],
-  );
+  const removeRow = useCallback((fieldName, rowId) => {
+    dirtyRef.current = true;
+    setLists((s) => ({
+      ...s,
+      // Последнюю строку не удаляем: пустая таблица без единой строки —
+      // тупик, из которого видно только кнопку "+ Добавить".
+      [fieldName]: s[fieldName].length > 1 ? s[fieldName].filter((r) => r.id !== rowId) : s[fieldName],
+    }));
+  }, []);
 
   /**
    * Сборка тела запроса. Формат — плоский dict сырых данных формы, всё
@@ -539,6 +661,12 @@ export function DocFormPage() {
     setNotice('');
     try {
       await download(templateId);
+      // Документ сформирован — он больше не «черновик». Снимаем пометку
+      // «тронуто», чтобы «Назад» не переспрашивал, и убираем плашку.
+      // Делаем это сразу после основного документа: даже если парный Акт
+      // ниже упадёт, Приложение уже скачано и черновиком быть перестало.
+      dirtyRef.current = false;
+      clearDraft();
       if (pairedAct && wantsPairedAct) {
         try {
           await download(pairedAct.id);
@@ -557,6 +685,27 @@ export function DocFormPage() {
     } finally {
       setBusy(false);
     }
+  }
+
+  // Выход из формы. Если оператор ничего не трогал — уходим молча. Если
+  // трогал (есть что терять) — спрашиваем: сохранить черновик или сбросить.
+  // Закрытие вкладки идёт мимо этого (там нет клика «Назад») — его ловит
+  // pagehide-flush выше, поэтому данные не теряются и без диалога.
+  function handleBack() {
+    if (!dirtyRef.current) {
+      navigate(-1);
+      return;
+    }
+    openModal('confirmExitDraft', {
+      onSave: () => {
+        persist();
+        navigate(-1);
+      },
+      onDiscard: () => {
+        clearDraft();
+        navigate(-1);
+      },
+    });
   }
 
   // Группы полей в порядке, заданном сервером (GROUP_ORDER в
@@ -619,7 +768,7 @@ export function DocFormPage() {
                 Тестовые данные
               </Button>
             )}
-            <Button variant="secondary" size="sm" onClick={() => navigate(-1)}>
+            <Button variant="secondary" size="sm" onClick={handleBack}>
               ← Назад
             </Button>
           </div>
@@ -721,7 +870,10 @@ export function DocFormPage() {
                 label={`Также сформировать «${pairedAct.name}» по тем же данным`}
                 hint="Приложение и Акт обычно подписываются одним числом на одних и тех же треках"
                 checked={wantsPairedAct}
-                onChange={(e) => setWantsPairedAct(e.target.checked)}
+                onChange={(e) => {
+                  dirtyRef.current = true;
+                  setWantsPairedAct(e.target.checked);
+                }}
               />
             </div>
           )}
