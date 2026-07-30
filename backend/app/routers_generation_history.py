@@ -7,6 +7,9 @@ Admin/Director видят всё; Top-manager — только СВОИ доку
   GET  /generation-history               — список (см. list_generation_history);
                                              ?filter_type=contragent|nickname|user
                                              + ?filter_value=... — единый фильтр
+  GET  /generation-history/{id}           — одна запись + payload формы (для
+                                             "Открыть форму": предзаполнить форму
+                                             генерации данными из истории)
   GET  /generation-history/{id}/recreate  — воссоздать документ по сохранённому
                                              payload (?format=docx|pdf, этап 2)
 
@@ -75,6 +78,46 @@ def list_generation_history(
         }
         for e in entries
     ]
+
+
+@generation_history_router.get(
+    "/{entry_id}", dependencies=[Depends(require_role(*CAN_VIEW_GENERATION_HISTORY))]
+)
+def get_generation_entry(
+    entry_id: uuid.UUID,
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """
+    Одна запись истории вместе с payload формы — чтобы открыть форму
+    генерации соответствующего шаблона и предзаполнить её этими данными
+    ("Открыть форму" в истории). В списке payload не отдаётся (он большой и
+    нужен не всегда), поэтому забираем его точечно по клику.
+
+    Top-manager — только свою запись (как и везде, см.
+    SEES_ALL_GENERATION_HISTORY); чужая для него 404.
+    """
+    entry = db.get(GeneratedDocument, entry_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Запись в истории не найдена")
+    if (
+        current_user.role not in SEES_ALL_GENERATION_HISTORY
+        and entry.user_id != current_user.id
+    ):
+        raise HTTPException(status_code=404, detail="Запись в истории не найдена")
+    if entry.template_id is None:
+        # Шаблон удалён (ondelete=SET NULL) — открывать форму нечем.
+        raise HTTPException(
+            status_code=404,
+            detail="Шаблон, по которому создавался документ, был удалён — открыть форму нечем",
+        )
+
+    return {
+        "id": str(entry.id),
+        "template_id": str(entry.template_id),
+        "contragent_id": str(entry.contragent_id) if entry.contragent_id else None,
+        "payload": entry.payload,
+    }
 
 
 @generation_history_router.get(

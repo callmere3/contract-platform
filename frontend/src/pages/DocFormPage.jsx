@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { CheckboxCard } from '../components/ui/CheckboxCard';
@@ -196,6 +196,13 @@ export function DocFormPage() {
     draftRef.current = draft;
   }, [draft]);
 
+  // Предзаполнение из истории генерации ("Открыть форму"): payload формы
+  // приходит через navigation state (не в URL — он большой). Плоский dict
+  // как из collect(): скалярные/флаги вперемешку с массивами-списками,
+  // раскладываем по values/lists в load-эффекте, зная схему.
+  const location = useLocation();
+  const prefillRef = useRef(location.state?.prefill ?? null);
+
   // "Форма тронута пользователем" — ref, а не state: нужен только для
   // решения "сохранять ли черновик / показывать ли диалог выхода", в
   // рендере не участвует. Ставится ТОЛЬКО из действий оператора (setValue,
@@ -266,34 +273,57 @@ export function DocFormPage() {
             initial[f.name] = f.default ?? '';
           }
         });
-        // Восстановление из черновика (?restore=1 с плашки). Накладываем
-        // сохранённое ПОВЕРХ initial: так поля, которых в черновике нет
-        // (новые метки, если шаблон с тех пор поправили), возьмут дефолт,
-        // а locked-поля — актуальное значение из карточки. Черновик — тот
-        // же пользователь и тот же шаблон (см. draftRef, сверка templateId).
-        const saved = restore && draftRef.current?.templateId === templateId
-          ? draftRef.current
-          : null;
+        // Источник предзаполнения формы — один из двух, приводим к общему
+        // виду { values, lists, ... }, накладываемому ПОВЕРХ initial:
+        //   1) черновик (?restore=1 с плашки) — уже разложен на values/lists;
+        //   2) payload из истории генерации ("Открыть форму") — плоский dict
+        //      как из collect(), раскладываем по схеме на values (скаляры/
+        //      флаги) и lists (массивы-таблицы).
+        // Наложение поверх initial значит: поля, которых в источнике нет
+        // (новые метки после правки шаблона), возьмут дефолт, а locked-поля —
+        // актуальное значение из карточки.
+        let seed = null;
+        if (restore && draftRef.current?.templateId === templateId) {
+          const d = draftRef.current;
+          seed = {
+            values: d.values,
+            lists: d.lists,
+            format: d.format,
+            wantsPairedAct: d.wantsPairedAct,
+            termEndTouched: d.termEndTouched,
+            penaltyTouched: d.penaltyTouched,
+          };
+        } else if (prefillRef.current) {
+          const p = prefillRef.current;
+          const pv = {};
+          const pl = {};
+          data.fields.forEach((f) => {
+            if (!(f.name in p)) return;
+            if (f.type === 'list') pl[f.name] = p[f.name];
+            else pv[f.name] = p[f.name];
+          });
+          seed = { values: pv, lists: pl };
+        }
 
-        if (saved) {
-          const restoredLists = {};
+        if (seed) {
+          const seededLists = {};
           data.fields.forEach((f) => {
             if (f.type !== 'list') return;
             const cols = columnsFor(f);
-            const rows = saved.lists?.[f.name];
-            // newRow заново выдаёт id и добьёт колонки, которых в
-            // сохранённой строке нет. Пустой/отсутствующий список —
-            // возвращаем к одной пустой строке (initialLists), а не к нулю.
-            restoredLists[f.name] =
+            const rows = seed.lists?.[f.name];
+            // newRow заново выдаёт id и добьёт колонки, которых в сохранённой
+            // строке нет. Пустой/отсутствующий список — возвращаем к одной
+            // пустой строке (initialLists), а не к нулю.
+            seededLists[f.name] =
               rows && rows.length ? rows.map((r) => newRow(cols, r)) : initialLists[f.name];
           });
-          setValues({ ...initial, ...saved.values });
-          setLists(restoredLists);
-          setFormat(saved.format ?? 'docx');
-          setWantsPairedAct(saved.wantsPairedAct ?? true);
-          setTermEndTouched(saved.termEndTouched ?? Boolean(saved.values?.term_end));
-          setPenaltyTouched(saved.penaltyTouched ?? Boolean(saved.values?.penalty));
-          // Восстановленная форма считается изменённой: выход спросит про
+          setValues({ ...initial, ...seed.values });
+          setLists(seededLists);
+          setFormat(seed.format ?? 'docx');
+          setWantsPairedAct(seed.wantsPairedAct ?? true);
+          setTermEndTouched(seed.termEndTouched ?? Boolean(seed.values?.term_end));
+          setPenaltyTouched(seed.penaltyTouched ?? Boolean(seed.values?.penalty));
+          // Предзаполненная форма считается изменённой: выход спросит про
           // черновик, автосохранение продолжит держать его свежим.
           dirtyRef.current = true;
         } else {

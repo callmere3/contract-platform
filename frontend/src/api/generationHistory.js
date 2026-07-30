@@ -1,8 +1,9 @@
 import { API, apiFetch, apiJson, filenameFromResponse } from './client';
 
 /**
- * GET /generation-history — только Admin и Director (см. app/roles.py:
- * CAN_VIEW_GENERATION_HISTORY). Показывает факт генерации (контрагент,
+ * GET /generation-history — Admin/Director (вся история) и Top-manager
+ * (только свои документы), см. app/roles.py: CAN_VIEW_GENERATION_HISTORY /
+ * SEES_ALL_GENERATION_HISTORY. Показывает факт генерации (контрагент,
  * псевдоним, шаблон, кто сгенерировал) — сам payload формы сюда не отдаётся.
  *
  * filterType/filterValue — единый фильтр вместо трёх отдельных полей:
@@ -17,6 +18,16 @@ export function listGenerationHistory({ filterType, filterValue } = {}) {
   }
   const qs = params.toString();
   return apiJson(`${API}/generation-history${qs ? `?${qs}` : ''}`);
+}
+
+/**
+ * Одна запись истории вместе с payload формы — чтобы открыть форму
+ * генерации соответствующего шаблона и предзаполнить её ("Открыть форму").
+ * Возвращает { id, template_id, contragent_id, payload }. 404, если запись
+ * чужая (для top_manager) или шаблон уже удалён.
+ */
+export function getGenerationEntry(entryId) {
+  return apiJson(`${API}/generation-history/${entryId}`);
 }
 
 /**

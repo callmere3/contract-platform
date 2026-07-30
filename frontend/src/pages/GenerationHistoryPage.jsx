@@ -1,7 +1,12 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import { listGenerationHistory, recreateGeneratedDocument } from '../api/generationHistory';
+import {
+  getGenerationEntry,
+  listGenerationHistory,
+  recreateGeneratedDocument,
+} from '../api/generationHistory';
 import { useAuth } from '../auth/AuthContext';
 import { canViewAllGenerationHistory } from '../auth/permissions';
 
@@ -12,16 +17,6 @@ const FILTER_TYPES = [
   // все записи и так его собственные, искать по себе незачем.
   { value: 'user', label: 'Пользователь', allOnly: true },
 ];
-
-/** Название шаблона уходит в <title> вкладки предпросмотра — это HTML, а не
- *  JSX, экранирование React здесь не работает. Названия задаёт админ, но
- *  собирать HTML из непроверенной строки всё равно нельзя. */
-function escapeHtml(value) {
-  return String(value).replace(
-    /[&<>"']/g,
-    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c],
-  );
-}
 
 /**
  * "История генерации" — Admin/Director (вся история) и Top-manager (только
@@ -38,6 +33,7 @@ function escapeHtml(value) {
  * не показывается — фильтровать нечем.
  */
 export function GenerationHistoryPage() {
+  const navigate = useNavigate();
   const { role } = useAuth();
   const seesAll = canViewAllGenerationHistory(role);
   const filterTypes = FILTER_TYPES.filter((t) => seesAll || !t.allOnly);
@@ -92,63 +88,25 @@ export function GenerationHistoryPage() {
   }
 
   /**
-   * Открывает документ в новой вкладке — встроенным просмотрщиком браузера,
-   * без скачивания.
+   * "Открыть форму": ведёт в форму генерации того же шаблона с
+   * предзаполненными данными из истории. payload забираем точечно
+   * (getGenerationEntry — в списке его нет) и передаём форме через
+   * navigation state, не через URL (он большой). DocFormPage разложит
+   * плоский payload по полям формы (см. prefillRef там).
    *
-   * Всегда PDF, даже если документ генерировали в .docx: показать .docx
-   * браузер не умеет, встроенный просмотрщик есть только у PDF.
-   *
-   * ПОРЯДОК ВАЖЕН. Вкладку открываем СРАЗУ по клику, до await: если позвать
-   * window.open() после конвертации, браузер уже не считает вызов жестом
-   * пользователя и блокирует вкладку как всплывающее окно. Поэтому сначала
-   * открываем пустую с заглушкой, а документ досылаем в неё, когда он готов.
-   *
-   * Прямую ссылку на эндпоинт сюда не подставить: он закрыт JWT, а вкладка
-   * не отправит заголовок Authorization — получили бы 401. Поэтому качаем
-   * через apiFetch (он приложит токен и обновит его при 401) и отдаём
-   * вкладке blob:-ссылку.
+   * Пришло на замену предпросмотру в браузере: тот конвертировал в PDF на
+   * каждый клик (долго), а рядом и так есть кнопки скачивания.
    */
-  async function preview(entry) {
-    const key = `${entry.id}:preview`;
-    setDownloading(key);
+  async function openForm(entry) {
+    setDownloading(`${entry.id}:form`);
     setError('');
-
-    const tab = window.open('', '_blank');
-    if (!tab) {
-      setError('Браузер заблокировал новую вкладку — разрешите всплывающие окна для этого сайта.');
-      setDownloading(null);
-      return;
-    }
-    tab.document.write(
-      '<title>Готовим документ…</title>' +
-        '<p style="font:14px system-ui,sans-serif;color:#666;padding:24px">' +
-        'Собираем документ и конвертируем в PDF…</p>',
-    );
-
     try {
-      const { blob, filename } = await recreateGeneratedDocument(entry.id, 'pdf');
-      const url = URL.createObjectURL(blob);
-      // Не location.replace(url), а обёртка с iframe — только ради заголовка
-      // вкладки: у blob-ссылки его нет, и во вкладке светился бы UUID вместо
-      // названия документа. Когда открыто несколько документов сразу, это
-      // разница между "какой из них какой" и вкладками-близнецами.
-      tab.document.open();
-      tab.document.write(
-        // Заголовок вкладки — настоящее имя документа с сервера, а не
-        // название шаблона: когда открыто несколько договоров, по нему их
-        // и различают.
-        `<title>${escapeHtml(filename)}</title>` +
-          '<style>html,body{margin:0;height:100%}iframe{border:0;width:100%;height:100%}</style>' +
-          `<iframe src="${url}"></iframe>`,
-      );
-      tab.document.close();
-      // URL сознательно НЕ освобождаем: он нужен открытой вкладке. Браузер
-      // уберёт его сам, когда закроется или перезагрузится эта страница —
-      // blob живёт ровно столько, сколько документ, который его создал.
+      const data = await getGenerationEntry(entry.id);
+      const qs = data.contragent_id ? `?contragent=${data.contragent_id}` : '';
+      navigate(`/doc/${data.template_id}${qs}`, { state: { prefill: data.payload } });
+      // навигация уводит со страницы — downloading сбрасывать не нужно
     } catch (e) {
-      tab.close();
       setError(e.message);
-    } finally {
       setDownloading(null);
     }
   }
@@ -222,16 +180,17 @@ export function GenerationHistoryPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  {/* Просмотр — всегда PDF, открывается в новой вкладке
-                      (см. preview() выше). Кнопки скачивания рядом остаются,
-                      они отдают оба формата. */}
+                  {/* "Открыть форму" — вместо предпросмотра: ведёт в форму
+                      генерации того же шаблона с предзаполненными данными из
+                      истории. Кнопки скачивания рядом отдают готовый документ. */}
                   <Button
                     variant="secondary"
                     size="sm"
-                    disabled={downloading === `${e.id}:preview`}
-                    onClick={() => preview(e)}
+                    disabled={!e.template_id || downloading === `${e.id}:form`}
+                    title={e.template_id ? undefined : 'Шаблон удалён — открыть форму нечем'}
+                    onClick={() => openForm(e)}
                   >
-                    {downloading === `${e.id}:preview` ? '…' : 'Просмотр'}
+                    {downloading === `${e.id}:form` ? '…' : 'Открыть форму'}
                   </Button>
                   <Button
                     variant="secondary"
