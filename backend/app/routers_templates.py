@@ -14,6 +14,7 @@
     GET    /templates/{id}/file         — скачать исходный .docx шаблона (admin)
     PUT    /templates/{id}/file         — заменить файл у СУЩЕСТВУЮЩЕГО шаблона
     PATCH  /templates/{id}               — переименовать шаблон (только name)
+    PATCH  /templates/{id}/visibility   — скрыть/показать шаблон для менеджеров (admin)
     DELETE /templates/{id}              — удалить шаблон (файл + запись в БД)
     GET    /templates/maps-to-options   — допустимые значения maps_to (для UI)
     GET    /templates/{id}/fields       — какие поля нужно заполнить
@@ -49,7 +50,7 @@ from app.context_builder import (
 from app.db import get_session
 from app.generation import fix_tables_for_pdf, render_document, scan_placeholders
 from app.models import Contragent, Template, TemplateField, TemplateFolder, User, folder_path
-from app.roles import ADMIN, CAN_GENERATE
+from app.roles import ADMIN, CAN_GENERATE, SEES_HIDDEN_TEMPLATES
 from app.storage import delete_file, get_file, put_file
 from app.tags import (
     CONTRAGENT_MAPPED_FIELDS,
@@ -69,10 +70,11 @@ templates_router = APIRouter(prefix="/templates", tags=["templates"])
 # ПАПКИ — навигация по дереву произвольной глубины
 # =====================================================================
 
-@folders_router.get("", dependencies=[Depends(get_current_user)])
+@folders_router.get("")
 def browse_folder(
     parent_id: uuid.UUID | None = None,
     db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     """
     Содержимое папки: список подпапок и список шаблонов в ней.
@@ -80,22 +82,28 @@ def browse_folder(
 
     Фронтенд вызывает это на каждый клик по папке — так строится
     навигация любой глубины без знания структуры заранее.
+
+    Скрытые шаблоны (hidden_for_managers): роль manager их в списке НЕ видит,
+    остальные роли (SEES_HIDDEN_TEMPLATES) видят, и у них в ответе приходит
+    флаг hidden_for_managers — фронт рисует пометку "скрыт".
     """
+    sees_hidden = current_user.role in SEES_HIDDEN_TEMPLATES
+
     subfolders = (
         db.query(TemplateFolder)
         .filter(TemplateFolder.parent_id == parent_id)
         .order_by(TemplateFolder.name)
         .all()
     )
-    templates = (
+    templates_query = (
         db.query(Template)
         .filter(Template.folder_id == parent_id)
         .order_by(Template.name)
-        .all()
-        if parent_id is not None
-        else []
-        # у шаблонов в корне быть не должно, но проверка не помешает
     )
+    if not sees_hidden:
+        templates_query = templates_query.filter(Template.hidden_for_managers.is_(False))
+    templates = templates_query.all() if parent_id is not None else []
+    # у шаблонов в корне быть не должно, но проверка не помешает
 
     breadcrumb = []
     if parent_id is not None:
@@ -115,6 +123,7 @@ def browse_folder(
                 "country": t.country,
                 "contragent_type": t.contragent_type,
                 "contract_family": t.contract_family,
+                "hidden_for_managers": t.hidden_for_managers,
             }
             for t in templates
         ],
@@ -385,6 +394,34 @@ def update_template(
     }
 
 
+@templates_router.patch(
+    "/{template_id}/visibility", dependencies=[Depends(require_role(ADMIN))]
+)
+def set_template_visibility(
+    template_id: uuid.UUID,
+    hidden_for_managers: bool = Form(...),
+    db: Session = Depends(get_session),
+) -> dict:
+    """
+    Скрыть/показать шаблон для роли manager (только admin). Скрытый шаблон
+    manager не видит в дереве и в подборе по контрагенту и не может
+    сгенерировать; admin/director/top_manager/tester видят и генерируют
+    всегда (см. SEES_HIDDEN_TEMPLATES). Нужно, чтобы обкатать шаблон, не
+    показывая его рабочим менеджерам.
+
+    Отдельный эндпоинт, а не поле в PATCH /templates/{id}: это переключатель
+    «на месте», и слать вместе с ним имя и все теги (как того требует
+    update_template) незачем.
+    """
+    template = db.get(Template, template_id)
+    if template is None:
+        raise HTTPException(status_code=404, detail="Шаблон не найден")
+
+    template.hidden_for_managers = hidden_for_managers
+    db.commit()
+    return {"id": str(template.id), "hidden_for_managers": template.hidden_for_managers}
+
+
 @templates_router.delete("/{template_id}", dependencies=[Depends(require_role(ADMIN))])
 def delete_template(template_id: uuid.UUID, db: Session = Depends(get_session)) -> dict:
     """
@@ -511,11 +548,12 @@ def _resolve_contragent_value(maps_to: str, contragent: Contragent) -> str:
     return ""
 
 
-@templates_router.get("/{template_id}/fields", dependencies=[Depends(get_current_user)])
+@templates_router.get("/{template_id}/fields")
 def get_template_fields(
     template_id: uuid.UUID,
     contragent_id: uuid.UUID | None = Query(None),
     db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     """
     Описание полей формы: тип, группа, подпись, подсказка, источник
@@ -565,6 +603,10 @@ def get_template_fields(
     """
     template = db.get(Template, template_id)
     if template is None:
+        raise HTTPException(status_code=404, detail="Шаблон не найден")
+    # Скрытый шаблон для менеджера "не существует" — 404, а не 403: он не
+    # должен даже узнать о нём (в списках он его тоже не видит).
+    if template.hidden_for_managers and current_user.role not in SEES_HIDDEN_TEMPLATES:
         raise HTTPException(status_code=404, detail="Шаблон не найден")
 
     docx_bytes = get_file(template.storage_key)
@@ -798,6 +840,11 @@ def generate_document(
     """
     template = db.get(Template, template_id)
     if template is None:
+        raise HTTPException(status_code=404, detail="Шаблон не найден")
+    # Реальная защита, а не только UX: менеджеру скрытый шаблон недоступен и
+    # напрямую (по сохранённой ссылке /doc/{id}), а не только спрятан в UI.
+    # 404, как и в get_template_fields, — для него он "не существует".
+    if template.hidden_for_managers and current_user.role not in SEES_HIDDEN_TEMPLATES:
         raise HTTPException(status_code=404, detail="Шаблон не найден")
 
     # Титл нужен ДО рендера: из него собирается имя файла (см.

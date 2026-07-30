@@ -11,6 +11,7 @@ import {
   getMapsToOptions,
   getTemplateFields,
   replaceTemplateFile,
+  setTemplateVisibility,
   updateTemplate,
   updateTemplateFields,
 } from '../api/templates';
@@ -38,6 +39,7 @@ export function EditTemplateModal({ template, onDone, level, isTop }) {
   const [country, setCountry] = useState(template.country ?? '');
   const [contragentType, setContragentType] = useState(template.contragent_type ?? '');
   const [contractFamily, setContractFamily] = useState(template.contract_family ?? '');
+  const [hidden, setHidden] = useState(Boolean(template.hidden_for_managers));
 
   // Типы под выбранную страну (для КЗ — ТОО, не ООО). Уже сохранённое
   // значение всегда оставляем в списке, даже если оно «чужое» (легаси-шаблон
@@ -132,6 +134,24 @@ export function EditTemplateModal({ template, onDone, level, isTop }) {
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function toggleVisibility() {
+    setBusy(true);
+    setError('');
+    setNotice('');
+    try {
+      const res = await setTemplateVisibility(template.id, !hidden);
+      setHidden(res.hidden_for_managers);
+      onDone?.(); // обновить список — пометка "скрыт" в дереве
+      setNotice(
+        res.hidden_for_managers ? 'Шаблон скрыт от менеджеров.' : 'Шаблон виден менеджерам.',
+      );
     } catch (e) {
       setError(e.message);
     } finally {
@@ -305,6 +325,29 @@ export function EditTemplateModal({ template, onDone, level, isTop }) {
             </div>
           </>
         )}
+      </div>
+
+      {/* --- видимость для менеджеров --- */}
+      <div className="mt-7 pt-6 border-t border-border">
+        <div className="text-[11px] font-bold tracking-[0.08em] text-text-muted mb-4">
+          ВИДИМОСТЬ
+        </div>
+        <div className="flex items-center justify-between gap-4">
+          <div className="text-[13px] text-text-secondary leading-snug">
+            {hidden
+              ? 'Скрыт от менеджеров — виден только админам, директору, топ-менеджеру и тестеру. Пригодится, чтобы обкатать шаблон до показа рабочим менеджерам.'
+              : 'Виден всем ролям, включая менеджеров.'}
+          </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={toggleVisibility}
+            disabled={busy}
+            className="flex-shrink-0"
+          >
+            {hidden ? 'Показать менеджерам' : 'Скрыть от менеджеров'}
+          </Button>
+        </div>
       </div>
 
       {/* --- замена файла --- */}

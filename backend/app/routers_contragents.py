@@ -49,6 +49,7 @@ from app.roles import (
     CAN_CREATE_CONTRAGENTS,
     CAN_EDIT_CONTRAGENTS,
     CAN_EXPORT_CONTRAGENTS,
+    SEES_HIDDEN_TEMPLATES,
 )
 from app.tags import (
     COUNTRIES,
@@ -984,10 +985,11 @@ def delete_contragent(
     return {"id": str(contragent_id), "deleted": True}
 
 
-@contragents_router.get("/{contragent_id}/templates", dependencies=[Depends(get_current_user)])
+@contragents_router.get("/{contragent_id}/templates")
 def list_contragent_templates(
     contragent_id: uuid.UUID,
     db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     """
     Подбор документов для контрагента по стране и типу контрагента.
@@ -1011,6 +1013,9 @@ def list_contragent_templates(
     contract_family возвращается у каждого шаблона: он нужен фронту, чтобы к
     открытому Приложению подобрать парный Акт ТОГО ЖЕ семейства (иначе среди
     нескольких Актов разных семейств он выбрал бы произвольный).
+
+    Скрытые шаблоны (hidden_for_managers): менеджеру в подбор не попадают,
+    остальным ролям (SEES_HIDDEN_TEMPLATES) — как обычно.
     """
     contragent = db.get(Contragent, contragent_id)
     if contragent is None:
@@ -1019,15 +1024,13 @@ def list_contragent_templates(
     if not (contragent.country and contragent.type):
         return {"contragent_id": str(contragent_id), "templates": []}
 
-    templates = (
-        db.query(Template)
-        .filter(
-            Template.country == contragent.country,
-            Template.contragent_type == contragent.type,
-        )
-        .order_by(Template.name)
-        .all()
+    templates_query = db.query(Template).filter(
+        Template.country == contragent.country,
+        Template.contragent_type == contragent.type,
     )
+    if current_user.role not in SEES_HIDDEN_TEMPLATES:
+        templates_query = templates_query.filter(Template.hidden_for_managers.is_(False))
+    templates = templates_query.order_by(Template.name).all()
 
     return {
         "contragent_id": str(contragent_id),

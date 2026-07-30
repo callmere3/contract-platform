@@ -92,6 +92,18 @@ export function deleteTemplate(templateId) {
 }
 
 /**
+ * Скрыть/показать шаблон для роли manager (только admin). Скрытый шаблон
+ * менеджер не видит в дереве и в подборе по контрагенту и не может
+ * сгенерировать; admin/director/top_manager/tester видят и генерируют всегда.
+ */
+export function setTemplateVisibility(templateId, hidden) {
+  return apiJson(`${API}/templates/${templateId}/visibility`, {
+    method: 'PATCH',
+    body: new URLSearchParams({ hidden_for_managers: hidden ? 'true' : 'false' }),
+  });
+}
+
+/**
  * Схема полей формы генерации. contragentId необязателен: если передан —
  * поля с настроенным maps_to приходят с уже подставленным default из
  * карточки контрагента, а nickname получает nickname_options (список).

@@ -73,3 +73,11 @@ CAN_CREATE_CONTRAGENTS = ROLES
 # Admin/Director/TopManager/Tester. Здесь перечисление осмысленно: это
 # именно ограниченный список, а не "все".
 CAN_EDIT_CONTRAGENTS = (ADMIN, DIRECTOR, TOP_MANAGER, TESTER)
+
+# Кто видит шаблоны, помеченные "скрыт для менеджеров" (hidden_for_managers).
+# Все роли, КРОМЕ manager: admin/director/top_manager/tester видят и
+# генерируют такой шаблон всегда — скрытие нужно только чтобы обкатать шаблон,
+# не показывая его рабочим менеджерам (по просьбе владельца). Переключает флаг
+# только admin (CAN_MANAGE_TEMPLATES), но ВИДЯТ скрытое все перечисленные.
+# Перечисление осмысленно: это именно ограниченный список, а не "все".
+SEES_HIDDEN_TEMPLATES = (ADMIN, DIRECTOR, TOP_MANAGER, TESTER)

@@ -30,7 +30,7 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Numeric, String, func
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Numeric, String, false, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -94,6 +94,14 @@ class Template(Base):
     country: Mapped[str | None] = mapped_column(String(16))          # 'РУ' | 'КЗ'
     contragent_type: Mapped[str | None] = mapped_column(String(16))  # 'ФЛ' | 'СГ' | 'ИП' | 'ООО' | 'ТОО'
     contract_family: Mapped[str | None] = mapped_column(String(32))  # 'РОЯЛТИ' | 'АВАНС' | 'АВАНС_ОБЯЗАТЕЛЬСТВО'
+
+    # Скрытый от менеджеров шаблон (для тестов): роль manager его не видит в
+    # дереве и в подборе по контрагенту и не может сгенерировать. Остальные
+    # роли (admin/director/top_manager/tester) видят и генерируют всегда,
+    # переключает видимость только admin. См. SEES_HIDDEN_TEMPLATES в roles.py.
+    hidden_for_managers: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=false(), default=False
+    )
 
     version: Mapped[int] = mapped_column(default=1)
     created_at: Mapped[datetime] = mapped_column(
