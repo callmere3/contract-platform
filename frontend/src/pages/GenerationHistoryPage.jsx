@@ -2,11 +2,15 @@ import { useEffect, useState } from 'react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { listGenerationHistory, recreateGeneratedDocument } from '../api/generationHistory';
+import { useAuth } from '../auth/AuthContext';
+import { canViewAllGenerationHistory } from '../auth/permissions';
 
 const FILTER_TYPES = [
   { value: 'contragent', label: 'Контрагент' },
   { value: 'nickname', label: 'Псевдоним' },
-  { value: 'user', label: 'Пользователь' },
+  // Фильтр по пользователю — только тем, кто видит всю историю: у top_manager
+  // все записи и так его собственные, искать по себе незачем.
+  { value: 'user', label: 'Пользователь', allOnly: true },
 ];
 
 /** Название шаблона уходит в <title> вкладки предпросмотра — это HTML, а не
@@ -20,11 +24,13 @@ function escapeHtml(value) {
 }
 
 /**
- * "История генерации" — только Admin и Director (см. app/roles.py:
- * CAN_VIEW_GENERATION_HISTORY). Показывает факт генерации: контрагент,
- * псевдоним, шаблон, кто сгенерировал, когда — и позволяет посмотреть сам
- * документ (этап 2): он нигде не хранится, а воссоздаётся на лету по
- * сохранённому payload формы через тот же рендер, что и при первой генерации.
+ * "История генерации" — Admin/Director (вся история) и Top-manager (только
+ * СВОИ документы, ограничение серверное по user_id — см. app/roles.py:
+ * CAN_VIEW_GENERATION_HISTORY / SEES_ALL_GENERATION_HISTORY). Показывает факт
+ * генерации: контрагент, псевдоним, шаблон, кто сгенерировал, когда — и
+ * позволяет посмотреть сам документ (этап 2): он нигде не хранится, а
+ * воссоздаётся на лету по сохранённому payload формы через тот же рендер, что
+ * и при первой генерации.
  *
  * Фильтр один общий, а не три отдельных поля: сначала выбирается ТИП
  * (контрагент/псевдоним/пользователь), потом вводится значение — под ним
@@ -32,6 +38,10 @@ function escapeHtml(value) {
  * не показывается — фильтровать нечем.
  */
 export function GenerationHistoryPage() {
+  const { role } = useAuth();
+  const seesAll = canViewAllGenerationHistory(role);
+  const filterTypes = FILTER_TYPES.filter((t) => seesAll || !t.allOnly);
+
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -150,14 +160,19 @@ export function GenerationHistoryPage() {
     <div className="max-w-[980px] mx-auto px-8 pt-12 pb-20">
       <Card>
         <div className="flex items-center gap-3 p-5 border-b border-border">
-          <span className="text-sm font-semibold text-text mr-auto">История генерации</span>
+          <span className="text-sm font-semibold text-text mr-auto">
+            История генерации
+            {!seesAll && (
+              <span className="text-text-muted font-normal"> · только мои документы</span>
+            )}
+          </span>
           <select
             value={filterType}
             onChange={(e) => setFilterType(e.target.value)}
             className={selectClass}
           >
             <option value="">Без фильтра</option>
-            {FILTER_TYPES.map((t) => (
+            {filterTypes.map((t) => (
               <option key={t.value} value={t.value}>
                 {t.label}
               </option>

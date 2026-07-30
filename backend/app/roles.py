@@ -48,7 +48,17 @@ ANY_ROLE = ROLES                              # любой залогиненн�
 # нет) это перестало быть верным — разделены на две константы.
 CAN_EXPORT_CONTRAGENTS = (ADMIN, DIRECTOR, TOP_MANAGER, TESTER)  # экспорт в Excel
 CAN_VIEW_AUDIT_LOG = (ADMIN, DIRECTOR)                    # просмотр audit_log
-CAN_VIEW_GENERATION_HISTORY = (ADMIN, DIRECTOR)           # вкладка "История генерации"
+# Доступ к вкладке "История генерации" (эндпоинты /generation-history).
+# TOP_MANAGER сюда добавлен, но видит ТОЛЬКО свои документы — сервер жёстко
+# ограничивает выдачу его user_id (см. SEES_ALL_GENERATION_HISTORY ниже и
+# routers_generation_history.py). Разница именно в объёме: доступ к вкладке
+# есть, объём — свой.
+CAN_VIEW_GENERATION_HISTORY = (ADMIN, DIRECTOR, TOP_MANAGER)
+# Кто видит историю ВСЕХ пользователей. Остальные из CAN_VIEW_GENERATION_HISTORY
+# (сейчас только TOP_MANAGER) видят и пересоздают лишь свои записи. Ограничение
+# серверное, а не UX: без него top_manager по filter_type=user или прямым
+# entry_id мог бы дотянуться до чужих документов.
+SEES_ALL_GENERATION_HISTORY = (ADMIN, DIRECTOR)
 CAN_IMPORT = (ADMIN,)               # импорт контрагентов — только Admin
 CAN_MANAGE_USERS = (ADMIN,)
 CAN_MANAGE_TEMPLATES = (ADMIN,)

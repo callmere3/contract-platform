@@ -1,5 +1,8 @@
 """
-/generation-history — журнал сгенерированных документов (Admin, Director).
+/generation-history — журнал сгенерированных документов.
+
+Admin/Director видят всё; Top-manager — только СВОИ документы (ограничение
+серверное, по user_id, см. SEES_ALL_GENERATION_HISTORY).
 
   GET  /generation-history               — список (см. list_generation_history);
                                              ?filter_type=contragent|nickname|user
@@ -17,10 +20,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from app.auth import require_role
+from app.auth import get_current_user, require_role
 from app.db import get_session
-from app.models import GeneratedDocument, Template
-from app.roles import CAN_VIEW_GENERATION_HISTORY
+from app.models import GeneratedDocument, Template, User
+from app.roles import CAN_VIEW_GENERATION_HISTORY, SEES_ALL_GENERATION_HISTORY
 from app.routers_templates import build_document_response
 
 generation_history_router = APIRouter(prefix="/generation-history", tags=["generation-history"])
@@ -44,8 +47,13 @@ def list_generation_history(
     filter_type: str | None = Query(None, pattern="^(contragent|nickname|user)$"),
     filter_value: str | None = Query(None),
     db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ) -> list[dict]:
     query = db.query(GeneratedDocument)
+    # Top-manager видит только свои документы. Ограничение ЗДЕСЬ, а не только
+    # в UI: иначе через filter_type=user он бы увидел чужие.
+    if current_user.role not in SEES_ALL_GENERATION_HISTORY:
+        query = query.filter(GeneratedDocument.user_id == current_user.id)
     if filter_type is not None and filter_value:
         # ILIKE — подстрока без учёта регистра: искать по точному
         # UUID/логину человек не будет, ищут по части названия/имени.
@@ -76,6 +84,7 @@ def recreate_generated_document(
     entry_id: uuid.UUID,
     format: str = Query("docx", pattern="^(docx|pdf)$"),
     db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ) -> StreamingResponse:
     """
     Воссоздаёт документ на лету по сохранённому payload формы — файл нигде
@@ -90,6 +99,14 @@ def recreate_generated_document(
     """
     entry = db.get(GeneratedDocument, entry_id)
     if entry is None:
+        raise HTTPException(status_code=404, detail="Запись в истории не найдена")
+
+    # Top-manager может пересоздать только СВОЙ документ. 404 (а не 403) —
+    # чужая запись для него "не существует", как и в списке.
+    if (
+        current_user.role not in SEES_ALL_GENERATION_HISTORY
+        and entry.user_id != current_user.id
+    ):
         raise HTTPException(status_code=404, detail="Запись в истории не найдена")
 
     if entry.template_id is None:
