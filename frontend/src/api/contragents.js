@@ -26,7 +26,7 @@ export function getContragent(id) {
   return apiJson(`${API}/contragents/${id}`);
 }
 
-/** Документы (шаблоны), подходящие контрагенту по его тегам country/type/contract_family. */
+/** Документы (шаблоны), подходящие контрагенту по стране и типу (все семейства договора). */
 export function getContragentTemplates(id) {
   return apiJson(`${API}/contragents/${id}/templates`);
 }

@@ -620,6 +620,11 @@ def get_template_fields(
         "id": str(template.id),
         "name": template.name,
         "doc_type": template.doc_type,
+        # contract_family нужен фронту, чтобы к открытому Приложению подобрать
+        # парный Акт ТОГО ЖЕ семейства: подбор по контрагенту теперь отдаёт
+        # Акты всех семейств (см. list_contragent_templates), и выбирать среди
+        # них надо по семейству самого Приложения, а не по контрагенту.
+        "contract_family": template.contract_family,
         "path": folder_path(template.folder),
         "fields": form_fields,
     }

@@ -305,13 +305,22 @@ export function DocFormPage() {
         }
 
         // Парный Акт: только для Приложения, открытого по контрагенту.
-        // Ищем среди документов ЭТОГО контрагента — они уже отфильтрованы
-        // по той же связке тегов, поэтому Акт из другой связки сюда попасть
-        // не может (та же логика, что в боевой версии).
+        // Подбор по контрагенту теперь отдаёт документы ВСЕХ семейств
+        // (аванс/роялти/…), поэтому Актов может быть несколько. Берём Акт
+        // ТОГО ЖЕ семейства, что открытое Приложение (data.contract_family),
+        // иначе подставился бы Акт из чужого семейства. Если у Приложения
+        // семейство не задано — парный Акт не предлагаем (надёжно спарить
+        // не с чем).
         if (contragentId && data.doc_type === 'appendix') {
           const docs = await getContragentTemplates(contragentId);
           if (cancelled) return;
-          setPairedAct(docs.templates.find((t) => t.doc_type === 'act') ?? null);
+          setPairedAct(
+            data.contract_family
+              ? docs.templates.find(
+                  (t) => t.doc_type === 'act' && t.contract_family === data.contract_family,
+                ) ?? null
+              : null,
+          );
         }
       } catch (e) {
         if (!cancelled) setError(e.message);

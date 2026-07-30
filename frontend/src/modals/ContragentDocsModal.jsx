@@ -12,12 +12,13 @@ const DOC_TYPE_LABELS = {
 
 /**
  * Документы, подходящие контрагенту (GET /contragents/{id}/templates).
- * Подбор — строгое совпадение трёх тегов (country/type/contract_family)
- * контрагента и шаблона.
+ * Подбор — по стране и типу контрагента; тип договора (contract_family) в
+ * подбор не входит, поэтому показываются документы всех семейств сразу
+ * (аванс/роялти/аванс+обязательство), оператор выбирает нужный.
  *
  * Пустой список бывает по двум разным причинам, и их важно различать:
- *  1) у контрагента не заполнены теги ("неполная" карточка из импорта) —
- *     сервер отдаёт пустой список молча, это не ошибка;
+ *  1) у контрагента не заполнены страна/тип ("неполная" карточка из
+ *     импорта) — сервер отдаёт пустой список молча, это не ошибка;
  *  2) теги есть, но ни один шаблон под них не заведён.
  * Поэтому грузим и карточку тоже — чтобы сказать человеку, что именно не так.
  */
@@ -59,8 +60,7 @@ export function ContragentDocsModal({ contragentId, level, isTop }) {
     navigate(`/doc/${template.id}?contragent=${contragentId}`);
   };
 
-  const tagsIncomplete =
-    contragent && !(contragent.country && contragent.type && contragent.contract_family);
+  const tagsIncomplete = contragent && !(contragent.country && contragent.type);
 
   return (
     <Modal
@@ -81,15 +81,14 @@ export function ContragentDocsModal({ contragentId, level, isTop }) {
 
           {tagsIncomplete && (
             <div className="text-[13px] text-text-muted leading-relaxed">
-              У карточки не заполнены страна, тип контрагента или тип договора — без них подобрать
-              документы нельзя. Дозаполните карточку, и шаблоны появятся здесь.
+              У карточки не заполнены страна или тип контрагента — без них подобрать документы
+              нельзя. Дозаполните карточку, и шаблоны появятся здесь.
             </div>
           )}
 
           {!tagsIncomplete && templates.length === 0 && (
             <div className="text-[13px] text-text-muted leading-relaxed">
-              Нет шаблонов для связки {contragent.country} · {contragent.type} ·{' '}
-              {contragent.contract_family}.
+              Нет шаблонов для связки {contragent.country} · {contragent.type}.
             </div>
           )}
 
