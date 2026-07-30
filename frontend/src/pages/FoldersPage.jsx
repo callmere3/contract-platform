@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
-import { browseFolder } from '../api/templates';
+import { browseFolder, setTemplateVisibility } from '../api/templates';
 import { useModal } from '../modals/ModalProvider';
 import { useAuth } from '../auth/AuthContext';
 import { canManageTemplates } from '../auth/permissions';
@@ -13,6 +13,32 @@ const DOC_TYPE_LABELS = {
   appendix: 'Приложение',
   act: 'Акт',
 };
+
+// Глаз (виден) / перечёркнутый глаз (скрыт) — Feather-иконки, inline-SVG
+// (в проекте иконки рисуются так же, без внешних библиотек).
+function EyeIcon({ hidden }) {
+  const common = {
+    width: 16,
+    height: 16,
+    viewBox: '0 0 24 24',
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 2,
+    strokeLinecap: 'round',
+    strokeLinejoin: 'round',
+  };
+  return hidden ? (
+    <svg {...common} aria-hidden>
+      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+      <line x1="1" y1="1" x2="23" y2="23" />
+    </svg>
+  ) : (
+    <svg {...common} aria-hidden>
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
 
 function FolderIcon() {
   return (
@@ -40,6 +66,7 @@ export function FoldersPage() {
   const [data, setData] = useState({ breadcrumb: [], folders: [], templates: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [toggling, setToggling] = useState(null); // id шаблона, у которого сейчас меняем видимость
   const { openModal } = useModal();
   const { role } = useAuth();
   const navigate = useNavigate();
@@ -55,6 +82,27 @@ export function FoldersPage() {
       setLoading(false);
     }
   }, [folderId]);
+
+  // Переключение видимости из строки списка (только admin). Обновляем ТОЛЬКО
+  // эту строку в state, без перезагрузки папки — иначе на каждый клик по
+  // глазу список моргал бы «Загрузкой…».
+  async function toggleVisibility(tpl) {
+    setToggling(tpl.id);
+    setError('');
+    try {
+      const res = await setTemplateVisibility(tpl.id, !tpl.hidden_for_managers);
+      setData((d) => ({
+        ...d,
+        templates: d.templates.map((t) =>
+          t.id === tpl.id ? { ...t, hidden_for_managers: res.hidden_for_managers } : t,
+        ),
+      }));
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setToggling(null);
+    }
+  }
 
   useEffect(() => {
     load();
@@ -166,13 +214,34 @@ export function FoldersPage() {
                     {tags.length === 3 ? tags.join(' · ') : 'теги не заданы'}
                   </Badge>
                   {canManageTemplates(role) && (
-                    <button
-                      onClick={() => openModal('editTemplate', { template: tpl, onDone: load })}
-                      className="w-7 h-7 rounded-full border border-border flex items-center justify-center text-xs text-text-secondary cursor-pointer bg-transparent hover:text-text"
-                      aria-label="Настроить шаблон"
-                    >
-                      ⋯
-                    </button>
+                    <>
+                      {/* Быстрое скрытие/показ прямо из списка, без захода в
+                          настройку. Перечёркнутый глаз = сейчас скрыт. */}
+                      <button
+                        onClick={() => toggleVisibility(tpl)}
+                        disabled={toggling === tpl.id}
+                        className={`w-7 h-7 rounded-full border border-border flex items-center justify-center cursor-pointer bg-transparent disabled:opacity-50 ${
+                          tpl.hidden_for_managers
+                            ? 'text-accent'
+                            : 'text-text-secondary hover:text-text'
+                        }`}
+                        aria-label={
+                          tpl.hidden_for_managers ? 'Показать менеджерам' : 'Скрыть от менеджеров'
+                        }
+                        title={
+                          tpl.hidden_for_managers ? 'Показать менеджерам' : 'Скрыть от менеджеров'
+                        }
+                      >
+                        <EyeIcon hidden={tpl.hidden_for_managers} />
+                      </button>
+                      <button
+                        onClick={() => openModal('editTemplate', { template: tpl, onDone: load })}
+                        className="w-7 h-7 rounded-full border border-border flex items-center justify-center text-xs text-text-secondary cursor-pointer bg-transparent hover:text-text"
+                        aria-label="Настроить шаблон"
+                      >
+                        ⋯
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
