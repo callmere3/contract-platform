@@ -35,7 +35,7 @@ from decimal import Decimal, InvalidOperation
 import openpyxl
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
-from sqlalchemy import or_
+from sqlalchemy import case, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -207,28 +207,58 @@ def _filtered_contragents_query(
     Общий запрос контрагентов с фильтрами q/country/contragent_type —
     единый источник для поиска (search_contragents) и экспорта
     (export_contragents), чтобы экспорт выгружал ровно то же, что показано
-    в списке при текущем фильтре. Сортировка по title; без .limit() —
-    ограничение (200 в поиске) навешивает вызывающий, экспорт выгружает всё.
+    в списке при текущем фильтре. Без .limit()/.offset() — пагинацию
+    навешивает вызывающий, экспорт выгружает всё.
 
     Поиск по title, name ИЛИ nickname (см. брейншторм): не важно, по чему
     совпало. country/contragent_type — точное совпадение после нормализации
     регистра (app/tags.py), применяются ДОПОЛНИТЕЛЬНО к q.
+
+    Сортировка при поиске: сначала совпадения "с начала строки", потом
+    подстрочные, внутри группы — по алфавиту (по просьбе пользователя). Ввёл
+    "иба" — "Ибара" (title с начала) идёт раньше "Дарибаева" (иба в середине).
+    Ранжирование делается в SQL, а не в Python: список постраничный, и
+    префиксное совпадение с дальней страницы иначе не поднялось бы наверх.
+
+    Совпадение по nickname проверяется через EXISTS, а не outerjoin+distinct:
+    у контрагента несколько псевдонимов, join размножил бы строки, а с
+    ORDER BY по вычисляемому рангу distinct на джойне становится неудобным.
+    EXISTS даёт по одной строке на контрагента без дублей.
     """
     query = db.query(Contragent)
+    order_by = [Contragent.title]
     if q:
-        query = (
-            query.outerjoin(
-                ContragentNickname, ContragentNickname.contragent_id == Contragent.id
-            )
+        like = f"%{q}%"
+        prefix = f"{q}%"
+        nickname_matches = (
+            db.query(ContragentNickname.id)
             .filter(
-                or_(
-                    Contragent.title.ilike(f"%{q}%"),
-                    Contragent.name.ilike(f"%{q}%"),
-                    ContragentNickname.nickname.ilike(f"%{q}%"),
-                )
+                ContragentNickname.contragent_id == Contragent.id,
+                ContragentNickname.nickname.ilike(like),
             )
-            .distinct()
+            .exists()
         )
+        nickname_prefix = (
+            db.query(ContragentNickname.id)
+            .filter(
+                ContragentNickname.contragent_id == Contragent.id,
+                ContragentNickname.nickname.ilike(prefix),
+            )
+            .exists()
+        )
+        query = query.filter(
+            or_(
+                Contragent.title.ilike(like),
+                Contragent.name.ilike(like),
+                nickname_matches,
+            )
+        )
+        starts_with = or_(
+            Contragent.title.ilike(prefix),
+            Contragent.name.ilike(prefix),
+            nickname_prefix,
+        )
+        order_by = [case((starts_with, 0), else_=1), Contragent.title]
     if country:
         query = query.filter(
             Contragent.country == normalize_optional_tag(country, COUNTRIES, "country")
@@ -238,7 +268,7 @@ def _filtered_contragents_query(
             Contragent.type
             == normalize_optional_tag(contragent_type, CONTRAGENT_TYPES, "contragent_type")
         )
-    return query.order_by(Contragent.title)
+    return query.order_by(*order_by)
 
 
 @contragents_router.get("", dependencies=[Depends(get_current_user)])
