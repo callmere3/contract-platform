@@ -12,9 +12,10 @@ const DOC_TYPE_LABELS = {
 
 /**
  * Документы, подходящие контрагенту (GET /contragents/{id}/templates).
- * Подбор — по стране и типу контрагента; тип договора (contract_family) в
- * подбор не входит, поэтому показываются документы всех семейств сразу
- * (аванс/роялти/аванс+обязательство), оператор выбирает нужный.
+ * Подбор — по стране и типу контрагента. Тип договора (contract_family)
+ * сужает выдачу до своего семейства ТОЛЬКО если задан у карточки; если
+ * пуст — показываются документы всех семейств сразу (аванс/роялти/аванс+
+ * обязательство), оператор выбирает нужный.
  *
  * Пустой список бывает по двум разным причинам, и их важно различать:
  *  1) у контрагента не заполнены страна/тип ("неполная" карточка из
@@ -88,7 +89,8 @@ export function ContragentDocsModal({ contragentId, level, isTop }) {
 
           {!tagsIncomplete && templates.length === 0 && (
             <div className="text-[13px] text-text-muted leading-relaxed">
-              Нет шаблонов для связки {contragent.country} · {contragent.type}.
+              Нет шаблонов для связки {contragent.country} · {contragent.type}
+              {contragent.contract_family ? ` · ${contragent.contract_family}` : ''}.
             </div>
           )}
 
