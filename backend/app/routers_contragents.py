@@ -241,6 +241,8 @@ def search_contragents(
     q: str | None = None,
     country: str | None = None,
     contragent_type: str | None = None,
+    page: int = 1,
+    page_size: int = 100,
     db: Session = Depends(get_session),
 ) -> dict:
     """
@@ -257,10 +259,24 @@ def search_contragents(
     ДОПОЛНИТЕЛЬНО к q, а не вместо него. contract_family сюда намеренно
     не добавлен — фильтр по роялти/авансу не нужен (см. запрос пользователя).
 
-    Без q/фильтров — отдаёт весь список (ограничен 200 записями).
+    Пагинация: page (с 1), page_size (по умолчанию 100, максимум 500). Раньше
+    список резался жёстким лимитом 200, и при большой базе (800+ контрагентов
+    после боевого импорта) остальных было не посмотреть. Теперь в ответе есть
+    total — общее число записей под текущим фильтром, чтобы фронт нарисовал
+    "показаны X–Y из N" и листалку. Экспорт по-прежнему выгружает всё без
+    пагинации (см. export_contragents).
     """
-    contragents = _filtered_contragents_query(db, q, country, contragent_type).limit(200).all()
-    return {"contragents": [_contragent_summary(c) for c in contragents]}
+    page = max(1, page)
+    page_size = max(1, min(page_size, 500))
+    base = _filtered_contragents_query(db, q, country, contragent_type)
+    total = base.count()
+    rows = base.offset((page - 1) * page_size).limit(page_size).all()
+    return {
+        "contragents": [_contragent_summary(c) for c in rows],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
 
 
 @contragents_router.post("", dependencies=[Depends(require_role(*CAN_CREATE_CONTRAGENTS))])

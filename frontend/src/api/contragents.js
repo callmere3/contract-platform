@@ -10,11 +10,13 @@ import { API, apiFetch, apiJson } from './client';
  */
 
 /** Поиск: q + необязательные фильтры country/contragent_type. Без параметров — весь список (лимит 200). */
-export function searchContragents({ q, country, contragentType } = {}) {
+export function searchContragents({ q, country, contragentType, page, pageSize } = {}) {
   const params = new URLSearchParams();
   if (q) params.set('q', q);
   if (country) params.set('country', country);
   if (contragentType) params.set('contragent_type', contragentType);
+  if (page) params.set('page', page);
+  if (pageSize) params.set('page_size', pageSize);
   const qs = params.toString();
   return apiJson(`${API}/contragents${qs ? `?${qs}` : ''}`);
 }

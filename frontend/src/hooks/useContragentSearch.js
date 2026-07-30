@@ -15,8 +15,16 @@ import { searchContragents } from '../api/contragents';
  * enabled=false — не искать вообще (например, hero-поиск с пустой строкой:
  * там незачем грузить весь список из 200 записей, пока ничего не введено).
  */
-export function useContragentSearch({ q = '', country = '', contragentType = '', enabled = true }) {
+export function useContragentSearch({
+  q = '',
+  country = '',
+  contragentType = '',
+  page = 1,
+  pageSize = 100,
+  enabled = true,
+}) {
   const [items, setItems] = useState([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const requestId = useRef(0);
@@ -25,22 +33,27 @@ export function useContragentSearch({ q = '', country = '', contragentType = '',
     const id = ++requestId.current;
     setLoading(true);
     try {
-      const data = await searchContragents({ q, country, contragentType });
+      const data = await searchContragents({ q, country, contragentType, page, pageSize });
       if (id !== requestId.current) return; // пришёл устаревший ответ — игнорируем
       setItems(data.contragents);
+      // total появился с пагинацией; на всякий случай откат на длину страницы,
+      // если бэкенд старой версии его не прислал.
+      setTotal(data.total ?? data.contragents.length);
       setError('');
     } catch (e) {
       if (id !== requestId.current) return;
       setError(e.message);
       setItems([]);
+      setTotal(0);
     } finally {
       if (id === requestId.current) setLoading(false);
     }
-  }, [q, country, contragentType]);
+  }, [q, country, contragentType, page, pageSize]);
 
   useEffect(() => {
     if (!enabled) {
       setItems([]);
+      setTotal(0);
       setLoading(false);
       setError('');
       return;
@@ -54,5 +67,5 @@ export function useContragentSearch({ q = '', country = '', contragentType = '',
   // Мгновенный повторный запрос без дебаунса — например, после удаления
   // контрагента из карточки: список должен обновиться сразу, а не через 400мс
   // и не ждать смены вкладки.
-  return { items, loading, error, refetch: fetchNow };
+  return { items, total, loading, error, refetch: fetchNow };
 }
