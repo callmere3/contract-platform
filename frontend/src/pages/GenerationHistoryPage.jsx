@@ -174,7 +174,7 @@ export function GenerationHistoryPage() {
 
               <div className="flex items-center gap-4 flex-shrink-0">
                 <div className="text-right">
-                  <div className="text-[13px] text-text">{e.user_username ?? '—'}</div>
+                  <div className="text-[13px] text-text">{e.user_display ?? e.user_username ?? '—'}</div>
                   <div className="text-[11px] text-text-muted mt-0.5">
                     {new Date(e.created_at).toLocaleString('ru-RU')}
                   </div>

@@ -21,6 +21,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user, require_role
@@ -52,21 +53,34 @@ def list_generation_history(
     db: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> list[dict]:
-    query = db.query(GeneratedDocument)
+    # Джойним пользователя, чтобы показать его ИМЯ (full_name), а не логин.
+    # outerjoin: если пользователь удалён (user_id стал NULL), запись всё
+    # равно остаётся — имя тогда берём из снимка логина (user_username).
+    query = db.query(GeneratedDocument, User.full_name).outerjoin(
+        User, User.id == GeneratedDocument.user_id
+    )
     # Top-manager видит только свои документы. Ограничение ЗДЕСЬ, а не только
     # в UI: иначе через filter_type=user он бы увидел чужие.
     if current_user.role not in SEES_ALL_GENERATION_HISTORY:
         query = query.filter(GeneratedDocument.user_id == current_user.id)
     if filter_type is not None and filter_value:
-        # ILIKE — подстрока без учёта регистра: искать по точному
-        # UUID/логину человек не будет, ищут по части названия/имени.
-        column = FILTER_COLUMNS[filter_type]
-        query = query.filter(column.ilike(f"%{filter_value}%"))
+        like = f"%{filter_value}%"
+        if filter_type == "user":
+            # Ищем по тому, что видно в списке (имени), но и по логину —
+            # на случай удалённого пользователя, у которого остался только он.
+            query = query.filter(
+                or_(User.full_name.ilike(like), GeneratedDocument.user_username.ilike(like))
+            )
+        else:
+            column = FILTER_COLUMNS[filter_type]
+            query = query.filter(column.ilike(like))
 
-    entries = query.order_by(GeneratedDocument.created_at.desc()).limit(limit).all()
+    rows = query.order_by(GeneratedDocument.created_at.desc()).limit(limit).all()
     return [
         {
             "id": str(e.id),
+            # Имя пользователя; если пусто/пользователь удалён — логин-снимок.
+            "user_display": full_name or e.user_username,
             "user_username": e.user_username,
             "template_id": str(e.template_id) if e.template_id else None,
             "template_name": e.template_name,
@@ -76,7 +90,7 @@ def list_generation_history(
             "format": e.format,
             "created_at": e.created_at.isoformat(),
         }
-        for e in entries
+        for e, full_name in rows
     ]
 
 
