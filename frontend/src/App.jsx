@@ -1,7 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { ThemeProvider } from './theme/ThemeContext';
 import { AuthProvider, useAuth } from './auth/AuthContext';
-import { canManageUsers, canViewGenerationHistory } from './auth/permissions';
+import { canViewUsers, canViewGenerationHistory } from './auth/permissions';
 import { TagsProvider } from './api/TagsContext';
 import { ModalProvider } from './modals/ModalProvider';
 import { ModalRoot } from './modals/ModalRoot';
@@ -47,10 +47,11 @@ function AppShell() {
         {/* Пользователи — только admin. Прятать вкладку в шапке мало:
             без этой проверки не-админ мог бы зайти прямо по /app/users и
             увидеть пустой экран с 403 вместо понятного поведения. Реальная
-            защита всё равно на сервере (require_role(ADMIN) на /users). */}
+            защита всё равно на сервере: список — CAN_VIEW_USERS (admin/
+            director), правка — require_role(ADMIN). */}
         <Route
           path="/users"
-          element={canManageUsers(user?.role) ? <UsersPage /> : <Navigate to="/search" replace />}
+          element={canViewUsers(user?.role) ? <UsersPage /> : <Navigate to="/search" replace />}
         />
         {/* История генерации — Admin/Director, та же защита от прямого
             захода по адресу, что и у "Пользователей" выше. */}

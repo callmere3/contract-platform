@@ -152,15 +152,15 @@
     </div>
     <div class="role">
       <h3>Директор</h3><span class="key">director</span>
-      <p>Как менеджер, плюс правка карточек, экспорт в Excel, журнал действий и вся история генерации. Без импорта и управления шаблонами.</p>
+      <p>Как менеджер, плюс правка карточек, экспорт в Excel, журнал действий, вся история генерации и просмотр вкладки «Пользователи» (только смотрит). Без импорта, управления шаблонами и смены ролей.</p>
     </div>
     <div class="role">
       <h3>Топ-менеджер</h3><span class="key">top_manager</span>
-      <p>Как менеджер, плюс правка карточек и экспорт. История генерации — только своя. Без журнала действий и импорта.</p>
+      <p>Как менеджер, плюс правка карточек и своя история генерации (только свои документы). Без экспорта, журнала действий; скрытые шаблоны не видит.</p>
     </div>
     <div class="role">
       <h3>Тестер</h3><span class="key">tester</span>
-      <p>По правам как топ-менеджер, плюс кнопка «Тестовые данные» для обкатки шаблонов. Историю генерации сейчас не видит<sup>3</sup>.</p>
+      <p>Как менеджер, плюс правка карточек, кнопка «Тестовые данные» и просмотр скрытых шаблонов — для обкатки. Без экспорта и истории генерации. Самостоятельная роль (с топ-менеджером больше не связана).</p>
     </div>
     <div class="role">
       <h3>Менеджер</h3><span class="key">manager</span>
@@ -183,18 +183,19 @@
         <tr><td class="act">Создание контрагента</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr>
         <tr><td class="act">Редактирование карточки контрагента</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td></tr>
         <tr><td class="act">Удаление контрагента</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
-        <tr><td class="act">Экспорт в Excel</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td></tr>
+        <tr><td class="act">Экспорт в Excel</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
         <tr><td class="act">Импорт из Excel</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
 
         <tr class="grouprow"><td colspan="6">Шаблоны</td></tr>
         <tr><td class="act">Просмотр папок и шаблонов</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr>
         <tr><td class="act">Управление шаблонами <span style="color:var(--text-muted);font-size:12px">(загрузка, правка, удаление)</span></td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
-        <tr><td class="act">Видит шаблоны с пометкой «скрыт»</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td></tr>
+        <tr><td class="act">Видит шаблоны с пометкой «скрыт»</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td><td class="yes">✓</td><td class="no">—</td></tr>
         <tr><td class="act">Скрывает / показывает шаблон</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
         <tr><td class="act">Кнопка «Тестовые данные» в форме <sup>1</sup></td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="yes">✓</td><td class="no">—</td></tr>
 
         <tr class="grouprow"><td colspan="6">Администрирование</td></tr>
-        <tr><td class="act">Вкладка «Пользователи»</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
+        <tr><td class="act">Вкладка «Пользователи»: просмотр</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
+        <tr><td class="act">Создание, смена ролей, отключение пользователей</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
         <tr><td class="act">Просмотр журнала действий (audit&nbsp;log)</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
         <tr>
           <td class="act">Вкладка «История генерации» <sup>2</sup></td>
@@ -221,8 +222,12 @@
       <p>Топ-менеджер видит и пересоздаёт лишь документы, которые сгенерировал сам (фильтр по <code>user_id</code>). Это не скрытие в интерфейсе: чужая запись по прямой ссылке отдаёт 404. Админ и директор видят всё.</p>
     </div>
     <div class="note">
-      <b><sup>3</sup> Тестер ≈ топ-менеджер, но не идентичен</b>
-      <p>Задумано, что тестер = топ-менеджер + кнопка демо. Но «Историю генерации» дали топ-менеджеру и не дали тестеру — сейчас это единственная разница в доступе помимо кнопки. Решить, выравнивать ли.</p>
+      <b>Вкладка «Пользователи»: смотреть ≠ управлять</b>
+      <p>Директор видит список пользователей и их роли, но ничего не меняет: создание, смена ролей и отключение — только у админа (<code>CAN_VIEW_USERS</code> для просмотра, <code>CAN_MANAGE_USERS</code> для правки). Защита на сервере, не только в интерфейсе.</p>
+    </div>
+    <div class="note">
+      <b>Тестер и топ-менеджер — независимы</b>
+      <p>Раньше тестер повторял топ-менеджера. Теперь их права разошлись: у тестера — скрытые шаблоны и кнопка демо, у топ-менеджера — своя история генерации. Общей зависимости больше нет, меняются по отдельности.</p>
     </div>
     <div class="note">
       <b>Скрытые шаблоны — для обкатки</b>

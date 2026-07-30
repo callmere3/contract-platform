@@ -1,16 +1,17 @@
 import { NavLink } from 'react-router-dom';
 import { useTheme } from '../theme/ThemeContext';
 import { useAuth } from '../auth/AuthContext';
-import { canManageUsers, canViewGenerationHistory } from '../auth/permissions';
+import { canViewUsers, canViewGenerationHistory } from '../auth/permissions';
 import { useModal } from '../modals/ModalProvider';
 
 // Первые три вкладки видны всем ролям (см. ТЗ: "менеджер видит все вкладки").
 // Ограничения для них — не на уровне доступа к вкладке, а на уровне действий
 // внутри неё (кнопки создания/удаления), см. src/auth/permissions.js.
 //
-// "Пользователи" и "История генерации" — исключение: там все действия
-// доступны не всем ролям (первая — только ADMIN, вторая — ADMIN/DIRECTOR),
-// поэтому остальным вкладка показала бы только ошибку 403. Прячем целиком.
+// "Пользователи" и "История генерации" — исключение: там доступ не у всех
+// ролей (первая — ADMIN правит / DIRECTOR смотрит, вторая — ADMIN/DIRECTOR
+// и TOP_MANAGER свою), поэтому остальным вкладка показала бы только 403.
+// Прячем целиком.
 const TABS = [
   { to: '/search', label: 'Генерация' },
   { to: '/database', label: 'База контрагентов' },
@@ -29,7 +30,7 @@ export function Header({ companyName = 'ML Docs' }) {
   if (canViewGenerationHistory(user?.role)) {
     tabs = [...tabs, { to: '/generation-history', label: 'История генерации' }];
   }
-  if (canManageUsers(user?.role)) {
+  if (canViewUsers(user?.role)) {
     tabs = [...tabs, { to: '/users', label: 'Пользователи' }];
   }
 

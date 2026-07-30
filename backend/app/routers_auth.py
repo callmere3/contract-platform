@@ -42,7 +42,7 @@ from app.auth import (
 from app.db import get_session
 from app.models import AuditLog, RefreshToken, User
 from app.rate_limit import check_login_rate_limit, record_failed_login, record_successful_login
-from app.roles import ADMIN, CAN_VIEW_AUDIT_LOG, ROLES
+from app.roles import ADMIN, CAN_VIEW_AUDIT_LOG, CAN_VIEW_USERS, ROLES
 
 auth_router = APIRouter(prefix="/auth", tags=["auth"])
 users_router = APIRouter(prefix="/users", tags=["users"])
@@ -240,8 +240,10 @@ def create_user(
     return {"id": str(user.id), "username": user.username, "role": user.role, "is_active": user.is_active}
 
 
-@users_router.get("", dependencies=[Depends(require_role(ADMIN))])
+@users_router.get("", dependencies=[Depends(require_role(*CAN_VIEW_USERS))])
 def list_users(db: Session = Depends(get_session)) -> list[dict]:
+    # Просмотр списка — Admin и Director (CAN_VIEW_USERS). Изменение
+    # (create_user/update_user ниже) осталось за Admin: director только видит.
     users = db.query(User).order_by(User.username).all()
     return [
         {

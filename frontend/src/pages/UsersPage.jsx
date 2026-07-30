@@ -5,7 +5,7 @@ import { Card } from '../components/ui/Card';
 import { listUsers, updateUser } from '../api/users';
 import { useTags } from '../api/TagsContext';
 import { useAuth } from '../auth/AuthContext';
-import { ROLE_LABELS } from '../auth/permissions';
+import { canManageUsers, ROLE_LABELS } from '../auth/permissions';
 import { useModal } from '../modals/ModalProvider';
 
 // "В сети" = был запрос в последние 5 минут. Сервер обновляет last_seen_at на
@@ -33,11 +33,13 @@ function lastSeenText(user) {
 }
 
 /**
- * "Пользователи" — только для admin (все три эндпоинта /users защищены
- * require_role(ADMIN)). Вкладка в шапке тоже показывается только ему.
+ * "Пользователи" — Admin и Director. Admin управляет (создаёт, меняет роли,
+ * отключает: эндпоинты create_user/update_user под require_role(ADMIN)),
+ * Director только СМОТРИТ список и роли (список под CAN_VIEW_USERS). Поэтому
+ * все элементы правки скрыты, если canManage=false.
  *
  * Роль меняется прямо в строке, без отдельной модалки: это одно поле из
- * трёх возможных значений, ради него открывать диалог избыточно.
+ * возможных значений, ради него открывать диалог избыточно.
  *
  * Себя изменить нельзя — бэкенд запрещает менять роль и деактивировать
  * самого себя (иначе единственный админ может отобрать доступ у самого
@@ -51,6 +53,7 @@ export function UsersPage() {
   const { roles } = useTags();
   const { user: me } = useAuth();
   const { openModal } = useModal();
+  const canManage = canManageUsers(me?.role); // admin — правит, director — только смотрит
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -113,9 +116,11 @@ export function UsersPage() {
       <Card>
         <div className="flex items-center justify-between p-5 border-b border-border">
           <span className="text-sm font-semibold text-text">Пользователи</span>
-          <Button variant="primary" size="sm" onClick={() => openModal('newUser', { onDone: load })}>
-            + Пользователь
-          </Button>
+          {canManage && (
+            <Button variant="primary" size="sm" onClick={() => openModal('newUser', { onDone: load })}>
+              + Пользователь
+            </Button>
+          )}
         </div>
 
         {loading && <div className="px-5 py-4 text-[13px] text-text-muted">Загрузка…</div>}
@@ -152,10 +157,10 @@ export function UsersPage() {
                 </div>
 
                 <div className="flex items-center gap-2.5 flex-shrink-0">
-                  {isMe ? (
-                    // Себе роль не меняем — бэкенд это запретит (400), а
-                    // кнопка, которая гарантированно вернёт ошибку, только
-                    // путает. Показываем текущую роль как есть.
+                  {isMe || !canManage ? (
+                    // Себе роль не меняем (бэкенд вернёт 400), а director вообще
+                    // только смотрит. В обоих случаях показываем роль как есть,
+                    // без управляющих элементов.
                     <Badge variant="accent">{ROLE_LABELS[u.role] ?? u.role}</Badge>
                   ) : (
                     <>
@@ -188,8 +193,9 @@ export function UsersPage() {
       </Card>
 
       <div className="text-[11px] text-text-muted mt-4 leading-snug">
-        Отключение пользователя сразу обрывает все его текущие сессии. Свою роль изменить нельзя —
-        иначе можно потерять доступ безвозвратно.
+        {canManage
+          ? 'Отключение пользователя сразу обрывает все его текущие сессии. Свою роль изменить нельзя — иначе можно потерять доступ безвозвратно.'
+          : 'Просмотр списка пользователей и их ролей. Создание, смена ролей и отключение — за администратором.'}
       </div>
     </div>
   );

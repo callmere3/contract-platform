@@ -59,8 +59,8 @@ export const canEditContragents = (role) => is(role, ADMIN, DIRECTOR, TOP_MANAGE
 // backend: CAN_DELETE_CONTRAGENTS = (ADMIN,)
 export const canDeleteContragents = (role) => is(role, ADMIN);
 
-// backend: CAN_EXPORT_CONTRAGENTS = (ADMIN, DIRECTOR, TOP_MANAGER, TESTER)
-export const canExport = (role) => is(role, ADMIN, DIRECTOR, TOP_MANAGER, TESTER);
+// backend: CAN_EXPORT_CONTRAGENTS = (ADMIN, DIRECTOR) — у top_manager/tester убран
+export const canExport = (role) => is(role, ADMIN, DIRECTOR);
 
 // backend: CAN_IMPORT = (ADMIN,)
 export const canImport = (role) => is(role, ADMIN);
@@ -68,8 +68,11 @@ export const canImport = (role) => is(role, ADMIN);
 // backend: CAN_MANAGE_TEMPLATES = (ADMIN,) — создание/правка/удаление папок и шаблонов
 export const canManageTemplates = (role) => is(role, ADMIN);
 
-// backend: все эндпоинты /users защищены require_role(ADMIN) —
-// список, создание и правка пользователей доступны только админу
+// backend: CAN_VIEW_USERS = (ADMIN, DIRECTOR) — видеть список пользователей и роли.
+// Director только СМОТРИТ; создание/правка/смена ролей — за админом (canManageUsers).
+export const canViewUsers = (role) => is(role, ADMIN, DIRECTOR);
+
+// backend: CAN_MANAGE_USERS = (ADMIN,) — создание/правка/деактивация/смена ролей.
 export const canManageUsers = (role) => is(role, ADMIN);
 
 // Кнопка "Импорт/экспорт" целиком: у manager внутри неё нет ничего
