@@ -4,6 +4,7 @@ import { Field } from '../components/ui/Field';
 import { Button } from '../components/ui/Button';
 import { useModal } from './ModalProvider';
 import { useTags } from '../api/TagsContext';
+import { typesForCountry } from '../api/contragentTypes';
 import { createContragent, searchContragents } from '../api/contragents';
 
 /**
@@ -18,7 +19,13 @@ import { createContragent, searchContragents } from '../api/contragents';
  */
 export function NewContragentModal({ level, isTop }) {
   const { closeModal, openModal } = useModal();
-  const { countries, contragent_types: types, contract_families: families, reg_number_meta: regMeta } = useTags();
+  const {
+    countries,
+    contragent_types: types,
+    contract_families: families,
+    reg_number_meta: regMeta,
+    company_type_by_country: companyTypeByCountry,
+  } = useTags();
 
   const [name, setName] = useState('');
   const [country, setCountry] = useState('');
@@ -37,6 +44,16 @@ export function NewContragentModal({ level, isTop }) {
   // Источник — GET /tags (reg_number_meta), не хардкод: те же значения
   // валидирует бэкенд в normalize_reg_number.
   const meta = regMeta?.[type];
+
+  // Типы под выбранную страну: для КЗ предлагается ТОО, а не ООО (см.
+  // typesForCountry). При смене страны сбрасываем тип, если он стал скрыт.
+  const visibleTypes = typesForCountry(types, country, companyTypeByCountry);
+  function onCountryChange(next) {
+    setCountry(next);
+    if (type && !typesForCountry(types, next, companyTypeByCountry).includes(type)) {
+      setType('');
+    }
+  }
 
   // Проверка дублей по ФИО на лету. Дебаунс 400 мс — как в боевом index.html.
   // Ищем по name, а не по title: у одного человека "Иванов (СГ)" и
@@ -167,7 +184,7 @@ export function NewContragentModal({ level, isTop }) {
           )}
         </div>
 
-        <Field as="select" label="Страна" value={country} onChange={(e) => setCountry(e.target.value)}>
+        <Field as="select" label="Страна" value={country} onChange={(e) => onCountryChange(e.target.value)}>
           <option value="">— выберите —</option>
           {countries.map((c) => (
             <option key={c} value={c}>
@@ -178,7 +195,7 @@ export function NewContragentModal({ level, isTop }) {
 
         <Field as="select" label="Тип контрагента" value={type} onChange={(e) => setType(e.target.value)}>
           <option value="">— выберите —</option>
-          {types.map((t) => (
+          {visibleTypes.map((t) => (
             <option key={t} value={t}>
               {t}
             </option>

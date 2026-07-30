@@ -4,6 +4,7 @@ import { Field } from '../components/ui/Field';
 import { Button } from '../components/ui/Button';
 import { useModal } from './ModalProvider';
 import { useTags } from '../api/TagsContext';
+import { typesForCountry } from '../api/contragentTypes';
 import { createFolder, uploadTemplate } from '../api/templates';
 
 // doc_type определяет, как строится форма генерации: у 'contract' номер и
@@ -77,7 +78,12 @@ export function NewFolderModal({ parentId, onDone, level, isTop }) {
  */
 export function NewTemplateModal({ folderId, onDone, level, isTop }) {
   const { closeModal } = useModal();
-  const { countries, contragent_types: types, contract_families: families } = useTags();
+  const {
+    countries,
+    contragent_types: types,
+    contract_families: families,
+    company_type_by_country: companyTypeByCountry,
+  } = useTags();
 
   const [name, setName] = useState('');
   const [docType, setDocType] = useState('');
@@ -87,6 +93,17 @@ export function NewTemplateModal({ folderId, onDone, level, isTop }) {
   const [file, setFile] = useState(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+
+  // Типы под выбранную страну: для КЗ предлагается ТОО, а не ООО (см.
+  // typesForCountry). При смене страны сбрасываем тип, если он стал скрыт —
+  // иначе КЗ-шаблон мог бы уехать с тегом ООО и не найтись при подборе.
+  const visibleTypes = typesForCountry(types, country, companyTypeByCountry);
+  function onCountryChange(next) {
+    setCountry(next);
+    if (contragentType && !typesForCountry(types, next, companyTypeByCountry).includes(contragentType)) {
+      setContragentType('');
+    }
+  }
 
   async function submit() {
     if (!name.trim()) {
@@ -154,7 +171,7 @@ export function NewTemplateModal({ folderId, onDone, level, isTop }) {
           ))}
         </Field>
 
-        <Field as="select" label="Страна" value={country} onChange={(e) => setCountry(e.target.value)}>
+        <Field as="select" label="Страна" value={country} onChange={(e) => onCountryChange(e.target.value)}>
           <option value="">— не задан —</option>
           {countries.map((c) => (
             <option key={c} value={c}>
@@ -170,7 +187,7 @@ export function NewTemplateModal({ folderId, onDone, level, isTop }) {
           onChange={(e) => setContragentType(e.target.value)}
         >
           <option value="">— не задан —</option>
-          {types.map((t) => (
+          {visibleTypes.map((t) => (
             <option key={t} value={t}>
               {t}
             </option>

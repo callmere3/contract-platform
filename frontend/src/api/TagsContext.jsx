@@ -20,6 +20,7 @@ export function TagsProvider({ children }) {
     contragent_types: [],
     contract_families: [],
     reg_number_meta: {},
+    company_type_by_country: {},
     roles: [],
   });
   const [error, setError] = useState('');

@@ -4,6 +4,7 @@ import { Field } from '../components/ui/Field';
 import { Button } from '../components/ui/Button';
 import { useModal } from './ModalProvider';
 import { useTags } from '../api/TagsContext';
+import { typesForCountry } from '../api/contragentTypes';
 import {
   deleteTemplate,
   downloadTemplateFile,
@@ -26,12 +27,31 @@ import {
  */
 export function EditTemplateModal({ template, onDone, level, isTop }) {
   const { closeModal } = useModal();
-  const { countries, contragent_types: types, contract_families: families } = useTags();
+  const {
+    countries,
+    contragent_types: types,
+    contract_families: families,
+    company_type_by_country: companyTypeByCountry,
+  } = useTags();
 
   const [name, setName] = useState(template.name ?? '');
   const [country, setCountry] = useState(template.country ?? '');
   const [contragentType, setContragentType] = useState(template.contragent_type ?? '');
   const [contractFamily, setContractFamily] = useState(template.contract_family ?? '');
+
+  // Типы под выбранную страну (для КЗ — ТОО, не ООО). Уже сохранённое
+  // значение всегда оставляем в списке, даже если оно «чужое» (легаси-шаблон
+  // с ООО+КЗ), — иначе селект молча показал бы не то. При смене страны руками
+  // сбрасываем ставший скрытым тип.
+  const base = typesForCountry(types, country, companyTypeByCountry);
+  const visibleTypes =
+    contragentType && !base.includes(contragentType) ? [...base, contragentType] : base;
+  function onCountryChange(next) {
+    setCountry(next);
+    if (contragentType && !typesForCountry(types, next, companyTypeByCountry).includes(contragentType)) {
+      setContragentType('');
+    }
+  }
 
   const [fields, setFields] = useState([]);
   const [mapsToOptions, setMapsToOptions] = useState([]);
@@ -193,7 +213,7 @@ export function EditTemplateModal({ template, onDone, level, isTop }) {
         <div className="col-span-2">
           <Field label="Название" value={name} onChange={(e) => setName(e.target.value)} />
         </div>
-        <Field as="select" label="Страна" value={country} onChange={(e) => setCountry(e.target.value)}>
+        <Field as="select" label="Страна" value={country} onChange={(e) => onCountryChange(e.target.value)}>
           <option value="">— не задан —</option>
           {countries.map((c) => (
             <option key={c} value={c}>
@@ -208,7 +228,7 @@ export function EditTemplateModal({ template, onDone, level, isTop }) {
           onChange={(e) => setContragentType(e.target.value)}
         >
           <option value="">— не задан —</option>
-          {types.map((t) => (
+          {visibleTypes.map((t) => (
             <option key={t} value={t}>
               {t}
             </option>

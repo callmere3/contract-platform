@@ -11,7 +11,13 @@ from fastapi import APIRouter, Depends
 
 from app.auth import get_current_user
 from app.roles import ROLES
-from app.tags import CONTRAGENT_TYPES, CONTRACT_FAMILIES, COUNTRIES, REG_NUMBER_META
+from app.tags import (
+    COMPANY_TYPE_BY_COUNTRY,
+    CONTRAGENT_TYPES,
+    CONTRACT_FAMILIES,
+    COUNTRIES,
+    REG_NUMBER_META,
+)
 
 tags_router = APIRouter(prefix="/tags", tags=["tags"])
 
@@ -28,6 +34,10 @@ def get_tags() -> dict:
         "reg_number_meta": {
             k: {"label": label, "length": length} for k, (label, length) in REG_NUMBER_META.items()
         },
+        # {"РУ": "ООО", "КЗ": "ТОО"} — фронт фильтрует список типов под
+        # выбранную страну (для КЗ предлагает ТОО, а не ООО), не хардкодя
+        # связку у себя. См. COMPANY_TYPE_BY_COUNTRY в app/tags.py.
+        "company_type_by_country": COMPANY_TYPE_BY_COUNTRY,
         # Список ролей для селекта на вкладке "Пользователи" — из того же
         # единственного источника правды (app/roles.py: ROLES), которым
         # валидируется роль при создании/правке пользователя.
