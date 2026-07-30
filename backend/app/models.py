@@ -92,7 +92,7 @@ class Template(Base):
     # теги для подбора документов через контрагента (этап 4, брейншторм).
     # Nullable: у 8 текущих шаблонов заполняются вручную ПОСЛЕ миграции.
     country: Mapped[str | None] = mapped_column(String(16))          # 'РУ' | 'КЗ'
-    contragent_type: Mapped[str | None] = mapped_column(String(16))  # 'СГ' | 'ИП' | 'ООО'
+    contragent_type: Mapped[str | None] = mapped_column(String(16))  # 'ФЛ' | 'СГ' | 'ИП' | 'ООО' | 'ТОО'
     contract_family: Mapped[str | None] = mapped_column(String(32))  # 'РОЯЛТИ' | 'АВАНС' | 'АВАНС_ОБЯЗАТЕЛЬСТВО'
 
     version: Mapped[int] = mapped_column(default=1)
@@ -159,7 +159,7 @@ class Contragent(Base):
     title: Mapped[str] = mapped_column(String(255))         # "Иванов И. И. (СГ)" — по нему поиск
 
     country: Mapped[str | None] = mapped_column(String(16))          # 'РУ' | 'КЗ'
-    type: Mapped[str | None] = mapped_column(String(16))             # 'СГ' | 'ИП' | 'ООО'
+    type: Mapped[str | None] = mapped_column(String(16))             # 'ФЛ' | 'СГ' | 'ИП' | 'ООО' | 'ТОО'
     contract_family: Mapped[str | None] = mapped_column(String(32))  # 'РОЯЛТИ' | 'АВАНС' | 'АВАНС_ОБЯЗАТЕЛЬСТВО'
 
     # Единый рег. номер контрагента: ИНН для СГ, ОГРНИП для ИП, ОГРН для ООО.

@@ -166,7 +166,7 @@ def upload_template(
     folder_id: uuid.UUID = Form(...),
     doc_type: str | None = Form(None),   # 'contract' | 'appendix' | 'act' | None
     country: str | None = Form(None),           # 'РУ' | 'КЗ'
-    contragent_type: str | None = Form(None),   # 'СГ' | 'ИП' | 'ООО'
+    contragent_type: str | None = Form(None),   # 'ФЛ' | 'СГ' | 'ИП' | 'ООО' | 'ТОО'
     contract_family: str | None = Form(None),   # 'РОЯЛТИ' | 'АВАНС' | 'АВАНС_ОБЯЗАТЕЛЬСТВО'
     file: UploadFile = File(...),
     db: Session = Depends(get_session),
