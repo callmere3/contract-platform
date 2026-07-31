@@ -390,6 +390,85 @@ class GeneratedDocument(Base):
     )
 
 
+class CardSuggestion(Base):
+    """
+    Предложение дозаполнить/исправить карточку контрагента — вкладка
+    "Уведомления" (только admin). Заводится автоматически при генерации
+    документа: если менеджер вписал в форму значение поля, которое связано
+    с карточкой (maps_to='contragent.*' или дата договора), и оно отличается
+    от того, что сейчас в карточке — сюда падает запись, а админ решает
+    галочкой применить её к карточке или крестиком отклонить.
+
+    Смысл: у большинства карточек часть данных пуста (в первую очередь
+    reg_number — он в каждом документе), менеджеры дозаполняют их прямо в
+    форме генерации. Эти значения уже сохраняются в payload истории
+    генерации; здесь мы их поднимаем на поверхность и даём в один клик
+    перенести в карточку — actionable-двойник красной подсветки неполных
+    карточек (_contragent_is_complete).
+
+    field — какая колонка карточки: 'reg_number' | 'royalty_percent' |
+    'name' | 'contract_number' | 'contract_date'. Никнейм НЕ предлагается
+    (у контрагента их несколько, это не "недостающее поле"). title в
+    список не входит намеренно — он и номер меняются только импортом
+    (см. update_contragent), пересчёта нет.
+
+    value — значение как его вписал менеджер, в каноничном для колонки
+    виде (reg_number/name/contract_number — строка; royalty_percent — целое
+    строкой; contract_date — ISO 'ГГГГ-ММ-ДД'). Применение пишет ровно эту
+    колонку напрямую, МИНУЯ пересчёт title/номера.
+
+    status — 'pending' | 'applied' | 'dismissed'. Как показывать pending
+    (кнопки применить/отклонить или ⚠ "внимание, проверьте документ")
+    решается НА МОМЕНТ ПОКАЗА против ТЕКУЩЕГО состояния карточки, а не
+    замораживается здесь: карточку могли дозаполнить другим путём между
+    генерацией и разбором, и разошедшееся значение могло уже сойтись
+    (см. routers_notifications._classify).
+
+    dismissed по конкретному (contragent, field, value) больше не всплывает;
+    но если менеджер впишет ДРУГОЕ значение того же поля — заведётся новая
+    запись (дедуп идёт по тройке contragent+field+value, см. capture).
+
+    contragent_id — CASCADE: предложение живёт только пока жива карточка,
+    к которой относится. suggested_by/resolved_by — SET NULL как и везде
+    (пользователя могут деактивировать/удалить, запись остаётся читаемой
+    по снимку username). source_generation_id — SET NULL: историю генерации
+    могут почистить, предложение от этого не должно пропадать.
+    """
+    __tablename__ = "card_suggestions"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+
+    contragent_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("contragents.id", ondelete="CASCADE"), index=True
+    )
+    field: Mapped[str] = mapped_column(String(32))
+    value: Mapped[str] = mapped_column(String(255))
+
+    suggested_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    suggested_by_username: Mapped[str | None] = mapped_column(String(255))
+    # снимок логина того, кто вписал значение при генерации — переживает
+    # деактивацию/удаление пользователя (как в AuditLog/GeneratedDocument)
+
+    source_generation_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("generated_documents.id", ondelete="SET NULL")
+    )
+
+    status: Mapped[str] = mapped_column(String(16), default="pending")
+
+    resolved_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 def folder_path(folder: TemplateFolder) -> list[str]:
     """
     Собирает путь от корня до папки: ['РУ', 'Договор', 'СГ-роялти'].

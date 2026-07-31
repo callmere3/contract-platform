@@ -1,7 +1,9 @@
+import { useEffect, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useTheme } from '../theme/ThemeContext';
 import { useAuth } from '../auth/AuthContext';
-import { canViewUsers, canViewGenerationHistory } from '../auth/permissions';
+import { canViewUsers, canViewGenerationHistory, canViewNotifications } from '../auth/permissions';
+import { notificationsCount } from '../api/notifications';
 import { useModal } from '../modals/ModalProvider';
 
 // Первые три вкладки видны всем ролям (см. ТЗ: "менеджер видит все вкладки").
@@ -26,9 +28,34 @@ export function Header({ companyName = 'ML Docs' }) {
   const { user, logout } = useAuth();
   const { openModal } = useModal();
 
+  // Счётчик непросмотренных уведомлений (только admin). Обновляем на монтировании,
+  // раз в минуту и мгновенно по window-событию 'notifications-changed', которое
+  // шлёт NotificationsPage после применения/отклонения — иначе бейдж отставал бы.
+  const showNotifications = canViewNotifications(user?.role);
+  const [notifCount, setNotifCount] = useState(0);
+  useEffect(() => {
+    if (!showNotifications) return undefined;
+    let alive = true;
+    const refresh = () =>
+      notificationsCount()
+        .then((r) => alive && setNotifCount(r.pending || 0))
+        .catch(() => {});
+    refresh();
+    const timer = setInterval(refresh, 60_000);
+    window.addEventListener('notifications-changed', refresh);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+      window.removeEventListener('notifications-changed', refresh);
+    };
+  }, [showNotifications]);
+
   let tabs = TABS;
   if (canViewGenerationHistory(user?.role)) {
     tabs = [...tabs, { to: '/generation-history', label: 'История генерации' }];
+  }
+  if (showNotifications) {
+    tabs = [...tabs, { to: '/notifications', label: 'Уведомления', badge: notifCount }];
   }
   if (canViewUsers(user?.role)) {
     tabs = [...tabs, { to: '/users', label: 'Пользователи' }];
@@ -44,7 +71,7 @@ export function Header({ companyName = 'ML Docs' }) {
               key={tab.to}
               to={tab.to}
               className={({ isActive }) =>
-                `text-sm py-5 border-b-2 transition-colors no-underline ${
+                `text-sm py-5 border-b-2 transition-colors no-underline inline-flex items-center gap-1.5 ${
                   isActive
                     ? 'text-text font-semibold border-accent'
                     : 'text-text-secondary font-medium border-transparent'
@@ -52,6 +79,11 @@ export function Header({ companyName = 'ML Docs' }) {
               }
             >
               {tab.label}
+              {tab.badge > 0 && (
+                <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-danger text-white text-[11px] font-semibold leading-none">
+                  {tab.badge}
+                </span>
+              )}
             </NavLink>
           ))}
         </nav>

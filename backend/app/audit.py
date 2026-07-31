@@ -52,22 +52,28 @@ def log_generation(
     contragent_id: uuid.UUID | None = None,
     contragent_title: str | None = None,
     nickname: str | None = None,
-) -> None:
+) -> uuid.UUID | None:
+    """
+    Возвращает id созданной записи истории (или None, если записать не
+    удалось) — нужен захвату предложений в карточку (см. app/suggestions.py:
+    source_generation_id), чтобы связать предложение с конкретной генерацией.
+    """
     try:
-        db.add(
-            GeneratedDocument(
-                user_id=user.id,
-                user_username=user.username,
-                template_id=template_id,
-                template_name=template_name,
-                contragent_id=contragent_id,
-                contragent_title=contragent_title,
-                nickname=nickname,
-                format=format,
-                payload=payload,
-            )
+        doc = GeneratedDocument(
+            user_id=user.id,
+            user_username=user.username,
+            template_id=template_id,
+            template_name=template_name,
+            contragent_id=contragent_id,
+            contragent_title=contragent_title,
+            nickname=nickname,
+            format=format,
+            payload=payload,
         )
+        db.add(doc)
         db.commit()
+        return doc.id
     except Exception:
         db.rollback()
         logger.exception("Не удалось записать generated_documents: template_id=%s", template_id)
+        return None
