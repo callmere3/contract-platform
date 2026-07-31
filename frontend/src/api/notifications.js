@@ -8,6 +8,18 @@ import { API, apiJson } from './client';
  * менеджер вписал в форму генерации (см. бэкенд app/routers_notifications.py).
  */
 
+// Событие "число уведомлений могло измениться" — бейдж-счётчик в шапке ловит
+// его и сразу перезапрашивает /count, не дожидаясь своего минутного опроса.
+// Шлём и после действий на самой вкладке (применить/отклонить), и после
+// генерации документа (там на сервере мог родиться новый suggestion).
+// Общий константный ключ вместо строк по коду — чтобы источник и слушатель
+// не разъехались.
+export const NOTIFICATIONS_CHANGED_EVENT = 'notifications-changed';
+
+export function emitNotificationsChanged() {
+  window.dispatchEvent(new Event(NOTIFICATIONS_CHANGED_EVENT));
+}
+
 export function listNotifications() {
   return apiJson(`${API}/notifications`);
 }

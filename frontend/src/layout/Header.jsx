@@ -3,7 +3,7 @@ import { NavLink } from 'react-router-dom';
 import { useTheme } from '../theme/ThemeContext';
 import { useAuth } from '../auth/AuthContext';
 import { canViewUsers, canViewGenerationHistory, canViewNotifications } from '../auth/permissions';
-import { notificationsCount } from '../api/notifications';
+import { notificationsCount, NOTIFICATIONS_CHANGED_EVENT } from '../api/notifications';
 import { useModal } from '../modals/ModalProvider';
 
 // Первые три вкладки видны всем ролям (см. ТЗ: "менеджер видит все вкладки").
@@ -42,11 +42,11 @@ export function Header({ companyName = 'ML Docs' }) {
         .catch(() => {});
     refresh();
     const timer = setInterval(refresh, 60_000);
-    window.addEventListener('notifications-changed', refresh);
+    window.addEventListener(NOTIFICATIONS_CHANGED_EVENT, refresh);
     return () => {
       alive = false;
       clearInterval(timer);
-      window.removeEventListener('notifications-changed', refresh);
+      window.removeEventListener(NOTIFICATIONS_CHANGED_EVENT, refresh);
     };
   }, [showNotifications]);
 

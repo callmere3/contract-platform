@@ -5,6 +5,7 @@ import { Card } from '../components/ui/Card';
 import {
   applyNotification,
   dismissNotification,
+  emitNotificationsChanged,
   listNotifications,
 } from '../api/notifications';
 
@@ -20,13 +21,9 @@ import {
  * Сгруппировано по контрагенту: у одного человека может накопиться несколько
  * недостающих полей, удобнее видеть их вместе.
  *
- * После каждого действия шлём window-событие 'notifications-changed', чтобы
+ * После каждого действия шлём window-событие (emitNotificationsChanged), чтобы
  * бейдж-счётчик в шапке обновился сразу, не дожидаясь своего опроса.
  */
-function notifyChanged() {
-  window.dispatchEvent(new Event('notifications-changed'));
-}
-
 export function NotificationsPage() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -57,7 +54,7 @@ export function NotificationsPage() {
       // Убираем обработанную запись из списка сразу, без полного перезапроса —
       // отзывчивее, а остальные строки не мигают.
       setItems((list) => list.filter((i) => i.id !== id));
-      notifyChanged();
+      emitNotificationsChanged();
     } catch (e) {
       setError(e.message);
     } finally {

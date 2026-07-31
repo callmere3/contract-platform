@@ -7,6 +7,7 @@ import { EditableTable } from '../components/ui/EditableTable';
 import { FieldRenderer } from '../components/ui/FieldRenderer';
 import { generateDocument, getTemplateFields } from '../api/templates';
 import { getContragent, getContragentTemplates } from '../api/contragents';
+import { emitNotificationsChanged } from '../api/notifications';
 import { useAuth } from '../auth/AuthContext';
 import { canFillDemoData } from '../auth/permissions';
 import { useModal } from '../modals/ModalProvider';
@@ -706,6 +707,11 @@ export function DocFormPage() {
       // ниже упадёт, Приложение уже скачано и черновиком быть перестало.
       dirtyRef.current = false;
       clearDraft();
+      // Генерация по контрагенту могла на сервере создать предложение
+      // дозаполнить карточку (см. app/suggestions.py) — сразу дёргаем бейдж
+      // уведомлений в шапке, чтобы админу не ждать перезагрузки/опроса.
+      // Без contragentId захвата нет, событие незачем слать.
+      if (contragentId) emitNotificationsChanged();
       if (pairedAct && wantsPairedAct) {
         try {
           await download(pairedAct.id);
