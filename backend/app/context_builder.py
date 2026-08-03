@@ -259,6 +259,7 @@ def build_document_filename(
     data: dict,
     contragent_title: str | None = None,
     country: str | None = None,
+    contragent_type: str | None = None,
 ) -> str:
     """
     Имя готового файла (без расширения) по формуле владельца (04.08.2026):
@@ -321,27 +322,37 @@ def build_document_filename(
 
     marker = COUNTRY_FILE_MARKER.get(country or "", "ML")
 
+    # Титл: из карточки как есть (там уже «Фамилия И. И. (тип)»). Без карточки
+    # (генерация из «Шаблонов») собираем из ФИО формы И типа контрагента,
+    # известного из тега шаблона — иначе «(СГ)» в имени бы не было. Если тип
+    # не задан (нетегированный шаблон) — только «Фамилия И. И.».
     title = (contragent_title or "").strip()
     if not title:
-        title = build_contragent_label(str(data.get("name") or "").strip())
+        name_raw = str(data.get("name") or "").strip()
+        title = (
+            build_contragent_title(name_raw, contragent_type)
+            if contragent_type
+            else build_contragent_label(name_raw)
+        )
 
     parts = [yy, marker, "ЛД"]
     if title:
         parts.append(title)
     name = "_".join(parts)
 
-    # тип и номер — только у Приложения/Акта (у договора суффикса нет)
+    # тип и номер — только у Приложения/Акта (у договора суффикса нет).
+    # «Прил.» — сокращённо (по просьбе владельца), «Акт» — полностью.
     suffix = ""
     if doc_type == "appendix":
         number = str(data.get("appendix_no") or "").strip()
-        suffix = f"{DOC_TYPE_LABELS['appendix']} {number}".strip()
+        suffix = f"Прил. {number}".strip()
     elif doc_type == "act":
         appendix_no = str(data.get("appendix_no") or "").strip()
         if appendix_no:
-            suffix = f"{DOC_TYPE_LABELS['act']} к Пр. {appendix_no}"  # акт к приложению
+            suffix = f"Акт к Пр. {appendix_no}"      # акт к приложению
         else:
-            act_no = str(data.get("act_no") or "").strip()           # самостоятельный
-            suffix = f"{DOC_TYPE_LABELS['act']} {act_no}".strip()
+            act_no = str(data.get("act_no") or "").strip()   # самостоятельный
+            suffix = f"Акт {act_no}".strip()
     elif doc_type not in ("contract", None):
         # прочие типы документов — сохраняем узнаваемость по имени шаблона
         suffix = template_name.strip()

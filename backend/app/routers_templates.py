@@ -810,10 +810,14 @@ def build_document_response(
     result_bytes = render_document(docx_bytes, context)
 
     # Страна для маркера имени (ML / KZ.ML): переданная (из карточки при
-    # генерации по контрагенту) приоритетнее, иначе — тег шаблона.
+    # генерации по контрагенту) приоритетнее, иначе — тег шаблона. Тип
+    # контрагента (для «(СГ)» в титле при генерации из «Шаблонов», где
+    # карточки нет) берём из тега шаблона; при генерации по карточке титл
+    # приходит готовым и тип не нужен.
     filename = build_document_filename(
         template.doc_type, template.name, data, contragent_title,
         country=country or template.country,
+        contragent_type=template.contragent_type,
     )
 
     if format == "docx":
