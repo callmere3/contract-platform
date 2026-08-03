@@ -11,7 +11,6 @@ import {
   getMapsToOptions,
   getTemplateFields,
   replaceTemplateFile,
-  setTemplateVisibility,
   updateTemplate,
   updateTemplateFields,
 } from '../api/templates';
@@ -56,7 +55,6 @@ export function EditTemplateModal({ template, onDone, level, isTop }) {
   const [country, setCountry] = useState(template.country ?? '');
   const [contragentType, setContragentType] = useState(template.contragent_type ?? '');
   const [contractFamily, setContractFamily] = useState(template.contract_family ?? '');
-  const [hidden, setHidden] = useState(Boolean(template.hidden_for_managers));
 
   // Типы под выбранную страну (для КЗ — ТОО, не ООО). Уже сохранённое
   // значение всегда оставляем в списке, даже если оно «чужое» (легаси-шаблон
@@ -152,24 +150,6 @@ export function EditTemplateModal({ template, onDone, level, isTop }) {
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function toggleVisibility() {
-    setBusy(true);
-    setError('');
-    setNotice('');
-    try {
-      const res = await setTemplateVisibility(template.id, !hidden);
-      setHidden(res.hidden_for_managers);
-      onDone?.(); // обновить список — пометка "скрыт" в дереве
-      setNotice(
-        res.hidden_for_managers ? 'Шаблон скрыт от менеджеров.' : 'Шаблон виден менеджерам.',
-      );
     } catch (e) {
       setError(e.message);
     } finally {
@@ -301,7 +281,36 @@ export function EditTemplateModal({ template, onDone, level, isTop }) {
         </Button>
       </div>
 
-      {/* --- источники значений (maps_to) --- */}
+      {/* --- замена файла (нужна часто — выше источников) --- */}
+      <div className="mt-7 pt-6 border-t border-border">
+        <div className="text-[11px] font-bold tracking-[0.08em] text-text-muted mb-4">ФАЙЛ</div>
+        <div className="flex items-center gap-2.5">
+          {/* Скачать → поправить у себя → заменить: цикл правки шаблона
+              целиком в одном месте, без поиска исходника на диске. */}
+          <Button variant="secondary" size="sm" onClick={handleDownloadFile} disabled={busy}>
+            Скачать .docx
+          </Button>
+          <label className="inline-block">
+            <input
+              type="file"
+              accept=".docx"
+              disabled={busy}
+              onChange={(e) => handleReplaceFile(e.target.files?.[0])}
+              className="hidden"
+            />
+            <span className="cursor-pointer inline-block bg-transparent border border-border text-text rounded-input px-4 py-2.5 text-[13px] font-semibold">
+              Заменить .docx…
+            </span>
+          </label>
+        </div>
+        <div className="text-[11px] text-text-muted mt-1.5 leading-snug">
+          Скачайте исходник, внесите правки и залейте обратно. При замене метки
+          пересканируются, а настроенные источники значений сохранятся у полей, которые остались
+          в шаблоне.
+        </div>
+      </div>
+
+      {/* --- источники значений (maps_to) — настраиваются один раз, поэтому внизу --- */}
       <div className="mt-7 pt-6 border-t border-border">
         <div className="text-[11px] font-bold tracking-[0.08em] text-text-muted mb-4">
           ИСТОЧНИКИ ЗНАЧЕНИЙ
@@ -350,58 +359,6 @@ export function EditTemplateModal({ template, onDone, level, isTop }) {
             </div>
           </>
         )}
-      </div>
-
-      {/* --- видимость для менеджеров --- */}
-      <div className="mt-7 pt-6 border-t border-border">
-        <div className="text-[11px] font-bold tracking-[0.08em] text-text-muted mb-4">
-          ВИДИМОСТЬ
-        </div>
-        <div className="flex items-center justify-between gap-4">
-          <div className="text-[13px] text-text-secondary leading-snug">
-            {hidden
-              ? 'Скрыт от менеджеров — виден только админам, директору, топ-менеджеру и тестеру. Пригодится, чтобы обкатать шаблон до показа рабочим менеджерам.'
-              : 'Виден всем ролям, включая менеджеров.'}
-          </div>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={toggleVisibility}
-            disabled={busy}
-            className="flex-shrink-0"
-          >
-            {hidden ? 'Показать менеджерам' : 'Скрыть от менеджеров'}
-          </Button>
-        </div>
-      </div>
-
-      {/* --- замена файла --- */}
-      <div className="mt-7 pt-6 border-t border-border">
-        <div className="text-[11px] font-bold tracking-[0.08em] text-text-muted mb-4">ФАЙЛ</div>
-        <div className="flex items-center gap-2.5">
-          {/* Скачать → поправить у себя → заменить: цикл правки шаблона
-              целиком в одном месте, без поиска исходника на диске. */}
-          <Button variant="secondary" size="sm" onClick={handleDownloadFile} disabled={busy}>
-            Скачать .docx
-          </Button>
-          <label className="inline-block">
-            <input
-              type="file"
-              accept=".docx"
-              disabled={busy}
-              onChange={(e) => handleReplaceFile(e.target.files?.[0])}
-              className="hidden"
-            />
-            <span className="cursor-pointer inline-block bg-transparent border border-border text-text rounded-input px-4 py-2.5 text-[13px] font-semibold">
-              Заменить .docx…
-            </span>
-          </label>
-        </div>
-        <div className="text-[11px] text-text-muted mt-1.5 leading-snug">
-          Скачайте исходник, внесите правки и залейте обратно. При замене метки
-          пересканируются, а настроенные источники значений сохранятся у полей, которые остались
-          в шаблоне.
-        </div>
       </div>
 
       {error && <div className="text-[13px] text-accent mt-4 leading-snug">{error}</div>}
