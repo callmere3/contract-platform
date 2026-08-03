@@ -6,7 +6,7 @@ import { CheckboxCard } from '../components/ui/CheckboxCard';
 import { EditableTable } from '../components/ui/EditableTable';
 import { FieldRenderer } from '../components/ui/FieldRenderer';
 import { generateDocument, getTemplateFields } from '../api/templates';
-import { getContragent, getContragentTemplates } from '../api/contragents';
+import { getContragent } from '../api/contragents';
 import { emitNotificationsChanged } from '../api/notifications';
 import { useAuth } from '../auth/AuthContext';
 import { canFillDemoData } from '../auth/permissions';
@@ -336,24 +336,12 @@ export function DocFormPage() {
           dirtyRef.current = false;
         }
 
-        // Парный Акт: только для Приложения, открытого по контрагенту.
-        // Подбор по контрагенту теперь отдаёт документы ВСЕХ семейств
-        // (аванс/роялти/…), поэтому Актов может быть несколько. Берём Акт
-        // ТОГО ЖЕ семейства, что открытое Приложение (data.contract_family),
-        // иначе подставился бы Акт из чужого семейства. Если у Приложения
-        // семейство не задано — парный Акт не предлагаем (надёжно спарить
-        // не с чем).
-        if (contragentId && data.doc_type === 'appendix') {
-          const docs = await getContragentTemplates(contragentId);
-          if (cancelled) return;
-          setPairedAct(
-            data.contract_family
-              ? docs.templates.find(
-                  (t) => t.doc_type === 'act' && t.contract_family === data.contract_family,
-                ) ?? null
-              : null,
-          );
-        }
+        // Парный Акт приходит прямо в схеме шаблона (data.paired_act) — сервер
+        // находит его по тегам самого Приложения (страна+тип+бакет), контрагент
+        // для этого не нужен. Поэтому галочка «Также сформировать «Акт …»»
+        // появляется и когда документ открыт по контрагенту, и когда из вкладки
+        // «Шаблоны» (без контрагента). null — пары нет, галочку не показываем.
+        setPairedAct(data.paired_act ?? null);
       } catch (e) {
         if (!cancelled) setError(e.message);
       } finally {

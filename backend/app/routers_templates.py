@@ -672,15 +672,35 @@ def get_template_fields(
         if value:
             item["default"] = value
 
+    # Парный Акт к Приложению — по ТЕГАМ самого Приложения (страна + тип +
+    # бакет обязательства), контрагент для этого не нужен. Поэтому пара
+    # находится и когда документ открыт из вкладки "Шаблоны" (без контрагента),
+    # и когда по контрагенту — раньше пара искалась только во втором случае
+    # (по списку документов контрагента), и из папки галочки «сформировать
+    # также Акт» не было. Акт уникален для тройки (country, type, family): у
+    # приложения и акта одинаковый бакет (см. list_contragent_templates).
+    # Скрытый акт не предлагаем тем, кто скрытое не видит (иначе 404 на генерации).
+    paired_act = None
+    if template.doc_type == "appendix":
+        act_q = db.query(Template).filter(
+            Template.doc_type == "act",
+            Template.country == template.country,
+            Template.contragent_type == template.contragent_type,
+            Template.contract_family == template.contract_family,
+        )
+        if current_user.role not in SEES_HIDDEN_TEMPLATES:
+            act_q = act_q.filter(Template.hidden_for_managers.is_(False))
+        act = act_q.first()
+        if act is not None:
+            paired_act = {"id": str(act.id), "name": act.name}
+
     return {
         "id": str(template.id),
         "name": template.name,
         "doc_type": template.doc_type,
-        # contract_family нужен фронту, чтобы к открытому Приложению подобрать
-        # парный Акт ТОГО ЖЕ семейства: подбор по контрагенту теперь отдаёт
-        # Акты всех семейств (см. list_contragent_templates), и выбирать среди
-        # них надо по семейству самого Приложения, а не по контрагенту.
         "contract_family": template.contract_family,
+        # Готовая пара (Акт) для галочки «Также сформировать …» — или None.
+        "paired_act": paired_act,
         "path": folder_path(template.folder),
         "fields": form_fields,
     }
