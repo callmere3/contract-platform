@@ -763,7 +763,12 @@ def build_document_response(
     docx_bytes = get_file(template.storage_key)
 
     try:
-        context = build_context(data, doc_type=template.doc_type)
+        # contragent_type тега шаблона задаёт суффикс номера договора
+        # (/СГ, /ИП, /ООО, /ТОО) и формулу инициалов — иначе номер собирался
+        # с дефолтным /СГ для любого типа (см. build_context/build_contract_number).
+        context = build_context(
+            data, doc_type=template.doc_type, contragent_type=template.contragent_type
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 

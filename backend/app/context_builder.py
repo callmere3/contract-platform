@@ -997,9 +997,17 @@ def default_delivery_date() -> str:
     return _date(year, today.month, last_day).isoformat()
 
 
-def build_context(raw: dict, doc_type: str | None = None) -> dict:
+def build_context(
+    raw: dict, doc_type: str | None = None, contragent_type: str | None = None
+) -> dict:
     """
     Превращает данные формы в готовый контекст для docxtpl.
+
+    contragent_type — тип контрагента шаблона ('СГ'/'ИП'/'ООО'/'ТОО'/'ФЛ',
+    из тега шаблона template.contragent_type). Нужен ТОЛЬКО для суффикса и
+    формулы инициалов номера комбинированного Договора (см. doc_kind ниже):
+    без него номер собирался с дефолтным '/СГ' для любого типа. Для
+    Приложения/Акта номер вводится вручную, поэтому тип там не важен.
 
     doc_type — тип шаблона ('contract' | 'appendix' | 'act' | None),
     от него зависит трактовка contract/c_date/date:
@@ -1088,12 +1096,17 @@ def build_context(raw: dict, doc_type: str | None = None) -> dict:
                 month = raw.get("contract_month", "01")
                 year = raw.get("contract_year", "26")
 
+            # doc_kind — суффикс номера (/СГ, /ИП, /ООО, /ТОО) и выбор
+            # формулы инициалов (для ООО/ТОО — по названию, для физлиц — по
+            # ФИО). Источник — тип контрагента шаблона; raw['doc_kind'] —
+            # исторический запасной вход, "СГ" — крайний дефолт, если тип
+            # шаблона не задан (нетегированный шаблон).
             contract = build_contract_number(
                 day=day,
                 month=month,
                 year=year,
                 full_name=full_name,
-                doc_kind=raw.get("doc_kind", "СГ"),
+                doc_kind=contragent_type or raw.get("doc_kind") or "СГ",
             )
     # doc_type='appendix'/'act' и contract пуст (или не в ожидаемом
     # формате) — c_date_raw останется пустым, find_missing_variables
