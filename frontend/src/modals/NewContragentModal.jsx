@@ -61,7 +61,11 @@ export function NewContragentModal({ level, isTop }) {
   // его дважды нельзя (см. findExistingByName в боевой версии).
   useEffect(() => {
     const q = name.trim();
-    if (!q) {
+    // Не ищем, пока не введено хотя бы первое слово (имя человека / первое
+    // слово названия компании): на 1–2 буквах поиск вываливал сотни
+    // совпадений. Порог — первое слово от 3 символов.
+    const firstWord = q.split(/\s+/)[0] || '';
+    if (firstWord.length < 3) {
       setDuplicates(null);
       return;
     }
@@ -69,17 +73,18 @@ export function NewContragentModal({ level, isTop }) {
       try {
         const data = await searchContragents({ q });
         const normalized = q.toLowerCase();
-        const exact = data.contragents.find((c) => (c.name || '').trim().toLowerCase() === normalized);
-        setDuplicates({
-          exact: Boolean(exact),
-          titles: data.contragents.map((c) => c.title),
-        });
+        // Если тип выбран — показываем только контрагентов ЭТОГО типа: у ООО
+        // не должны всплывать СГ/ИП. При смене типа проверка перезапускается
+        // (type в зависимостях эффекта).
+        const matches = data.contragents.filter((c) => !type || c.type === type);
+        const exact = matches.find((c) => (c.name || '').trim().toLowerCase() === normalized);
+        setDuplicates({ exact: Boolean(exact), titles: matches.map((c) => c.title) });
       } catch {
         setDuplicates(null); // сеть недоступна — не мешаем работать
       }
     }, 400);
     return () => clearTimeout(timer);
-  }, [name]);
+  }, [name, type]);
 
   const royaltyNum = useMemo(() => parseFloat(royalty.replace(',', '.')), [royalty]);
 
@@ -116,12 +121,17 @@ export function NewContragentModal({ level, isTop }) {
       try {
         const dup = await searchContragents({ q });
         const normalized = q.toLowerCase();
-        exact = dup.contragents.find((c) => (c.name || '').trim().toLowerCase() === normalized) || null;
+        // Дубль — только среди контрагентов того же типа (см. живую проверку):
+        // один человек может быть и СГ, и ИП — это разные карточки.
+        exact =
+          dup.contragents.find(
+            (c) => (c.name || '').trim().toLowerCase() === normalized && (!type || c.type === type),
+          ) || null;
       } catch {
         /* сеть недоступна — не блокируем создание из-за сбоя самой проверки */
       }
       if (exact) {
-        setError(`Контрагент с таким ФИО уже существует: «${exact.title}».`);
+        setError(`Контрагент с таким именем/названием уже существует: «${exact.title}».`);
         return; // finally ниже вернёт busy=false
       }
 
@@ -176,12 +186,13 @@ export function NewContragentModal({ level, isTop }) {
           />
           {duplicates?.exact && (
             <div className="text-[11px] text-accent mt-1.5 leading-snug">
-              Контрагент с таким ФИО уже существует — создать через эту форму нельзя.
+              Контрагент с таким именем/названием уже существует — создать через эту форму нельзя.
             </div>
           )}
           {duplicates && !duplicates.exact && duplicates.titles.length > 0 && (
             <div className="text-[11px] text-text-muted mt-1.5 leading-snug">
-              Похожие уже есть: {duplicates.titles.join(', ')}
+              Похожие уже есть: {duplicates.titles.slice(0, 8).join(', ')}
+              {duplicates.titles.length > 8 && ` и ещё ${duplicates.titles.length - 8}`}
             </div>
           )}
         </div>
