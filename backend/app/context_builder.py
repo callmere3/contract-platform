@@ -138,6 +138,31 @@ def build_name_short_table(full_name: str) -> str:
     return f"{surname} {inits}."
 
 
+def build_director_short(raw: str) -> str:
+    """
+    Имя гендиректора компании -> 'Фамилия И. О.' (фамилия, затем инициалы
+    через пробел, как в build_contragent_title для физлиц).
+
+    Принимает и ПОЛНОЕ ФИО ('Иванов Иван Иванович'), и уже СОКРАЩЁННОЕ в
+    любом виде ('Иванов И. И.' или 'Иванов И.И.') — оператор в форме вводит
+    то, что ему дали. На выходе всегда единый вид 'Иванов И. И.'.
+
+    Инициалы берём как первые буквы буквенных групп ПОСЛЕ фамилии, а не
+    просто первых букв слов: иначе слитное 'И.И.' (один токен по split())
+    дало бы лишь один инициал. re-разбор на буквенные группы это чинит:
+    'Иван Иванович' -> [И, И]; 'И. И.' -> [И, И]; 'И.И.' -> [И, И]. '' -> ''.
+    """
+    tokens = raw.split()
+    if not tokens:
+        return ""
+    surname = tokens[0]
+    letters = re.findall(r"[^\W\d_]+", " ".join(tokens[1:]))
+    if not letters:
+        return surname
+    inits = " ".join(f"{w[0].upper()}." for w in letters)
+    return f"{surname} {inits}"
+
+
 def build_contragent_title(name: str, contragent_type: str) -> str:
     """
     Вычисляет title контрагента при создании карточки (этап 4, база
@@ -1099,6 +1124,13 @@ def build_context(raw: dict, doc_type: str | None = None) -> dict:
         "contract": contract,
         "name_short": name_short,
         "name_short_table": name_short_table,
+
+        # Имя гендиректора компании (шаблоны ООО) — в документ ВСЕГДА в виде
+        # «Фамилия И. О.», хотя оператор мог ввести и полное ФИО, и сокращение
+        # (см. build_director_short). Перекрывает пропущенное сырое значение
+        # из шага 1. Для шаблонов без метки director_name ключ просто не
+        # используется (docxtpl игнорирует лишние ключи контекста).
+        "director_name": build_director_short(raw.get("director_name", "")),
 
         # даты — в документ печатается русский формат, а не ISO из календаря.
         #   contract-пакет: оператор вводит c_date, date дублирует его
