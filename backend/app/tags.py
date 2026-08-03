@@ -94,6 +94,58 @@ REG_NUMBER_META = {
     "ТОО": ("БИН", 12),
 }
 
+# Каноническая метка формы, В КОТОРУЮ подставляется рег. номер карточки, —
+# своя для каждого типа контрагента (см. REG_NUMBER_META). Рег. номер — одна
+# колонка с разным смыслом по типу: ИНН у ФЛ/СГ, ОГРНИП у ИП, ОГРН у ООО,
+# БИН у ТОО. В шаблоне ИП-договора рядом стоят ДВЕ рег-подобные метки: ogrnip
+# (это и есть рег. номер) и inn (ИНН — отдельное поле реквизитов, в карточке
+# НЕ хранится). С рег. номером карточки допустимо связывать только «свою»
+# метку типа — этот словарь и есть источник правды, кто именно.
+REG_NUMBER_MARK = {
+    "ФЛ": "inn",
+    "СГ": "inn",
+    "ИП": "ogrnip",
+    "ООО": "ogrn",
+    "ТОО": "bin",
+}
+# Все рег-метки: любую из них связывать с contragent.reg_number можно ТОЛЬКО
+# в шаблоне своего типа (см. validate_reg_number_mapping).
+REG_NUMBER_MARKS = set(REG_NUMBER_MARK.values())
+
+
+def validate_reg_number_mapping(
+    contragent_type: str | None, placeholder: str, maps_to: str
+) -> None:
+    """
+    Не даёт по ошибке связать maps_to='contragent.reg_number' с «чужой»
+    рег-меткой (см. REG_NUMBER_MARK).
+
+    Зачем: у ИП-договора есть И ogrnip (рег. номер = ОГРНИП), И inn (ИНН —
+    только в реквизитах, в карточке его нет). Привычно связав inn с рег.
+    номером (как в шаблоне СГ, где рег. номер И ЕСТЬ ИНН), админ подставил
+    бы в поле ИНН чужой ОГРНИП. Ловим это здесь явной 400, а не молча.
+
+    Срабатывает ТОЛЬКО для maps_to='contragent.reg_number' и ТОЛЬКО для
+    рег-меток (inn/ogrnip/ogrn/bin) — остальные связи не трогает. Если тип
+    шаблона не задан, сверять не с чем — пропускаем (связь разрешена).
+    """
+    if maps_to != "contragent.reg_number":
+        return
+    if placeholder not in REG_NUMBER_MARKS:
+        return
+    expected = REG_NUMBER_MARK.get(contragent_type or "")
+    if expected is None or placeholder == expected:
+        return
+    label = REG_NUMBER_META.get(contragent_type, (placeholder, 0))[0]
+    raise HTTPException(
+        status_code=400,
+        detail=(
+            f"Для типа {contragent_type} рег. номер карточки — это {label}, "
+            f"его подставляет метка {expected!r}, а не {placeholder!r}. "
+            f"Метку {placeholder!r} оставьте ручной (maps_to='manual')."
+        ),
+    )
+
 
 # Источники автоподстановки для полей формы генерации из карточки
 # контрагента (TemplateField.maps_to). "manual" (по умолчанию) — оператор

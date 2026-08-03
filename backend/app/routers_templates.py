@@ -60,6 +60,7 @@ from app.tags import (
     normalize_contract_family_for,
     normalize_maps_to,
     normalize_optional_tag,
+    validate_reg_number_mapping,
 )
 from app.template_analysis import analyze_template, fields_to_dict
 
@@ -520,7 +521,13 @@ def update_template_fields(
                 status_code=404,
                 detail=f"В шаблоне нет метки {placeholder!r} — нечего связывать",
             )
-        field.maps_to = normalize_maps_to(maps_to)
+        normalized = normalize_maps_to(maps_to)
+        # У ИП рег. номер карточки — ОГРНИП, а не ИНН: не даём связать метку
+        # inn (или иную «чужую» рег-метку) с contragent.reg_number в шаблоне
+        # не своего типа (см. validate_reg_number_mapping). Проверяем ДО записи
+        # в поле, чтобы при ошибке ничего не менять.
+        validate_reg_number_mapping(template.contragent_type, placeholder, normalized)
+        field.maps_to = normalized
         updated.append({"placeholder": placeholder, "maps_to": field.maps_to})
 
     db.commit()
