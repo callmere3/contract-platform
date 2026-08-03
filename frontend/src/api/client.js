@@ -48,7 +48,31 @@ export function setTokens(access, refresh) {
   else localStorage.removeItem(REFRESH_KEY);
 }
 
+/**
+ * Синхронизация токенов между вкладками (пункт 1).
+ *
+ * Токены кешируются в переменных модуля (accessToken/refreshToken), и у
+ * каждой вкладки этот кеш свой. Refresh-токен ротируется на каждое
+ * обновление: как только ОДНА вкладка обновилась, её новый токен уезжает в
+ * localStorage, а у остальных вкладок в памяти остаётся уже отозванный —
+ * и их следующий /auth/refresh выкидывал на логин при живой сессии.
+ *
+ * `storage`-событие приходит ТОЛЬКО в другие вкладки того же origin (не в ту,
+ * что записала) — ровно то, что нужно: подхватываем свежий токен, записанный
+ * соседней вкладкой, в свой кеш. newValue === null — сосед разлогинился
+ * (токены стёрты), гасим и у себя.
+ */
+window.addEventListener('storage', (e) => {
+  if (e.key === ACCESS_KEY) accessToken = e.newValue;
+  else if (e.key === REFRESH_KEY) refreshToken = e.newValue;
+});
+
 async function tryRefresh() {
+  // Пункт 2: берём САМЫЙ свежий refresh из localStorage, а не закешированный
+  // в памяти. Соседняя вкладка могла прокрутить токен только что, а её
+  // `storage`-событие (см. выше) ещё не долетело до нас — внутри замка
+  // (пункт 3) localStorage уже точно содержит актуальный токен.
+  refreshToken = localStorage.getItem(REFRESH_KEY);
   if (!refreshToken) return false;
   try {
     const r = await fetch(`${API}/auth/refresh`, {
@@ -79,9 +103,31 @@ async function tryRefresh() {
  * ждут тот же промис.
  */
 let refreshPromise = null;
+
+/**
+ * Межвкладочный замок на обновление токена (пункт 3).
+ *
+ * Замок refreshPromise выше сериализует обновление ВНУТРИ одной вкладки, но
+ * между вкладками не координирует — две вкладки могли обновляться
+ * одновременно, и вторая приходила с уже отозванным (ротированным) токеном.
+ * Web Locks API (`navigator.locks`) — общий на весь origin: пока одна вкладка
+ * держит 'ml-token-refresh', остальные ждут, а получив замок, перечитывают
+ * свежий токен (пункт 2 в tryRefresh). Замок автоматически освобождается,
+ * когда вкладка закрывается/падает.
+ *
+ * Фолбэк: в старых браузерах без navigator.locks выполняем как раньше —
+ * поведение не хуже прежнего (пункты 1+2 всё равно сильно сужают окно гонки).
+ */
+function withTokenLock(fn) {
+  if (navigator.locks?.request) {
+    return navigator.locks.request('ml-token-refresh', fn);
+  }
+  return fn();
+}
+
 function refreshOnce() {
   if (!refreshPromise) {
-    refreshPromise = tryRefresh().finally(() => {
+    refreshPromise = withTokenLock(tryRefresh).finally(() => {
       refreshPromise = null;
     });
   }
