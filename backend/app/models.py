@@ -135,6 +135,28 @@ def doc_type_sort_key():
     )
 
 
+# Папки шаблонов пользователи называют по типу документа («Договор» /
+# «Приложение» / «Акт»). Сортируем их в том же порядке важности, что и сами
+# документы (см. DOC_TYPE_SORT_ORDER), — иначе алфавит ставит «Акт» первым.
+# Папки с другими именами идут после, по алфавиту. Ключ — имя, а не doc_type:
+# у папки типа документа нет, это просто узел дерева.
+FOLDER_NAME_SORT_ORDER = {"Договор": 0, "Приложение": 1, "Акт": 2}
+
+
+def folder_name_sort_key():
+    """
+    SQLAlchemy-выражение для ORDER BY подпапок: Договор→Приложение→Акт, прочие
+    имена — после, по алфавиту. Использовать перед TemplateFolder.name:
+    .order_by(folder_name_sort_key(), TemplateFolder.name).
+    """
+    from sqlalchemy import case
+
+    return case(
+        *[(TemplateFolder.name == n, i) for n, i in FOLDER_NAME_SORT_ORDER.items()],
+        else_=99,
+    )
+
+
 class TemplateField(Base):
     __tablename__ = "template_fields"
 

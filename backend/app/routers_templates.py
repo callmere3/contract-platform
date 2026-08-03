@@ -57,6 +57,7 @@ from app.models import (
     TemplateFolder,
     User,
     doc_type_sort_key,
+    folder_name_sort_key,
     folder_path,
 )
 from app.roles import ADMIN, CAN_GENERATE, SEES_HIDDEN_TEMPLATES
@@ -102,7 +103,8 @@ def browse_folder(
     subfolders = (
         db.query(TemplateFolder)
         .filter(TemplateFolder.parent_id == parent_id)
-        .order_by(TemplateFolder.name)
+        # Папки по типу документа (Договор→Приложение→Акт), прочие — по имени
+        .order_by(folder_name_sort_key(), TemplateFolder.name)
         .all()
     )
     templates_query = (
