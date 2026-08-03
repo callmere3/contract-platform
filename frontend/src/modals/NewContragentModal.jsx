@@ -4,7 +4,7 @@ import { Field } from '../components/ui/Field';
 import { Button } from '../components/ui/Button';
 import { useModal } from './ModalProvider';
 import { useTags } from '../api/TagsContext';
-import { typesForCountry } from '../api/contragentTypes';
+import { contragentNameLabel, isCompanyType, typesForCountry } from '../api/contragentTypes';
 import { createContragent, searchContragents } from '../api/contragents';
 
 /**
@@ -167,10 +167,12 @@ export function NewContragentModal({ level, isTop }) {
       <div className="grid grid-cols-2 gap-4">
         <div className="col-span-2">
           <Field
-            label="ФИО / название"
+            label={contragentNameLabel(type, companyTypeByCountry)}
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="Иванов Иван Иванович"
+            placeholder={
+              isCompanyType(type, companyTypeByCountry) ? 'Ромашка (без «ООО»/кавычек)' : 'Иванов Иван Иванович'
+            }
           />
           {duplicates?.exact && (
             <div className="text-[11px] text-accent mt-1.5 leading-snug">

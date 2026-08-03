@@ -54,6 +54,10 @@ COMPUTED_FIELDS = {
 # этого договора вводит оператор вручную — здесь их нельзя вычислить.
 LINKED_DOC_TYPES = {"appendix", "act"}
 
+# Типы-компании: у них поле name — это НАЗВАНИЕ организации, а не ФИО
+# (см. field_meta_for/_demo_for — подпись и демо поля name зависят от типа).
+COMPANY_TYPES = {"ООО", "ТОО"}
+
 
 def computed_fields_for(doc_type: str | None) -> set[str]:
     """
@@ -337,11 +341,21 @@ LINKED_DOC_FIELD_META = {
 }
 
 
-def field_meta_for(name: str, doc_type: str | None) -> tuple[str, str, str]:
-    """FIELD_META с поправкой на doc_type (см. LINKED_DOC_FIELD_META)."""
+def field_meta_for(
+    name: str, doc_type: str | None, contragent_type: str | None = None
+) -> tuple[str, str, str]:
+    """
+    FIELD_META с поправкой на doc_type (см. LINKED_DOC_FIELD_META) и на тип
+    контрагента: у компаний (ООО/ТОО) поле name — это «Название компании», а
+    не «ФИО полностью». Так форма для шаблона ООО просит название организации,
+    а не ФИО (тип берётся из тега шаблона, см. get_template_fields).
+    """
     if doc_type in LINKED_DOC_TYPES and name in LINKED_DOC_FIELD_META:
         return LINKED_DOC_FIELD_META[name]
-    return FIELD_META.get(name, ("Прочее", name, ""))
+    group, label, hint = FIELD_META.get(name, ("Прочее", name, ""))
+    if name == "name" and contragent_type in COMPANY_TYPES:
+        return (group, "Название компании", "без «ООО»/«ТОО» и кавычек — их добавит шаблон")
+    return (group, label, hint)
 
 # Подписи к колонкам таблиц
 ITEM_FIELD_LABELS = {
@@ -643,6 +657,8 @@ def _demo_for(field: FormField, contragent_type: str | None):
     if field.name == "contract" and contragent_type:
         base = DEMO_VALUES["contract"].rsplit("/", 1)[0]  # 'МЛ-01/01/26-ИИИ'
         return f"{base}/{contragent_type}"
+    if field.name == "name" and contragent_type in COMPANY_TYPES:
+        return "Ромашка"  # демо-название компании (без «ООО»/кавычек — их добавит шаблон)
     return DEMO_VALUES.get(field.name)
 
 
@@ -670,7 +686,7 @@ def fields_to_dict(
         if f.name in virtual_meta:
             group, label, hint = virtual_meta[f.name]
         else:
-            group, label, hint = field_meta_for(f.name, doc_type)
+            group, label, hint = field_meta_for(f.name, doc_type, contragent_type)
 
         if f.name in TODAY_DEFAULT_FIELDS and f.type == "date":
             default = _date.today().isoformat()  # 2026-07-12 — ISO, как ждёт <input type="date">

@@ -7,6 +7,7 @@ import { useTags } from '../api/TagsContext';
 import { useAuth } from '../auth/AuthContext';
 import { canEditContragents } from '../auth/permissions';
 import { updateContragent } from '../api/contragents';
+import { contragentNameLabel } from '../api/contragentTypes';
 
 /**
  * Правка карточки контрагента (PATCH /contragents/{id}) — только для
@@ -40,6 +41,7 @@ export function EditContragentModal({ contragent, level, isTop, onSaved }) {
     contragent_types: types,
     contract_families: families,
     reg_number_meta: regMeta,
+    company_type_by_country: companyTypeByCountry,
   } = useTags();
 
   // Менеджеру доступна правка ТОЛЬКО типа договора (contract_family): он может
@@ -158,7 +160,7 @@ export function EditContragentModal({ contragent, level, isTop, onSaved }) {
         {!restricted && (
           <div className="col-span-2">
             <Field
-              label="ФИО / название"
+              label={contragentNameLabel(type, companyTypeByCountry)}
               value={name}
               onChange={(e) => setName(e.target.value)}
               hint="Титл и номер договора при правке карточки не меняются — они соответствуют базе компании и обновляются только импортом"

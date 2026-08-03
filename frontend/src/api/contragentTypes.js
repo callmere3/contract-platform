@@ -17,3 +17,18 @@ export function typesForCountry(allTypes, country, companyTypeByCountry) {
   // либо это орг.форма именно этой страны.
   return allTypes.filter((t) => !companyTypes.includes(t) || t === allowedCompany);
 }
+
+/** true, если тип — орг.форма компании (ООО/ТОО), а не физлицо (ФЛ/СГ/ИП). */
+export function isCompanyType(type, companyTypeByCountry) {
+  const companyTypes = companyTypeByCountry ? Object.values(companyTypeByCountry) : ['ООО', 'ТОО'];
+  return companyTypes.includes(type);
+}
+
+/**
+ * Подпись поля name под тип контрагента: у компаний это НАЗВАНИЕ организации,
+ * у физлиц — ФИО. Зеркало field_meta_for на бэкенде (форма генерации), чтобы
+ * карточка и модалки контрагента называли поле так же.
+ */
+export function contragentNameLabel(type, companyTypeByCountry) {
+  return isCompanyType(type, companyTypeByCountry) ? 'Название компании' : 'ФИО / название';
+}

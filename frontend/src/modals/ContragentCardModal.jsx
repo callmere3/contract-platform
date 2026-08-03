@@ -6,6 +6,7 @@ import { useTags } from '../api/TagsContext';
 import { useAuth } from '../auth/AuthContext';
 import { canDeleteContragents, canEditContragents, canEditContractFamily } from '../auth/permissions';
 import { deleteContragent, getContragent } from '../api/contragents';
+import { contragentNameLabel } from '../api/contragentTypes';
 
 const ROWS = [
   ['name', 'ФИО / название'],
@@ -43,7 +44,7 @@ function displayValue(key, value) {
  */
 export function ContragentCardModal({ contragentId, level, isTop, onChanged }) {
   const { closeModal, openModal } = useModal();
-  const { reg_number_meta: regMeta } = useTags();
+  const { reg_number_meta: regMeta, company_type_by_country: companyTypeByCountry } = useTags();
   const { role } = useAuth();
 
   const [data, setData] = useState(null);
@@ -78,8 +79,12 @@ export function ContragentCardModal({ contragentId, level, isTop, onChanged }) {
     }
   }
 
-  const labelFor = (key, fallback) =>
-    key === 'reg_number' ? (regMeta?.[data?.type]?.label ?? fallback) : fallback;
+  const labelFor = (key, fallback) => {
+    if (key === 'reg_number') return regMeta?.[data?.type]?.label ?? fallback;
+    // name — «Название компании» для ООО/ТОО, «ФИО / название» для физлиц
+    if (key === 'name') return contragentNameLabel(data?.type, companyTypeByCountry);
+    return fallback;
+  };
 
   return (
     <Modal
