@@ -130,7 +130,8 @@ function rebuildPerformers(tracksRows, prevRows, perfColumns, contragent) {
 
 // Кварталы — как в build_term_end на бэкенде (app/context_builder.py):
 // срок действия всегда до конца квартала, а не произвольного числа.
-const QUARTER_ENDS = { 1: '31 марта', 2: '30 июня', 3: '30 сентября', 4: '31 декабря' };
+// Формат ДД.ММ — год приписывается ниже (итог ДД.ММ.ГГГГ, принятый в России).
+const QUARTER_ENDS = { 1: '31.03', 2: '30.06', 3: '30.09', 4: '31.12' };
 
 /**
  * Живой пересчёт "Срок действия" — зеркало build_term_end() на бэкенде:
@@ -146,7 +147,7 @@ function computeTermEnd(isoDate) {
   const month = Number(m[2]);
   const futureYear = Number(m[1]) + 5;
   const quarter = Math.floor((month - 1) / 3) + 1;
-  return `${QUARTER_ENDS[quarter]} ${futureYear} г.`;
+  return `${QUARTER_ENDS[quarter]}.${futureYear}`;
 }
 
 /** Целое неотрицательное число из строки формы (пробелы/неразрывные пробелы игнорируются) — null, если не число. */
