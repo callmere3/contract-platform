@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
@@ -62,7 +62,13 @@ function FolderIcon() {
  * управления (папка/шаблон) — только admin (CAN_MANAGE_TEMPLATES).
  */
 export function FoldersPage() {
-  const [folderId, setFolderId] = useState(null);
+  // Текущая папка живёт в URL (?folder=<id>), а не в состоянии компонента:
+  // так каждый переход в папку — запись в истории браузера, и кнопка «Назад»
+  // возвращает в ПРЕДЫДУЩУЮ ПАПКУ, а не на прошлую вкладку. null/отсутствует —
+  // корень («Все шаблоны»). setSearchParams по умолчанию push, что и нужно.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const folderId = searchParams.get('folder');
+  const setFolderId = (id) => setSearchParams(id ? { folder: id } : {});
   const [data, setData] = useState({ breadcrumb: [], folders: [], templates: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
