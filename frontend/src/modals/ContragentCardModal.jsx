@@ -19,6 +19,21 @@ const ROWS = [
 ];
 
 /**
+ * Значение поля карточки для показа. Дата договора приходит с бэкенда в ISO
+ * (ГГГГ-ММ-ДД, contragent.contract_date.isoformat()), а показывать её надо в
+ * принятом в России формате ДД.ММ.ГГГГ (как и везде в приложении). Остальные
+ * поля — как есть; пусто → «—».
+ */
+function displayValue(key, value) {
+  if (value === null || value === '' || value === undefined) return '—';
+  if (key === 'contract_date') {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value));
+    if (m) return `${m[3]}.${m[2]}.${m[1]}`;
+  }
+  return String(value);
+}
+
+/**
  * Карточка контрагента: просмотр всех полей + действия по правам.
  * Открывается по клику на строку в "Базе контрагентов".
  *
@@ -129,9 +144,7 @@ export function ContragentCardModal({ contragentId, level, isTop, onChanged }) {
                   {labelFor(key, label)}
                 </td>
                 <td className="text-right py-1.5 text-text">
-                  {data[key] === null || data[key] === '' || data[key] === undefined
-                    ? '—'
-                    : String(data[key])}
+                  {displayValue(key, data[key])}
                 </td>
               </tr>
             ))}
