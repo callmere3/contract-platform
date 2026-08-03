@@ -56,6 +56,12 @@ export const canCreateContragents = (role) =>
 // backend: CAN_EDIT_CONTRAGENTS = (ADMIN, DIRECTOR, TOP_MANAGER, TESTER) — карточка и никнеймы
 export const canEditContragents = (role) => is(role, ADMIN, DIRECTOR, TOP_MANAGER, TESTER);
 
+// backend: CAN_EDIT_CONTRACT_FAMILY = ROLES — тип договора карточки может менять
+// ЛЮБАЯ роль, включая manager (остальные поля — только canEditContragents).
+// Менеджеру модалка правки показывает единственное поле «Тип договора».
+export const canEditContractFamily = (role) =>
+  is(role, ADMIN, DIRECTOR, TOP_MANAGER, TESTER, MANAGER);
+
 // backend: CAN_DELETE_CONTRAGENTS = (ADMIN,)
 export const canDeleteContragents = (role) => is(role, ADMIN);
 

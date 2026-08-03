@@ -4,6 +4,8 @@ import { Field } from '../components/ui/Field';
 import { Button } from '../components/ui/Button';
 import { useModal } from './ModalProvider';
 import { useTags } from '../api/TagsContext';
+import { useAuth } from '../auth/AuthContext';
+import { canEditContragents } from '../auth/permissions';
 import { updateContragent } from '../api/contragents';
 
 /**
@@ -32,12 +34,19 @@ import { updateContragent } from '../api/contragents';
  */
 export function EditContragentModal({ contragent, level, isTop, onSaved }) {
   const { closeModal } = useModal();
+  const { user: me } = useAuth();
   const {
     countries,
     contragent_types: types,
     contract_families: families,
     reg_number_meta: regMeta,
   } = useTags();
+
+  // Менеджеру доступна правка ТОЛЬКО типа договора (contract_family): он может
+  // открыть эту же модалку, но видит одно поле, а сервер отклонит попытку
+  // изменить что-то ещё (см. CAN_EDIT_CONTRACT_FAMILY / update_contragent).
+  // Полноправные редакторы (admin/director/top_manager/tester) правят всё.
+  const restricted = !canEditContragents(me?.role);
 
   const [name, setName] = useState(contragent.name ?? '');
   const [country, setCountry] = useState(contragent.country ?? '');
@@ -58,6 +67,7 @@ export function EditContragentModal({ contragent, level, isTop, onSaved }) {
   const royaltyNum = useMemo(() => (royalty.trim() ? parseFloat(royalty.replace(',', '.')) : null), [royalty]);
 
   function validate() {
+    if (restricted) return ''; // менеджеру доступен только select типа договора — валидировать нечего
     if (!name.trim()) return 'ФИО/название не может быть пустым.';
     if (royalty.trim() && (Number.isNaN(royaltyNum) || royaltyNum < 0 || royaltyNum > 100))
       return 'Роялти должно быть числом от 0 до 100.';
@@ -69,6 +79,12 @@ export function EditContragentModal({ contragent, level, isTop, onSaved }) {
 
   /** Только реально изменённые поля — см. докстринг модуля. */
   function changedFields() {
+    // Менеджер меняет только тип договора — остальное сервер всё равно отклонит.
+    if (restricted) {
+      const next = contractFamily ?? '';
+      const prev = contragent.contract_family ?? '';
+      return next !== prev ? { contract_family: next } : {};
+    }
     const fields = {};
     const put = (key, next, prev) => {
       const a = next ?? '';
@@ -122,7 +138,7 @@ export function EditContragentModal({ contragent, level, isTop, onSaved }) {
 
   return (
     <Modal
-      title="Редактировать контрагента"
+      title={restricted ? 'Тип договора контрагента' : 'Редактировать контрагента'}
       onClose={closeModal}
       level={level}
       isTop={isTop}
@@ -139,73 +155,90 @@ export function EditContragentModal({ contragent, level, isTop, onSaved }) {
       }
     >
       <div className="grid grid-cols-2 gap-4">
-        <div className="col-span-2">
+        {!restricted && (
+          <div className="col-span-2">
+            <Field
+              label="ФИО / название"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              hint="Титл и номер договора при правке карточки не меняются — они соответствуют базе компании и обновляются только импортом"
+            />
+          </div>
+        )}
+
+        {!restricted && (
+          <Field as="select" label="Страна" value={country} onChange={(e) => setCountry(e.target.value)}>
+            <option value="">— не задано —</option>
+            {countries.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </Field>
+        )}
+
+        {!restricted && (
+          <Field as="select" label="Тип контрагента" value={type} onChange={(e) => setType(e.target.value)}>
+            <option value="">— не задано —</option>
+            {types.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </Field>
+        )}
+
+        {!restricted && (
           <Field
-            label="ФИО / название"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            hint="Титл и номер договора при правке карточки не меняются — они соответствуют базе компании и обновляются только импортом"
+            label={meta?.label ?? 'Рег. номер'}
+            value={regNumber}
+            onChange={(e) => setRegNumber(e.target.value)}
+            placeholder="только цифры"
+            hint={meta ? `${meta.length} цифр` : 'Зависит от типа контрагента'}
           />
+        )}
+
+        <div className={restricted ? 'col-span-2' : ''}>
+          <Field
+            as="select"
+            label="Тип договора"
+            value={contractFamily}
+            onChange={(e) => setContractFamily(e.target.value)}
+            hint={restricted ? 'Определяет, какие документы подбираются контрагенту' : undefined}
+          >
+            <option value="">— не задано —</option>
+            {families.map((f) => (
+              <option key={f} value={f}>
+                {f}
+              </option>
+            ))}
+          </Field>
         </div>
 
-        <Field as="select" label="Страна" value={country} onChange={(e) => setCountry(e.target.value)}>
-          <option value="">— не задано —</option>
-          {countries.map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
-        </Field>
-
-        <Field as="select" label="Тип контрагента" value={type} onChange={(e) => setType(e.target.value)}>
-          <option value="">— не задано —</option>
-          {types.map((t) => (
-            <option key={t} value={t}>
-              {t}
-            </option>
-          ))}
-        </Field>
-
-        <Field
-          label={meta?.label ?? 'Рег. номер'}
-          value={regNumber}
-          onChange={(e) => setRegNumber(e.target.value)}
-          placeholder="только цифры"
-          hint={meta ? `${meta.length} цифр` : 'Зависит от типа контрагента'}
-        />
-
-        <Field
-          as="select"
-          label="Тип договора"
-          value={contractFamily}
-          onChange={(e) => setContractFamily(e.target.value)}
-        >
-          <option value="">— не задано —</option>
-          {families.map((f) => (
-            <option key={f} value={f}>
-              {f}
-            </option>
-          ))}
-        </Field>
-
-        <Field
-          label="Дата договора"
-          type="date"
-          value={contractDate}
-          onChange={(e) => setContractDate(e.target.value)}
-        />
-
-        <Field label="Роялти %" value={royalty} onChange={(e) => setRoyalty(e.target.value)} />
-
-        <div className="col-span-2">
+        {!restricted && (
           <Field
-            label="Псевдоним(ы)"
-            value={nicknames}
-            onChange={(e) => setNicknames(e.target.value)}
-            placeholder="July Jones, Vladimir Ivanov"
-            hint="через запятую; заменяет весь список, пусто — очистить"
+            label="Дата договора"
+            type="date"
+            value={contractDate}
+            onChange={(e) => setContractDate(e.target.value)}
           />
-        </div>
+        )}
+
+        {!restricted && (
+          <Field label="Роялти %" value={royalty} onChange={(e) => setRoyalty(e.target.value)} />
+        )}
+
+        {!restricted && (
+          <div className="col-span-2">
+            <Field
+              label="Псевдоним(ы)"
+              value={nicknames}
+              onChange={(e) => setNicknames(e.target.value)}
+              placeholder="July Jones, Vladimir Ivanov"
+              hint="через запятую; заменяет весь список, пусто — очистить"
+            />
+          </div>
+        )}
       </div>
 
       {error && <div className="text-[13px] text-accent mt-4 leading-snug">{error}</div>}

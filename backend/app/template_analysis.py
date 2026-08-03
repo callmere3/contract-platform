@@ -256,7 +256,10 @@ DEMO_LIST_ROWS = {
             "music_author": "Иванов И.И.",
             "lyrics_author": "Иванов И.И.",
             "performer": "Ivanov",
-            "producer": "ООО «Медиа Лэнд» / 3:20",
+            # Изготовитель фонограммы — ФИО контрагента (как в реальных
+            # документах: изготовитель = сам исполнитель), а не «Медиа Лэнд».
+            # Тут статичное демо, поэтому то же ФИО, что в DEMO_VALUES["name"].
+            "producer": "Иванов Иван Иванович / 3:20",
             "share_author": "100",
             "share_related": "100",
             "has_profanity": True,   # первый трек с НЛ, второй без —
@@ -266,7 +269,7 @@ DEMO_LIST_ROWS = {
             "music_author": "Иванов И.И.",
             "lyrics_author": "Иванов И.И.",
             "performer": "Ivanov",
-            "producer": "ООО «Медиа Лэнд» / 2:45",
+            "producer": "Иванов Иван Иванович / 2:45",
             "share_author": "100",
             "share_related": "100",
             "has_profanity": False,

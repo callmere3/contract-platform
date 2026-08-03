@@ -100,6 +100,14 @@ CAN_CREATE_CONTRAGENTS = ROLES
 # именно ограниченный список, а не "все".
 CAN_EDIT_CONTRAGENTS = (ADMIN, DIRECTOR, TOP_MANAGER, TESTER)
 
+# Тип договора (contract_family) карточки может менять ЛЮБАЯ роль, включая
+# manager — по просьбе владельца: менеджеру нужно уметь переключить тип
+# договора контрагента (от него зависит подбор документов), но НЕ трогать
+# остальные поля карточки. Поэтому эндпоинт update_contragent доступен всем
+# этим ролям, но тем, кого нет в CAN_EDIT_CONTRAGENTS (сейчас — manager),
+# разрешено передать ТОЛЬКО contract_family; любое другое поле → 403.
+CAN_EDIT_CONTRACT_FAMILY = ROLES
+
 # Кто видит шаблоны, помеченные "скрыт для менеджеров" (hidden_for_managers):
 # admin/director/tester. У top_manager видимость скрытых убрана (по просьбе
 # владельца) — по этому праву он теперь как обычный manager. Скрытие нужно,

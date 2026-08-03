@@ -164,7 +164,7 @@
     </div>
     <div class="role">
       <h3>Менеджер</h3><span class="key">manager</span>
-      <p>Рабочая роль: генерация документов и создание новых контрагентов. Без правки заведённых карточек, удаления, экспорта, шаблонов и журналов.</p>
+      <p>Рабочая роль: генерация документов и создание новых контрагентов. Заведённые карточки не правит — кроме одного поля «тип договора» <sup>4</sup>. Без удаления, экспорта, шаблонов и журналов.</p>
     </div>
   </div>
 
@@ -181,7 +181,8 @@
         <tr class="grouprow"><td colspan="6">Документы и контрагенты</td></tr>
         <tr><td class="act">Генерация документов</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr>
         <tr><td class="act">Создание контрагента</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr>
-        <tr><td class="act">Редактирование карточки контрагента</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td></tr>
+        <tr><td class="act">Редактирование карточки контрагента (все поля)</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td></tr>
+        <tr><td class="act">Изменение типа договора в карточке <sup>4</sup></td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr>
         <tr><td class="act">Удаление контрагента</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
         <tr><td class="act">Экспорт в Excel</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
         <tr><td class="act">Импорт из Excel</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
@@ -221,6 +222,10 @@
     <div class="note">
       <b><sup>2</sup> «Только свои» — проверка на сервере</b>
       <p>Топ-менеджер видит и пересоздаёт лишь документы, которые сгенерировал сам (фильтр по <code>user_id</code>). Это не скрытие в интерфейсе: чужая запись по прямой ссылке отдаёт 404. Админ и директор видят всё.</p>
+    </div>
+    <div class="note">
+      <b><sup>4</sup> Тип договора — единственное поле карточки для менеджера</b>
+      <p>Менеджер может открыть карточку и сменить только «тип договора» (от него зависит подбор документов) — остальные поля ему недоступны. Это не просто скрытие в интерфейсе: эндпоинт правки открыт всем ролям (<code>CAN_EDIT_CONTRACT_FAMILY</code>), но передачу любого другого поля тем, кого нет в <code>CAN_EDIT_CONTRAGENTS</code>, сервер отклоняет (403).</p>
     </div>
     <div class="note">
       <b><sup>3</sup> «Уведомления» — дозаполнение карточек, только админ</b>

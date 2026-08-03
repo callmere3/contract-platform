@@ -47,6 +47,7 @@ from app.models import Contragent, ContragentNickname, Template, User
 from app.roles import (
     ADMIN,
     CAN_CREATE_CONTRAGENTS,
+    CAN_EDIT_CONTRACT_FAMILY,
     CAN_EDIT_CONTRAGENTS,
     CAN_EXPORT_CONTRAGENTS,
     SEES_HIDDEN_TEMPLATES,
@@ -737,7 +738,7 @@ def get_contragent(contragent_id: uuid.UUID, db: Session = Depends(get_session))
     }
 
 
-@contragents_router.patch("/{contragent_id}", dependencies=[Depends(require_role(*CAN_EDIT_CONTRAGENTS))])
+@contragents_router.patch("/{contragent_id}", dependencies=[Depends(require_role(*CAN_EDIT_CONTRACT_FAMILY))])
 def update_contragent(
     contragent_id: uuid.UUID,
     title: str | None = Form(None),
@@ -789,6 +790,21 @@ def update_contragent(
     contragent = db.get(Contragent, contragent_id)
     if contragent is None:
         raise HTTPException(status_code=404, detail="Контрагент не найден")
+
+    # Роли вне CAN_EDIT_CONTRAGENTS (сейчас — manager) правят ТОЛЬКО тип
+    # договора. Эндпоинт им доступен (CAN_EDIT_CONTRACT_FAMILY), но любое
+    # другое переданное поле — 403. Это серверная защита, не только UI:
+    # модалка менеджеру показывает одно поле, но запрос можно подделать.
+    if current_user.role not in CAN_EDIT_CONTRAGENTS:
+        others = (
+            title, name, country, contragent_type, contract_date,
+            contract_number, royalty_percent, reg_number, nicknames,
+        )
+        if any(v is not None for v in others):
+            raise HTTPException(
+                status_code=403,
+                detail="Вам доступно изменение только типа договора контрагента",
+            )
 
     if name is not None:
         contragent.name = name.strip() or None

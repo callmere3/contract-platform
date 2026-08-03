@@ -4,7 +4,7 @@ import { Button } from '../components/ui/Button';
 import { useModal } from './ModalProvider';
 import { useTags } from '../api/TagsContext';
 import { useAuth } from '../auth/AuthContext';
-import { canDeleteContragents, canEditContragents } from '../auth/permissions';
+import { canDeleteContragents, canEditContragents, canEditContractFamily } from '../auth/permissions';
 import { deleteContragent, getContragent } from '../api/contragents';
 
 const ROWS = [
@@ -92,13 +92,16 @@ export function ContragentCardModal({ contragentId, level, isTop, onChanged }) {
                   Удалить
                 </Button>
               ))}
-            {!confirmDelete && canEditContragents(role) && (
+            {/* Полноправным редакторам — «Редактировать» (вся карточка),
+                менеджеру — «Тип договора» (та же модалка, одно поле: она сама
+                определяет режим по роли, см. EditContragentModal.restricted). */}
+            {!confirmDelete && (canEditContragents(role) || canEditContractFamily(role)) && (
               <Button
                 variant="secondary"
                 size="sm"
                 onClick={() => openModal('editContragent', { contragent: data, onSaved: onChanged })}
               >
-                Редактировать
+                {canEditContragents(role) ? 'Редактировать' : 'Тип договора'}
               </Button>
             )}
             {!confirmDelete && (
