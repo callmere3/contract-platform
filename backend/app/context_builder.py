@@ -934,6 +934,26 @@ def build_term_end(document_date_raw) -> str:
     return f"{QUARTER_ENDS[quarter]}.{future.year}"
 
 
+def format_term_end_words(raw) -> str:
+    """
+    Срок действия для ДОКУМЕНТА — прописью с названием месяца:
+    '31.03.2031' -> '31 марта 2031 г.' (как требует юрист).
+
+    Оператор видит и правит поле в числовом ДД.ММ.ГГГГ (build_term_end и его
+    фронт-зеркало computeTermEnd), а в договор значение попадает в этом
+    словесном виде. Принимает любой формат, понятный parse_date (ДД.ММ.ГГГГ,
+    ISO, «15» марта 2026 г.). Непарсящийся ввод возвращаем как есть — оператор
+    мог вписать нестандартный текст, молча его терять нельзя. '' -> ''.
+    """
+    if not raw or not str(raw).strip():
+        return ""
+    parsed = parse_date(raw)
+    if not parsed:
+        return str(raw).strip()
+    day, month, year = parsed
+    return f"{int(day)} {MONTHS_RU_GENITIVE[int(month) - 1]} {int(year)} г."
+
+
 def default_delivery_date() -> str:
     """
     Дефолт для "Срок предоставления исходников" (шаблон СГ_аванс с
@@ -1162,7 +1182,10 @@ def build_context(raw: dict, doc_type: str | None = None) -> dict:
         # в форме вручную — иногда срок отличается от стандартного
         # правила. Если поле заполнено — берём как есть; посчитанное
         # значение это только предложение по умолчанию, не жёсткая логика.
-        "term_end": (
+        # В ФОРМЕ поле числовое (ДД.ММ.ГГГГ, удобно вводить), а в ДОКУМЕНТ
+        # уходит прописью с названием месяца («31 марта 2031 г.») — как
+        # требует юрист. Конвертацию делает format_term_end_words.
+        "term_end": format_term_end_words(
             str(raw.get("term_end") or "").strip()
             or build_term_end(date_raw if is_linked_doc else c_date_raw)
         ),
