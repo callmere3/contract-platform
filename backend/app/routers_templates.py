@@ -106,12 +106,19 @@ def browse_folder(
     templates = templates_query.all() if parent_id is not None else []
     # у шаблонов в корне быть не должно, но проверка не помешает
 
+    # breadcrumb — цепочка предков от корня до текущей папки, с id: фронту
+    # нужны id, чтобы каждая крошка была кликабельной (переход в любую папку
+    # выше по пути), а не только имена (folder_path). См. FoldersPage.
     breadcrumb = []
     if parent_id is not None:
         current = db.get(TemplateFolder, parent_id)
         if current is None:
             raise HTTPException(status_code=404, detail="Папка не найдена")
-        breadcrumb = folder_path(current)
+        node = current
+        while node is not None:
+            breadcrumb.append({"id": str(node.id), "name": node.name})
+            node = node.parent
+        breadcrumb.reverse()
 
     return {
         "breadcrumb": breadcrumb,

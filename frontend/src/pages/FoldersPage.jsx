@@ -121,20 +121,26 @@ export function FoldersPage() {
             >
               Все шаблоны
             </button>
-            {data.breadcrumb.map((name, i) => (
-              <span key={i} className="flex items-center gap-1.5 min-w-0">
-                <span className="text-text-muted">/</span>
-                <span
-                  className={
-                    i === data.breadcrumb.length - 1
-                      ? 'text-text font-semibold truncate'
-                      : 'text-text-secondary truncate'
-                  }
-                >
-                  {name}
+            {data.breadcrumb.map((crumb, i) => {
+              const isLast = i === data.breadcrumb.length - 1;
+              return (
+                <span key={crumb.id} className="flex items-center gap-1.5 min-w-0">
+                  <span className="text-text-muted">/</span>
+                  {/* Каждая крошка кликабельна — переход в любую папку выше по
+                      пути (в т.ч. текущая: клик просто перезагрузит её). */}
+                  <button
+                    onClick={() => setFolderId(crumb.id)}
+                    className={`bg-transparent border-none cursor-pointer p-0 font-sans truncate ${
+                      isLast
+                        ? 'text-text font-semibold'
+                        : 'text-text-secondary hover:text-text'
+                    }`}
+                  >
+                    {crumb.name}
+                  </button>
                 </span>
-              </span>
-            ))}
+              );
+            })}
           </div>
 
           {canManageTemplates(role) && (
