@@ -92,16 +92,17 @@ export function ContragentCardModal({ contragentId, level, isTop, onChanged }) {
                   Удалить
                 </Button>
               ))}
-            {/* Полноправным редакторам — «Редактировать» (вся карточка),
-                менеджеру — «Тип договора» (та же модалка, одно поле: она сама
-                определяет режим по роли, см. EditContragentModal.restricted). */}
+            {/* Кнопка «Редактировать» для всех, кто может править хоть что-то:
+                полноправным — вся карточка, менеджеру — только тип договора
+                (та же модалка сама определяет режим по роли, см.
+                EditContragentModal.restricted). */}
             {!confirmDelete && (canEditContragents(role) || canEditContractFamily(role)) && (
               <Button
                 variant="secondary"
                 size="sm"
                 onClick={() => openModal('editContragent', { contragent: data, onSaved: onChanged })}
               >
-                {canEditContragents(role) ? 'Редактировать' : 'Тип договора'}
+                Редактировать
               </Button>
             )}
             {!confirmDelete && (
