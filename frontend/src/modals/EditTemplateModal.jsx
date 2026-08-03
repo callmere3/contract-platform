@@ -17,6 +17,15 @@ import {
 } from '../api/templates';
 
 /**
+ * Поля для настройки источников (maps_to) — только скалярные. Списки (tracks,
+ * videoclips) к скалярному атрибуту контрагента не привязать, а `performers`
+ * вообще ВИРТУАЛЬНОЕ поле (сноска исполнителей): реальной метки в .docx нет,
+ * и попытка его связать вернула бы 404 «В шаблоне нет метки 'performers'».
+ * Поэтому в настройке источников списки не показываем и не отправляем.
+ */
+const mappableFields = (schemaFields) => schemaFields.filter((f) => f.type !== 'list');
+
+/**
  * Настройка существующего шаблона (только admin): метаданные, замена файла,
  * источники значений полей (maps_to), удаление.
  *
@@ -85,9 +94,10 @@ export function EditTemplateModal({ template, onDone, level, isTop }) {
           getMapsToOptions(),
         ]);
         if (cancelled) return;
-        setFields(schema.fields);
+        const mappable = mappableFields(schema.fields);
+        setFields(mappable);
         setMapsToOptions(options.options);
-        setMapping(Object.fromEntries(schema.fields.map((f) => [f.name, f.maps_to ?? 'manual'])));
+        setMapping(Object.fromEntries(mappable.map((f) => [f.name, f.maps_to ?? 'manual'])));
       } catch (e) {
         if (!cancelled) setError(e.message);
       } finally {
@@ -178,8 +188,9 @@ export function EditTemplateModal({ template, onDone, level, isTop }) {
       // поля или исчезнуть старые. maps_to существующих меток сервер
       // сохраняет (см. replace_template_file), но новые придут как 'manual'.
       const schema = await getTemplateFields(template.id);
-      setFields(schema.fields);
-      setMapping(Object.fromEntries(schema.fields.map((f) => [f.name, f.maps_to ?? 'manual'])));
+      const mappable = mappableFields(schema.fields);
+      setFields(mappable);
+      setMapping(Object.fromEntries(mappable.map((f) => [f.name, f.maps_to ?? 'manual'])));
       onDone?.();
       setNotice('Файл заменён, метки пересканированы.');
     } catch (e) {
