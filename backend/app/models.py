@@ -114,6 +114,27 @@ class Template(Base):
     )
 
 
+# Порядок типов документов в списках — по важности: договор → приложение →
+# акт (решение владельца). Раньше списки шли просто по имени, и алфавит ставил
+# «Акт» первым. Единый источник правды на оба места, где показывается список
+# шаблонов: дерево папок (browse_folder) и подбор по контрагенту
+# (list_contragent_templates). None/прочие типы — в конце.
+DOC_TYPE_SORT_ORDER = {"contract": 0, "appendix": 1, "act": 2}
+
+
+def doc_type_sort_key():
+    """
+    SQLAlchemy-выражение для ORDER BY: договор→приложение→акт, прочее в конце.
+    Использовать перед Template.name: .order_by(doc_type_sort_key(), Template.name).
+    """
+    from sqlalchemy import case
+
+    return case(
+        *[(Template.doc_type == dt, i) for dt, i in DOC_TYPE_SORT_ORDER.items()],
+        else_=99,
+    )
+
+
 class TemplateField(Base):
     __tablename__ = "template_fields"
 

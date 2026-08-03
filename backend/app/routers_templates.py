@@ -50,7 +50,15 @@ from app.context_builder import (
 )
 from app.db import get_session
 from app.generation import fix_tables_for_pdf, render_document, scan_placeholders
-from app.models import Contragent, Template, TemplateField, TemplateFolder, User, folder_path
+from app.models import (
+    Contragent,
+    Template,
+    TemplateField,
+    TemplateFolder,
+    User,
+    doc_type_sort_key,
+    folder_path,
+)
 from app.roles import ADMIN, CAN_GENERATE, SEES_HIDDEN_TEMPLATES
 from app.storage import delete_file, get_file, put_file
 from app.tags import (
@@ -100,7 +108,8 @@ def browse_folder(
     templates_query = (
         db.query(Template)
         .filter(Template.folder_id == parent_id)
-        .order_by(Template.name)
+        # По важности типа документа (договор→приложение→акт), внутри — по имени
+        .order_by(doc_type_sort_key(), Template.name)
     )
     if not sees_hidden:
         templates_query = templates_query.filter(Template.hidden_for_managers.is_(False))

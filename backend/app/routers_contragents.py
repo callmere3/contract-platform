@@ -43,7 +43,7 @@ from app.audit import log_action
 from app.auth import get_current_user, require_role
 from app.context_builder import build_contract_number, build_contragent_title, parse_date
 from app.db import get_session
-from app.models import Contragent, ContragentNickname, Template, User
+from app.models import Contragent, ContragentNickname, Template, User, doc_type_sort_key
 from app.roles import (
     ADMIN,
     CAN_CREATE_CONTRAGENTS,
@@ -1040,7 +1040,8 @@ def list_contragent_templates(
         )
     if current_user.role not in SEES_HIDDEN_TEMPLATES:
         templates_query = templates_query.filter(Template.hidden_for_managers.is_(False))
-    templates = templates_query.order_by(Template.name).all()
+    # По важности типа документа (договор→приложение→акт), внутри — по имени
+    templates = templates_query.order_by(doc_type_sort_key(), Template.name).all()
 
     return {
         "contragent_id": str(contragent_id),
