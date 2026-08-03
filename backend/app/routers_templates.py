@@ -626,6 +626,7 @@ def get_template_fields(
     form_fields = fields_to_dict(
         analyze_template(docx_bytes, doc_type=template.doc_type),
         doc_type=template.doc_type,
+        contragent_type=template.contragent_type,
     )
 
     maps_to_by_placeholder = {f.placeholder: f.maps_to for f in template.fields}

@@ -619,13 +619,38 @@ def analyze_template(docx_bytes: bytes, doc_type: str | None = None) -> list[For
     return fields
 
 
-def fields_to_dict(fields: list[FormField], doc_type: str | None = None) -> list[dict]:
+def _demo_for(field: FormField, contragent_type: str | None):
+    """
+    Демо-значение поля для кнопки «Тестовые данные». Обычно берётся из
+    DEMO_VALUES / DEMO_LIST_ROWS как есть. Исключение — 'contract' (номер
+    договора-родителя у Приложения/Акта): суффикс приводим к типу шаблона,
+    чтобы для ИП/ООО не подставлялся «/СГ»-номер, характерный для самозанятого.
+    None — демо для этой метки нет, кнопка её пропустит.
+    """
+    if field.type == "list":
+        return DEMO_LIST_ROWS.get(field.name)
+    if field.name == "contract" and contragent_type:
+        base = DEMO_VALUES["contract"].rsplit("/", 1)[0]  # 'МЛ-01/01/26-ИИИ'
+        return f"{base}/{contragent_type}"
+    return DEMO_VALUES.get(field.name)
+
+
+def fields_to_dict(
+    fields: list[FormField],
+    doc_type: str | None = None,
+    contragent_type: str | None = None,
+) -> list[dict]:
     """
     Приводит к JSON-виду для фронтенда: добавляет группу, подпись, подсказку.
     Поля отсортированы по порядку групп (GROUP_ORDER).
 
     doc_type пробрасывается в field_meta_for() — для contract/c_date/date
     подпись и подсказка зависят от типа шаблона (см. LINKED_DOC_FIELD_META).
+
+    contragent_type (тип шаблона: 'СГ'/'ИП'/'ООО'/…) влияет на ДЕМО-значение
+    поля 'contract' (номер договора-родителя у Приложения/Акта): его суффикс —
+    тип контрагента ('МЛ-…/ИП', 'МЛ-…/ООО'), а не всегда '/СГ', иначе для ИП/ООО
+    демо подставляло бы номер, характерный для самозанятого.
     """
     out = []
     virtual_meta = {v[0]: (v[2], v[3], v[4]) for v in VIRTUAL_FIELDS}
@@ -655,9 +680,7 @@ def fields_to_dict(fields: list[FormField], doc_type: str | None = None) -> list
             # Приходит всем ролям, а кнопку показываем только админу: это не
             # право доступа, а удобство, и защищать здесь нечего — данные
             # заведомо ненастоящие.
-            "demo": (
-                DEMO_LIST_ROWS.get(f.name) if f.type == "list" else DEMO_VALUES.get(f.name)
-            ),
+            "demo": _demo_for(f, contragent_type),
         }
         if f.type == "list":
             # колонки в осмысленном порядке, а не по алфавиту
