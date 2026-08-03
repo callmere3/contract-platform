@@ -35,7 +35,7 @@ from decimal import Decimal, InvalidOperation
 import openpyxl
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
-from sqlalchemy import case, or_
+from sqlalchemy import and_, case, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -55,9 +55,11 @@ from app.tags import (
     COUNTRIES,
     CONTRACT_FAMILIES,
     CONTRAGENT_TYPES,
+    OBLIGATION_DOC_TYPES,
     normalize_optional_tag,
     normalize_reg_number,
     normalize_tag,
+    obligation_bucket,
 )
 
 contragents_router = APIRouter(prefix="/contragents", tags=["contragents"])
@@ -953,13 +955,18 @@ def list_contragent_templates(
     Подбор документов для контрагента по тегам.
 
     Обязательные теги подбора — country и contragent_type. Тип договора
-    (contract_family) — УСЛОВНЫЙ фильтр:
-      - если у контрагента он ЗАДАН — показываем только шаблоны этого
-        семейства (country + type + contract_family);
-      - если НЕ задан — все семейства сразу (country + type): и роялти, и
-        аванс, и аванс с обязательством, оператор выбирает нужный.
-    То есть заполненный тип договора сужает выдачу до своего семейства, а
-    пустой её не ограничивает (по просьбе пользователя).
+    (contract_family) — УСЛОВНЫЙ фильтр, и работает ПО-РАЗНОМУ для договора и
+    для приложения/акта (см. app/tags.py про две оси: платёж × обязательство):
+      - если у контрагента он ЗАДАН:
+          * ДОГОВОР — точное совпадение семейства (одно из 4);
+          * ПРИЛОЖЕНИЕ/АКТ — совпадение по бакету обязательства: семейство
+            контрагента сворачивается в 'ОБЯЗАТЕЛЬСТВО'/'БЕЗ_ОБЯЗАТЕЛЬСТВА', и
+            берутся приложения/акты этого бакета (их платёжная ось не важна:
+            акт роялти = акт аванс);
+      - если НЕ задан — всё сразу (country + type): все 4 семейства договоров
+        и оба бакета приложений/актов, оператор выбирает нужное.
+    То есть заполненный тип договора сужает выдачу, пустой её не ограничивает
+    (по просьбе пользователя).
 
     Надёжность подбора по-прежнему держится на нормализации регистра при
     создании контрагента (см. app/tags.py) и при тегировании шаблонов: если
@@ -971,8 +978,10 @@ def list_contragent_templates(
     валидна, просто пока не участвует в подборе.
 
     contract_family возвращается у каждого шаблона: он нужен фронту, чтобы к
-    открытому Приложению подобрать парный Акт ТОГО ЖЕ семейства (иначе среди
-    нескольких Актов разных семейств он выбрал бы произвольный).
+    открытому Приложению подобрать парный Акт. У приложения и акта это ОДИН И
+    ТОТ ЖЕ бакет обязательства, поэтому фронт по-прежнему сравнивает их
+    contract_family напрямую (см. DocFormPage) — просто теперь это бакет, а не
+    полное семейство.
 
     Скрытые шаблоны (hidden_for_managers): менеджеру в подбор не попадают,
     остальным ролям (SEES_HIDDEN_TEMPLATES) — как обычно.
@@ -988,10 +997,30 @@ def list_contragent_templates(
         Template.country == contragent.country,
         Template.contragent_type == contragent.type,
     )
-    # Тип договора сужает выдачу до своего семейства ТОЛЬКО если задан.
+    # Тип договора сужает выдачу ТОЛЬКО если задан — и по-разному для разных
+    # типов документов (см. app/tags.py про две оси):
+    #   - ДОГОВОР (и прочие типы) — точное совпадение семейства из 4 значений;
+    #   - ПРИЛОЖЕНИЕ/АКТ — совпадение по бакету обязательства (у них платёжной
+    #     оси нет): семейство контрагента сворачивается в бакет функцией
+    #     obligation_bucket, а приложения/акты тегированы этим же бакетом.
+    # Так одно «обычное приложение» обслуживает и аванс, и роялти, а
+    # «приложение с обязательством» — и аванс+обязательство, и роялти+обязательство.
     if contragent.contract_family:
+        bucket = obligation_bucket(contragent.contract_family)
         templates_query = templates_query.filter(
-            Template.contract_family == contragent.contract_family
+            or_(
+                and_(
+                    Template.doc_type.in_(OBLIGATION_DOC_TYPES),
+                    Template.contract_family == bucket,
+                ),
+                and_(
+                    or_(
+                        Template.doc_type.notin_(OBLIGATION_DOC_TYPES),
+                        Template.doc_type.is_(None),
+                    ),
+                    Template.contract_family == contragent.contract_family,
+                ),
+            )
         )
     if current_user.role not in SEES_HIDDEN_TEMPLATES:
         templates_query = templates_query.filter(Template.hidden_for_managers.is_(False))

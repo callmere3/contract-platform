@@ -32,8 +32,16 @@ export function EditTemplateModal({ template, onDone, level, isTop }) {
     countries,
     contragent_types: types,
     contract_families: families,
+    obligation_buckets: buckets,
     company_type_by_country: companyTypeByCountry,
   } = useTags();
+
+  // Приложение/акт тегируются бакетом обязательства, а не семейством (у них
+  // платёжной оси нет — см. бэкенд app/tags.py). doc_type у шаблона тут не
+  // меняется, поэтому справочник и подпись выбираем один раз по template.doc_type.
+  const isObligationDoc = template.doc_type === 'appendix' || template.doc_type === 'act';
+  const familyOptions = isObligationDoc ? buckets : families;
+  const familyLabel = isObligationDoc ? 'Обязательство (для приложения/акта)' : 'Тип договора';
 
   const [name, setName] = useState(template.name ?? '');
   const [country, setCountry] = useState(template.country ?? '');
@@ -257,12 +265,18 @@ export function EditTemplateModal({ template, onDone, level, isTop }) {
         <div className="col-span-2">
           <Field
             as="select"
-            label="Тип договора"
+            label={familyLabel}
             value={contractFamily}
             onChange={(e) => setContractFamily(e.target.value)}
           >
             <option value="">— не задан —</option>
-            {families.map((f) => (
+            {/* Уже сохранённое «чужое» значение (напр. легаси-тег АВАНС на
+                приложении до перетегирования) оставляем в списке, иначе селект
+                молча показал бы «не задан» — админ должен видеть и поправить. */}
+            {(contractFamily && !familyOptions.includes(contractFamily)
+              ? [...familyOptions, contractFamily]
+              : familyOptions
+            ).map((f) => (
               <option key={f} value={f}>
                 {f}
               </option>

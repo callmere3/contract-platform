@@ -19,6 +19,10 @@ export function TagsProvider({ children }) {
     countries: [],
     contragent_types: [],
     contract_families: [],
+    // Бакеты обязательства для приложений/актов (БЕЗ_ОБЯЗАТЕЛЬСТВА/ОБЯЗАТЕЛЬСТВО):
+    // модалка шаблона показывает их вместо семейств, когда тип документа —
+    // приложение или акт (у них платёжной оси нет, см. бэкенд app/tags.py).
+    obligation_buckets: [],
     reg_number_meta: {},
     company_type_by_country: {},
     roles: [],

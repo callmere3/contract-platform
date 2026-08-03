@@ -82,6 +82,7 @@ export function NewTemplateModal({ folderId, onDone, level, isTop }) {
     countries,
     contragent_types: types,
     contract_families: families,
+    obligation_buckets: buckets,
     company_type_by_country: companyTypeByCountry,
   } = useTags();
 
@@ -103,6 +104,18 @@ export function NewTemplateModal({ folderId, onDone, level, isTop }) {
     if (contragentType && !typesForCountry(types, next, companyTypeByCountry).includes(contragentType)) {
       setContragentType('');
     }
+  }
+
+  // Приложение/акт тегируются не семейством, а бакетом обязательства (у них
+  // платёжной оси аванс/роялти нет — см. бэкенд app/tags.py). Показываем нужный
+  // справочник и подпись, а при смене типа документа сбрасываем значение:
+  // прежний выбор из другого справочника стал бы невалидным (бэкенд вернёт 400).
+  const isObligationDoc = docType === 'appendix' || docType === 'act';
+  const familyOptions = isObligationDoc ? buckets : families;
+  const familyLabel = isObligationDoc ? 'Обязательство (для приложения/акта)' : 'Тип договора';
+  function onDocTypeChange(next) {
+    setDocType(next);
+    setContractFamily('');
   }
 
   async function submit() {
@@ -162,7 +175,7 @@ export function NewTemplateModal({ folderId, onDone, level, isTop }) {
           />
         </div>
 
-        <Field as="select" label="Тип документа" value={docType} onChange={(e) => setDocType(e.target.value)}>
+        <Field as="select" label="Тип документа" value={docType} onChange={(e) => onDocTypeChange(e.target.value)}>
           <option value="">— не задан —</option>
           {DOC_TYPES.map((d) => (
             <option key={d.value} value={d.value}>
@@ -196,12 +209,12 @@ export function NewTemplateModal({ folderId, onDone, level, isTop }) {
 
         <Field
           as="select"
-          label="Тип договора"
+          label={familyLabel}
           value={contractFamily}
           onChange={(e) => setContractFamily(e.target.value)}
         >
           <option value="">— не задан —</option>
-          {families.map((f) => (
+          {familyOptions.map((f) => (
             <option key={f} value={f}>
               {f}
             </option>

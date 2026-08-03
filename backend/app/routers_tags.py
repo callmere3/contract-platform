@@ -16,6 +16,7 @@ from app.tags import (
     CONTRAGENT_TYPES,
     CONTRACT_FAMILIES,
     COUNTRIES,
+    OBLIGATION_BUCKETS,
     REG_NUMBER_META,
 )
 
@@ -28,6 +29,11 @@ def get_tags() -> dict:
         "countries": COUNTRIES,
         "contragent_types": CONTRAGENT_TYPES,
         "contract_families": CONTRACT_FAMILIES,
+        # Бакеты обязательства для приложений/актов — у них тег не семейство,
+        # а «БЕЗ_ОБЯЗАТЕЛЬСТВА»/«ОБЯЗАТЕЛЬСТВО» (см. app/tags.py). Модалка
+        # шаблона показывает их вместо семейств, когда тип документа —
+        # приложение или акт.
+        "obligation_buckets": OBLIGATION_BUCKETS,
         # {"СГ": {"label": "ИНН", "length": 12}, ...} — фронтенд подставляет
         # правильную подпись и длину под уже выбранный тип контрагента,
         # не хардкодя это отдельно.

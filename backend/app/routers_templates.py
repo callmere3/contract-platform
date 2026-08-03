@@ -56,8 +56,8 @@ from app.storage import delete_file, get_file, put_file
 from app.tags import (
     CONTRAGENT_MAPPED_FIELDS,
     CONTRAGENT_TYPES,
-    CONTRACT_FAMILIES,
     COUNTRIES,
+    normalize_contract_family_for,
     normalize_maps_to,
     normalize_optional_tag,
 )
@@ -199,7 +199,9 @@ def upload_template(
 
     country = normalize_optional_tag(country, COUNTRIES, "country")
     contragent_type = normalize_optional_tag(contragent_type, CONTRAGENT_TYPES, "contragent_type")
-    contract_family = normalize_optional_tag(contract_family, CONTRACT_FAMILIES, "contract_family")
+    # Для приложения/акта это бакет обязательства, для остального — семейство
+    # (см. normalize_contract_family_for): зависит от doc_type этого шаблона.
+    contract_family = normalize_contract_family_for(doc_type, contract_family)
 
     content = file.file.read()
 
@@ -381,8 +383,11 @@ def update_template(
             contragent_type, CONTRAGENT_TYPES, "contragent_type"
         )
     if contract_family is not None:
-        template.contract_family = normalize_optional_tag(
-            contract_family, CONTRACT_FAMILIES, "contract_family"
+        # doc_type у шаблона не меняется этим PATCH — берём текущий, чтобы
+        # выбрать нужный справочник (бакет для приложения/акта, семейство —
+        # для договора). См. normalize_contract_family_for.
+        template.contract_family = normalize_contract_family_for(
+            template.doc_type, contract_family
         )
 
     db.commit()

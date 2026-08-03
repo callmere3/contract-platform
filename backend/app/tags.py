@@ -26,7 +26,42 @@ COUNTRIES = ["РУ", "КЗ"]
 # для КЗ» нет — подбор документов и так идёт по точному совпадению тройки
 # (страна, тип, тип договора), поэтому КЗ+ООО просто не найдёт КЗ+ТОО-шаблон.
 CONTRAGENT_TYPES = ["ФЛ", "СГ", "ИП", "ООО", "ТОО"]
-CONTRACT_FAMILIES = ["РОЯЛТИ", "АВАНС", "АВАНС_ОБЯЗАТЕЛЬСТВО"]
+
+# Тип договора (contract_family) — это на самом деле ДВЕ независимые оси,
+# слитые в одно значение:
+#   - платёж:       АВАНС / РОЯЛТИ — влияет только на текст самого ДОГОВОРА;
+#   - обязательство: без / с        — влияет и на договор, и на приложение/акт.
+# Поэтому ДОГОВОРОВ четыре (платёж × обязательство), а вот ПРИЛОЖЕНИЯ и АКТЫ
+# различаются ТОЛЬКО по обязательству: акт роялти = акт аванс, приложение
+# «аванс+обязательство» = приложение «роялти+обязательство». То есть у
+# приложения/акта платёжной оси нет вовсе (решение владельца 03.08.2026).
+CONTRACT_FAMILIES = ["РОЯЛТИ", "АВАНС", "РОЯЛТИ_ОБЯЗАТЕЛЬСТВО", "АВАНС_ОБЯЗАТЕЛЬСТВО"]
+
+# Приложения и акты тегируются НЕ семейством, а бакетом обязательства (2
+# значения). Это отдельный справочник — намеренно не смешиваем с четырьмя
+# семействами: тег приложения «БЕЗ_ОБЯЗАТЕЛЬСТВА» читается однозначно, а
+# «АВАНС» на приложении, которое обслуживает и роялти, был бы миной. Подбор
+# для приложения/акта идёт по этому бакету (см. list_contragent_templates и
+# obligation_bucket ниже), а не по полному семейству контрагента.
+OBLIGATION_SUFFIX = "_ОБЯЗАТЕЛЬСТВО"
+BUCKET_WITH_OBLIGATION = "ОБЯЗАТЕЛЬСТВО"
+BUCKET_WITHOUT_OBLIGATION = "БЕЗ_ОБЯЗАТЕЛЬСТВА"
+OBLIGATION_BUCKETS = [BUCKET_WITHOUT_OBLIGATION, BUCKET_WITH_OBLIGATION]
+
+# Тип документа, у которого тег — бакет обязательства, а не семейство.
+OBLIGATION_DOC_TYPES = ("appendix", "act")
+
+
+def obligation_bucket(contract_family: str | None) -> str:
+    """
+    Бакет обязательства, в который попадает семейство договора: у семейства
+    с суффиксом _ОБЯЗАТЕЛЬСТВО — 'ОБЯЗАТЕЛЬСТВО', иначе 'БЕЗ_ОБЯЗАТЕЛЬСТВА'.
+    По нему приложение/акт подбираются к контрагенту (его платёжная ось —
+    аванс/роялти — для приложения/акта не важна).
+    """
+    if contract_family and contract_family.endswith(OBLIGATION_SUFFIX):
+        return BUCKET_WITH_OBLIGATION
+    return BUCKET_WITHOUT_OBLIGATION
 
 # Организационная форма компании зависит от страны: в РФ это ООО, в
 # Казахстане — ТОО. Отсюда фронт (GET /tags) фильтрует выпадающий список
@@ -170,3 +205,16 @@ def normalize_optional_tag(value: str | None, allowed: list[str], field_name: st
     if not value or not value.strip():
         return None
     return normalize_tag(value, allowed, field_name)
+
+
+def normalize_contract_family_for(doc_type: str | None, value: str | None) -> str | None:
+    """
+    Валидирует тег contract_family шаблона С УЧЁТОМ типа документа:
+      - приложение/акт (OBLIGATION_DOC_TYPES) — значение из OBLIGATION_BUCKETS
+        (БЕЗ_ОБЯЗАТЕЛЬСТВА / ОБЯЗАТЕЛЬСТВО): у них платёжной оси нет, тегируют
+        только обязательство;
+      - договор и всё остальное — полное семейство из CONTRACT_FAMILIES.
+    Пустое -> None (тег не задан), как и normalize_optional_tag.
+    """
+    allowed = OBLIGATION_BUCKETS if doc_type in OBLIGATION_DOC_TYPES else CONTRACT_FAMILIES
+    return normalize_optional_tag(value, allowed, "contract_family")
