@@ -225,6 +225,12 @@ DOC_TYPE_LABELS = {
     "act": "Акт",
 }
 
+# Маркер контрагента в имени файла по стране: РФ — ML, Казахстан — KZ.ML
+# (формула имени файла, решение владельца 04.08.2026). Страна берётся из
+# карточки контрагента, а без карточки (генерация из «Шаблонов») — из тега
+# шаблона. Неизвестная/непроставленная страна -> ML (РФ — основной случай).
+COUNTRY_FILE_MARKER = {"РУ": "ML", "КЗ": "KZ.ML"}
+
 
 def sanitize_filename(value: str) -> str:
     """
@@ -252,9 +258,26 @@ def build_document_filename(
     template_name: str,
     data: dict,
     contragent_title: str | None = None,
+    country: str | None = None,
 ) -> str:
     """
-    Имя готового файла (без расширения):
+    Имя готового файла (без расширения) по формуле владельца (04.08.2026):
+
+        Договор:         {гг}_{маркер}_ЛД_{титл}
+        Приложение/Акт:  {гг}_{маркер}_ЛД_{титл}_{тип и номер}
+
+        26_ML_ЛД_Иванов И. И. (СГ)
+        26_ML_ЛД_Иванов И. И. (СГ)_Приложение 1
+        26_ML_ЛД_Иванов И. И. (СГ)_Акт к Пр. 1      (акт к приложению)
+        26_KZ.ML_ЛД_ТОО «Астана Медиа» (ТОО)        (КЗ-контрагент)
+
+    гг — год из ДАТЫ документа (две цифры): c_date у договора, собственная
+    date у Приложения/Акта (НЕ дата скачивания). маркер — ML для РФ, KZ.ML
+    для КЗ (COUNTRY_FILE_MARKER); страна из карточки, а без карточки — из
+    тега шаблона. ЛД — константа (Лицензионный Договор). У договора суффикса
+    нет: ЛД уже означает договор.
+
+    Старая формула (до 04.08.2026):
 
         "{титл} - {тип документа}{ номер}"
 
@@ -291,27 +314,42 @@ def build_document_filename(
     не оставляет дыру: документ без ФИО получит имя вида "Договор", и это
     лучше, чем " - Договор".
     """
-    parts: list[str] = []
+    is_linked = doc_type in ("appendix", "act")
+    date_raw = data.get("date") if is_linked else data.get("c_date")
+    parsed = parse_date(str(date_raw or ""))
+    yy = parsed[2][-2:] if parsed else _date.today().strftime("%y")
+
+    marker = COUNTRY_FILE_MARKER.get(country or "", "ML")
 
     title = (contragent_title or "").strip()
     if not title:
         title = build_contragent_label(str(data.get("name") or "").strip())
-    if title:
-        parts.append(f"{title} -")
 
-    label = DOC_TYPE_LABELS.get(doc_type or "") or template_name
-    number = ""
+    parts = [yy, marker, "ЛД"]
+    if title:
+        parts.append(title)
+    name = "_".join(parts)
+
+    # тип и номер — только у Приложения/Акта (у договора суффикса нет)
+    suffix = ""
     if doc_type == "appendix":
         number = str(data.get("appendix_no") or "").strip()
+        suffix = f"{DOC_TYPE_LABELS['appendix']} {number}".strip()
     elif doc_type == "act":
         appendix_no = str(data.get("appendix_no") or "").strip()
         if appendix_no:
-            number = f"к Пр. {appendix_no}"          # акт к приложению
+            suffix = f"{DOC_TYPE_LABELS['act']} к Пр. {appendix_no}"  # акт к приложению
         else:
-            number = str(data.get("act_no") or "").strip()  # самостоятельный
-    parts.append(f"{label} {number}".strip())
+            act_no = str(data.get("act_no") or "").strip()           # самостоятельный
+            suffix = f"{DOC_TYPE_LABELS['act']} {act_no}".strip()
+    elif doc_type not in ("contract", None):
+        # прочие типы документов — сохраняем узнаваемость по имени шаблона
+        suffix = template_name.strip()
 
-    return sanitize_filename(" ".join(parts)) or "document"
+    if suffix:
+        name = f"{name}_{suffix}"
+
+    return sanitize_filename(name) or "document"
 
 
 MONTHS_RU = {

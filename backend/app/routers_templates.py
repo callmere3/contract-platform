@@ -749,6 +749,7 @@ def build_document_response(
     data: dict,
     format: str,
     contragent_title: str | None = None,
+    country: str | None = None,
 ) -> StreamingResponse:
     """
     Общее ядро рендера — валидация + docxtpl + (для pdf) конвертация.
@@ -808,8 +809,11 @@ def build_document_response(
 
     result_bytes = render_document(docx_bytes, context)
 
+    # Страна для маркера имени (ML / KZ.ML): переданная (из карточки при
+    # генерации по контрагенту) приоритетнее, иначе — тег шаблона.
     filename = build_document_filename(
-        template.doc_type, template.name, data, contragent_title
+        template.doc_type, template.name, data, contragent_title,
+        country=country or template.country,
     )
 
     if format == "docx":
@@ -908,11 +912,15 @@ def generate_document(
     # build_document_response). Заодно он же уходит в историю снимком.
     contragent = None
     contragent_title = None
+    contragent_country = None
     if contragent_id is not None:
         contragent = db.get(Contragent, contragent_id)
         contragent_title = contragent.title if contragent is not None else None
+        contragent_country = contragent.country if contragent is not None else None
 
-    response = build_document_response(template, data, format, contragent_title)
+    response = build_document_response(
+        template, data, format, contragent_title, country=contragent_country
+    )
 
     # nickname — тот же ключ формы, что и в build_context()/optional-полях
     # выше: конкретный псевдоним, для которого сгенерирован ИМЕННО этот
