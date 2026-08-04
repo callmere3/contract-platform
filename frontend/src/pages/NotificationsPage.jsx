@@ -62,6 +62,34 @@ export function NotificationsPage() {
     }
   }
 
+  /**
+   * «Применить все» для группы контрагента — по просьбе владельца («выборочно
+   * ИЛИ целиком»). Применяем только actionable-строки (severity=suggestion):
+   * ⚠-предупреждения (расхождение/кривой ввод) применять нельзя, их пропускаем.
+   * Последовательно, чтобы reg_number-уникальность и т.п. не гонялись параллельно.
+   */
+  async function applyGroup(rows) {
+    const actionable = rows.filter((r) => r.severity === 'suggestion');
+    if (actionable.length === 0) return;
+    setBusyId(`group:${rows[0].contragent_id}`);
+    setError('');
+    const doneIds = [];
+    try {
+      for (const r of actionable) {
+        await applyNotification(r.id);
+        doneIds.push(r.id);
+      }
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      if (doneIds.length) {
+        setItems((list) => list.filter((i) => !doneIds.includes(i.id)));
+        emitNotificationsChanged();
+      }
+      setBusyId(null);
+    }
+  }
+
   // Группировка по контрагенту с сохранением порядка (первое появление).
   const groups = useMemo(() => {
     const byId = new Map();
@@ -94,9 +122,19 @@ export function NotificationsPage() {
         )}
 
         {!loading &&
-          groups.map((g) => (
+          groups.map((g) => {
+            const actionable = g.rows.filter((r) => r.severity === 'suggestion').length;
+            const groupBusy = busyId === `group:${g.id}`;
+            return (
             <div key={g.id} className="border-b border-border last:border-b-0">
-              <div className="px-5 pt-4 pb-2 text-[13px] font-semibold text-text">{g.title}</div>
+              <div className="px-5 pt-4 pb-2 flex items-center justify-between gap-3">
+                <span className="text-[13px] font-semibold text-text">{g.title}</span>
+                {actionable > 1 && (
+                  <Button variant="secondary" size="sm" disabled={groupBusy} onClick={() => applyGroup(g.rows)}>
+                    {groupBusy ? 'Применяем…' : `Применить все (${actionable})`}
+                  </Button>
+                )}
+              </div>
               {g.rows.map((it) => (
                 <NotificationRow
                   key={it.id}
@@ -107,7 +145,8 @@ export function NotificationsPage() {
                 />
               ))}
             </div>
-          ))}
+            );
+          })}
       </Card>
 
       <div className="text-[11px] text-text-muted mt-4 leading-snug">
