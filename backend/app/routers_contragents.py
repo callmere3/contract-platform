@@ -50,6 +50,7 @@ from app.roles import (
     CAN_CREATE_CONTRAGENTS,
     CAN_EDIT_CONTRACT_FAMILY,
     CAN_EDIT_CONTRAGENTS,
+    CAN_EDIT_NICKNAMES,
     CAN_EDIT_REG_NUMBER,
     CAN_EDIT_REQUISITES,
     CAN_EXPORT_CONTRAGENTS,
@@ -846,25 +847,28 @@ def update_contragent(
         raise HTTPException(status_code=404, detail="Контрагент не найден")
 
     # Роли вне CAN_EDIT_CONTRAGENTS (сейчас — manager) правят тип договора,
-    # реквизиты И рег. номер (все три открыты всем ролям по решению владельца —
-    # CAN_EDIT_CONTRACT_FAMILY / CAN_EDIT_REQUISITES / CAN_EDIT_REG_NUMBER).
-    # Любое ДРУГОЕ переданное поле — 403. Это серверная защита, не только UI:
-    # модалка менеджеру показывает ограниченный набор, но запрос можно подделать.
-    # contract_family / requisites / reg_number в список ниже НЕ входят.
+    # реквизиты, рег. номер И псевдонимы (все открыты всем ролям по решению
+    # владельца — CAN_EDIT_CONTRACT_FAMILY / CAN_EDIT_REQUISITES /
+    # CAN_EDIT_REG_NUMBER / CAN_EDIT_NICKNAMES). Любое ДРУГОЕ переданное поле —
+    # 403. Это серверная защита, не только UI: модалка менеджеру показывает
+    # ограниченный набор, но запрос можно подделать. contract_family /
+    # requisites / reg_number / nicknames в список ниже НЕ входят.
     if current_user.role not in CAN_EDIT_CONTRAGENTS:
         others = (
             title, name, country, contragent_type, contract_date,
-            contract_number, royalty_percent, nicknames,
+            contract_number, royalty_percent,
         )
         if any(v is not None for v in others):
             raise HTTPException(
                 status_code=403,
-                detail="Вам доступно изменение только типа договора, реквизитов и рег. номера контрагента",
+                detail="Вам доступно изменение только типа договора, реквизитов, рег. номера и псевдонимов контрагента",
             )
         if requisites is not None and current_user.role not in CAN_EDIT_REQUISITES:
             raise HTTPException(status_code=403, detail="Правка реквизитов недоступна")
         if reg_number is not None and current_user.role not in CAN_EDIT_REG_NUMBER:
             raise HTTPException(status_code=403, detail="Правка рег. номера недоступна")
+        if nicknames is not None and current_user.role not in CAN_EDIT_NICKNAMES:
+            raise HTTPException(status_code=403, detail="Правка псевдонимов недоступна")
 
     if name is not None:
         contragent.name = name.strip() or None

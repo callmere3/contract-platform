@@ -125,6 +125,10 @@ export function EditContragentModal({ contragent, level, isTop, onSaved }) {
       if ((regNumber ?? '').trim() !== (contragent.reg_number ?? '')) {
         out.reg_number = regNumber.trim();
       }
+      // Псевдонимы менеджер тоже правит (по просьбе владельца). Нормализуем обе
+      // стороны так же, как в полном режиме (см. ниже).
+      const nickInput = nicknames.split(',').map((n) => n.trim()).filter(Boolean).join(', ');
+      if (nickInput !== (contragent.nicknames ?? []).join(', ')) out.nicknames = nickInput;
       if (requisitesChanged()) out.requisites = JSON.stringify(normRequisites(requisites));
       return out;
     }
@@ -274,17 +278,18 @@ export function EditContragentModal({ contragent, level, isTop, onSaved }) {
           <Field label="Роялти %" value={royalty} onChange={(e) => setRoyalty(e.target.value)} />
         )}
 
-        {!restricted && (
-          <div className="col-span-2">
-            <Field
-              label="Псевдоним(ы)"
-              value={nicknames}
-              onChange={(e) => setNicknames(e.target.value)}
-              placeholder="July Jones, Vladimir Ivanov"
-              hint="через запятую; заменяет весь список, пусто — очистить"
-            />
-          </div>
-        )}
+        {/* Псевдонимы правит любая роль (в т.ч. менеджер в restricted) — по
+            просьбе владельца. В restricted-режиме это поле идёт после select
+            типа договора. */}
+        <div className="col-span-2">
+          <Field
+            label="Псевдоним(ы)"
+            value={nicknames}
+            onChange={(e) => setNicknames(e.target.value)}
+            placeholder="July Jones, Vladimir Ivanov"
+            hint="через запятую; заменяет весь список, пусто — очистить"
+          />
+        </div>
       </div>
 
       {/* Реквизиты — сворачиваемый блок, скрыт по умолчанию. Правит любая роль
