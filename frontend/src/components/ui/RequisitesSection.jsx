@@ -68,23 +68,20 @@ export function RequisitesSection({
       {open && (
         <div className="grid grid-cols-2 gap-3 mt-3">
           {readOnly ? (
-            <>
-              {fields
-                .filter((f) => isFilled(values?.[f.name]))
-                .map((f) => (
-                  <div key={f.name}>
-                    <div className="text-xs text-text-secondary mb-0.5">{f.label}</div>
-                    <div className="text-sm text-text break-words">
-                      {displayValue(f, values[f.name])}
-                    </div>
+            // Показываем ВСЕ поля, а не только заполненные: пустые — с прочерком,
+            // чтобы менеджер видел, что именно надо дозаполнить (иначе непонятно,
+            // каких реквизитов не хватает).
+            fields.map((f) => {
+              const filled = isFilled(values?.[f.name]);
+              return (
+                <div key={f.name}>
+                  <div className="text-xs text-text-secondary mb-0.5">{f.label}</div>
+                  <div className={`text-sm break-words ${filled ? 'text-text' : 'text-text-muted'}`}>
+                    {filled ? displayValue(f, values[f.name]) : '—'}
                   </div>
-                ))}
-              {filledCount === 0 && (
-                <div className="col-span-2 text-[13px] text-text-muted">
-                  Реквизиты не заполнены.
                 </div>
-              )}
-            </>
+              );
+            })
           ) : (
             fields.map((f) => (
               <div key={f.name}>
