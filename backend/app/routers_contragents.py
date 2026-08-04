@@ -63,6 +63,7 @@ from app.tags import (
     CONTRAGENT_TYPES,
     OBLIGATION_DOC_TYPES,
     REQUISITE_FIELDS_BY_TYPE,
+    build_article,
     normalize_optional_tag,
     normalize_reg_number,
     normalize_tag,
@@ -785,6 +786,10 @@ def get_contragent(contragent_id: uuid.UUID, db: Session = Depends(get_session))
             float(contragent.royalty_percent) if contragent.royalty_percent is not None else None
         ),
         "reg_number": contragent.reg_number,
+        # Артикул = страна + рег.номер (будущий единственный идентификатор).
+        # Производное значение, в карточке показывается только админу (гейт на
+        # фронте, см. ContragentCardModal). None, пока нет страны/рег.номера.
+        "article": build_article(contragent.country, contragent.reg_number),
         "nicknames": [n.nickname for n in contragent.nicknames],
         # Реквизиты (адреса, банк, паспорт СГ…) — словарь {имя_метки: значение};
         # пусто -> {} (фронт рисует сворачиваемый блок из /tags-описаний).

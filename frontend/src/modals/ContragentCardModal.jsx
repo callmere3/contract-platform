@@ -4,7 +4,12 @@ import { Button } from '../components/ui/Button';
 import { useModal } from './ModalProvider';
 import { useTags } from '../api/TagsContext';
 import { useAuth } from '../auth/AuthContext';
-import { canDeleteContragents, canEditContragents, canEditContractFamily } from '../auth/permissions';
+import {
+  canDeleteContragents,
+  canEditContragents,
+  canEditContractFamily,
+  canViewArticle,
+} from '../auth/permissions';
 import { deleteContragent, getContragent } from '../api/contragents';
 import { contragentNameLabel } from '../api/contragentTypes';
 import { RequisitesSection } from '../components/ui/RequisitesSection';
@@ -144,6 +149,17 @@ export function ContragentCardModal({ contragentId, level, isTop, onChanged }) {
       {data && (
         <table className="w-full text-sm">
           <tbody>
+            {/* Артикул (страна + рег.номер) — будущий единственный идентификатор
+                контрагента, виден только админу. Стоит первым и выделен. Пусто
+                (нет страны/рег.номера) → «—», чтобы админ видел, что не готов. */}
+            {canViewArticle(role) && (
+              <tr>
+                <td className="text-text-secondary py-1.5 whitespace-nowrap pr-4">Артикул</td>
+                <td className="text-right py-1.5 text-text font-semibold tabular-nums">
+                  {data.article || '—'}
+                </td>
+              </tr>
+            )}
             {ROWS.map(([key, label]) => (
               <tr key={key}>
                 <td className="text-text-secondary py-1.5 whitespace-nowrap pr-4">
