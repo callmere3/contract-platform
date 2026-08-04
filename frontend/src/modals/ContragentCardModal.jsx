@@ -167,7 +167,13 @@ export function ContragentCardModal({ contragentId, level, isTop, onChanged }) {
           умолчанию (см. RequisitesSection). Только просмотр; правка — по
           кнопке «Редактировать» (EditContragentModal). */}
       {data && (
-        <RequisitesSection contragentType={data.type} values={data.requisites} readOnly />
+        <RequisitesSection
+          contragentType={data.type}
+          values={data.requisites}
+          readOnly
+          regNumber={data.reg_number}
+          regNumberLabel={regMeta?.[data.type]?.label}
+        />
       )}
     </Modal>
   );

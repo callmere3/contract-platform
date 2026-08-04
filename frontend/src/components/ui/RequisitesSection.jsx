@@ -41,15 +41,28 @@ export function RequisitesSection({
   readOnly = false,
   defaultOpen = false,
   title = 'Реквизиты',
+  // Рег. номер (ИНН/ОГРНИП/ОГРН/БИН) показываем ПЕРВЫМ полем блока — «всё в
+  // одном месте» (по просьбе владельца). Он НЕ часть словаря requisites
+  // (отдельная колонка-идентификатор), поэтому едет отдельными пропсами и
+  // зеркалит верхнее поле рег. номера в форме. Если regNumberLabel не задан
+  // (тип не выбран) — строку рег. номера не показываем.
+  regNumber,
+  onRegNumberChange,
+  regNumberLabel,
+  regNumberHint,
 }) {
   const { requisite_fields_by_type: byType } = useTags();
   const fields = byType?.[contragentType] || [];
   const [open, setOpen] = useState(defaultOpen);
 
-  // Тип без набора реквизитов (или не выбран) — блока нет вовсе.
-  if (fields.length === 0) return null;
+  const hasReg = Boolean(regNumberLabel);
+  const regFilled = isFilled(regNumber);
 
-  const filledCount = fields.filter((f) => isFilled(values?.[f.name])).length;
+  // Тип без набора реквизитов И без рег. номера (не выбран) — блока нет вовсе.
+  if (fields.length === 0 && !hasReg) return null;
+
+  const filledCount =
+    (hasReg && regFilled ? 1 : 0) + fields.filter((f) => isFilled(values?.[f.name])).length;
 
   return (
     <div className="border-t border-border pt-4 mt-5">
@@ -67,6 +80,29 @@ export function RequisitesSection({
 
       {open && (
         <div className="grid grid-cols-2 gap-3 mt-3">
+          {/* Рег. номер — первым, отдельно от словаря requisites (зеркалит
+              верхнее поле формы). Показ/правка по тем же правилам, что и
+              остальные реквизиты. */}
+          {hasReg &&
+            (readOnly ? (
+              <div>
+                <div className="text-xs text-text-secondary mb-0.5">{regNumberLabel}</div>
+                <div className={`text-sm break-words ${regFilled ? 'text-text' : 'text-text-muted'}`}>
+                  {regFilled ? regNumber : '—'}
+                </div>
+              </div>
+            ) : (
+              <div>
+                <div className="text-xs text-text-secondary mb-1.5">{regNumberLabel}</div>
+                <input
+                  className={CONTROL}
+                  type="text"
+                  value={regNumber ?? ''}
+                  onChange={(e) => onRegNumberChange(e.target.value)}
+                  placeholder={regNumberHint || 'только цифры'}
+                />
+              </div>
+            ))}
           {readOnly ? (
             // Показываем ВСЕ поля, а не только заполненные: пустые — с прочерком,
             // чтобы менеджер видел, что именно надо дозаполнить (иначе непонятно,

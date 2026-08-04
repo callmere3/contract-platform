@@ -92,13 +92,15 @@ export function EditContragentModal({ contragent, level, isTop, onSaved }) {
   const royaltyNum = useMemo(() => (royalty.trim() ? parseFloat(royalty.replace(',', '.')) : null), [royalty]);
 
   function validate() {
-    if (restricted) return ''; // менеджеру доступен только select типа договора — валидировать нечего
-    if (!name.trim()) return 'ФИО/название не может быть пустым.';
-    if (royalty.trim() && (Number.isNaN(royaltyNum) || royaltyNum < 0 || royaltyNum > 100))
-      return 'Роялти должно быть числом от 0 до 100.';
+    // Рег. номер правит ЛЮБАЯ роль (в т.ч. менеджер в restricted) — проверяем
+    // всегда, до early-return для restricted.
     if (regNumber && !/^\d+$/.test(regNumber)) return 'Рег. номер должен состоять только из цифр.';
     if (regNumber && meta && regNumber.length !== meta.length)
       return `${meta.label} должен содержать ${meta.length} цифр, сейчас ${regNumber.length}.`;
+    if (restricted) return ''; // остальные поля менеджеру недоступны — валидировать нечего
+    if (!name.trim()) return 'ФИО/название не может быть пустым.';
+    if (royalty.trim() && (Number.isNaN(royaltyNum) || royaltyNum < 0 || royaltyNum > 100))
+      return 'Роялти должно быть числом от 0 до 100.';
     return '';
   }
 
@@ -118,6 +120,11 @@ export function EditContragentModal({ contragent, level, isTop, onSaved }) {
       const next = contractFamily ?? '';
       const prev = contragent.contract_family ?? '';
       if (next !== prev) out.contract_family = next;
+      // Рег. номер менеджер тоже правит (в блоке реквизитов) — сервер его
+      // теперь принимает от любой роли (см. update_contragent).
+      if ((regNumber ?? '').trim() !== (contragent.reg_number ?? '')) {
+        out.reg_number = regNumber.trim();
+      }
       if (requisitesChanged()) out.requisites = JSON.stringify(normRequisites(requisites));
       return out;
     }
@@ -281,8 +288,18 @@ export function EditContragentModal({ contragent, level, isTop, onSaved }) {
       </div>
 
       {/* Реквизиты — сворачиваемый блок, скрыт по умолчанию. Правит любая роль
-          (в т.ч. менеджер в restricted-режиме). Набор полей — по типу. */}
-      <RequisitesSection contragentType={type} values={requisites} onChange={setReq} />
+          (в т.ч. менеджер в restricted-режиме). Набор полей — по типу. Рег.
+          номер — первым полем блока, зеркалит верхнее поле (одно состояние
+          regNumber), правится всеми ролями. */}
+      <RequisitesSection
+        contragentType={type}
+        values={requisites}
+        onChange={setReq}
+        regNumber={regNumber}
+        onRegNumberChange={setRegNumber}
+        regNumberLabel={meta?.label ?? 'Рег. номер'}
+        regNumberHint={meta ? `${meta.length} цифр` : undefined}
+      />
 
       {error && <div className="text-[13px] text-accent mt-4 leading-snug">{error}</div>}
     </Modal>

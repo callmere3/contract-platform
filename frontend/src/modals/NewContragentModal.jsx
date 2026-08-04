@@ -274,8 +274,19 @@ export function NewContragentModal({ level, isTop }) {
       </div>
 
       {/* Реквизиты — необязательны при создании, сворачиваемый блок (скрыт по
-          умолчанию). Появляется, когда выбран тип (иначе набора полей нет). */}
-      <RequisitesSection contragentType={type} values={requisites} onChange={setReq} />
+          умолчанию). Рег. номер — первым полем блока, зеркалит верхнее поле
+          (одно состояние regNumber). Появляется, когда выбран тип. */}
+      <RequisitesSection
+        contragentType={type}
+        values={requisites}
+        onChange={setReq}
+        regNumber={regNumber}
+        onRegNumberChange={setRegNumber}
+        regNumberLabel={meta?.label ?? 'Рег. номер'}
+        regNumberHint={
+          meta ? `${meta.length} цифр, необязательно` : 'Сначала выберите тип контрагента'
+        }
+      />
 
       {error && <div className="text-[13px] text-accent mt-4 leading-snug">{error}</div>}
     </Modal>
