@@ -8,6 +8,25 @@ import { useAuth } from '../auth/AuthContext';
 import { canEditContragents } from '../auth/permissions';
 import { updateContragent } from '../api/contragents';
 import { contragentNameLabel } from '../api/contragentTypes';
+import { RequisitesSection } from '../components/ui/RequisitesSection';
+
+/** Только непустые (обрезанные) значения — для сравнения и отправки. */
+function normRequisites(obj) {
+  const out = {};
+  Object.entries(obj || {}).forEach(([k, v]) => {
+    const s = (v ?? '').toString().trim();
+    if (s) out[k] = s;
+  });
+  return out;
+}
+/** Стабильная сериализация (ключи по алфавиту) — чтобы порядок не считался изменением. */
+function stableJson(obj) {
+  return JSON.stringify(
+    Object.keys(obj)
+      .sort()
+      .reduce((a, k) => ((a[k] = obj[k]), a), {}),
+  );
+}
 
 /**
  * Правка карточки контрагента (PATCH /contragents/{id}) — только для
@@ -62,6 +81,10 @@ export function EditContragentModal({ contragent, level, isTop, onSaved }) {
   );
   const [regNumber, setRegNumber] = useState(contragent.reg_number ?? '');
   const [nicknames, setNicknames] = useState((contragent.nicknames ?? []).join(', '));
+  // Реквизиты доступны для правки ЛЮБОЙ роли (в т.ч. менеджеру в restricted-
+  // режиме) — по решению владельца (CAN_EDIT_REQUISITES). Полная замена словаря.
+  const [requisites, setRequisites] = useState({ ...(contragent.requisites ?? {}) });
+  const setReq = (name, value) => setRequisites((r) => ({ ...r, [name]: value }));
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -79,13 +102,24 @@ export function EditContragentModal({ contragent, level, isTop, onSaved }) {
     return '';
   }
 
+  /** Реквизиты изменились относительно исходных? (нормализованное сравнение) */
+  function requisitesChanged() {
+    return (
+      stableJson(normRequisites(requisites)) !== stableJson(normRequisites(contragent.requisites))
+    );
+  }
+
   /** Только реально изменённые поля — см. докстринг модуля. */
   function changedFields() {
-    // Менеджер меняет только тип договора — остальное сервер всё равно отклонит.
+    // Менеджер (restricted) правит тип договора И реквизиты — остальное сервер
+    // всё равно отклонит (см. update_contragent).
     if (restricted) {
+      const out = {};
       const next = contractFamily ?? '';
       const prev = contragent.contract_family ?? '';
-      return next !== prev ? { contract_family: next } : {};
+      if (next !== prev) out.contract_family = next;
+      if (requisitesChanged()) out.requisites = JSON.stringify(normRequisites(requisites));
+      return out;
     }
     const fields = {};
     const put = (key, next, prev) => {
@@ -107,6 +141,9 @@ export function EditContragentModal({ contragent, level, isTop, onSaved }) {
     const nickInput = nicknames.split(',').map((n) => n.trim()).filter(Boolean).join(', ');
     const nickOriginal = (contragent.nicknames ?? []).join(', ');
     if (nickInput !== nickOriginal) fields.nicknames = nickInput;
+
+    // Реквизиты — полная замена словаря, только если реально изменились.
+    if (requisitesChanged()) fields.requisites = JSON.stringify(normRequisites(requisites));
 
     return fields;
   }
@@ -242,6 +279,10 @@ export function EditContragentModal({ contragent, level, isTop, onSaved }) {
           </div>
         )}
       </div>
+
+      {/* Реквизиты — сворачиваемый блок, скрыт по умолчанию. Правит любая роль
+          (в т.ч. менеджер в restricted-режиме). Набор полей — по типу. */}
+      <RequisitesSection contragentType={type} values={requisites} onChange={setReq} />
 
       {error && <div className="text-[13px] text-accent mt-4 leading-snug">{error}</div>}
     </Modal>

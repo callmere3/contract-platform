@@ -46,6 +46,7 @@ export function createContragent({
   royaltyPercent,
   regNumber,
   nicknames,
+  requisites, // объект {имя_метки: значение}, необязательно
 }) {
   const body = new URLSearchParams({
     name,
@@ -57,6 +58,11 @@ export function createContragent({
   });
   if (nicknames) body.append('nicknames', nicknames);
   if (regNumber) body.append('reg_number', regNumber);
+  // Реквизиты — одним JSON-объектом (сервер их так и принимает, отсеивая
+  // пустые/чужие ключи). Не шлём вовсе, если пусто.
+  if (requisites && Object.keys(requisites).length > 0) {
+    body.append('requisites', JSON.stringify(requisites));
+  }
   return apiJson(`${API}/contragents`, { method: 'POST', body });
 }
 

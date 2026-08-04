@@ -27,6 +27,7 @@
 против путей с параметром).
 """
 import io
+import json
 import uuid
 from datetime import date as _date
 from datetime import datetime as _datetime
@@ -49,14 +50,17 @@ from app.roles import (
     CAN_CREATE_CONTRAGENTS,
     CAN_EDIT_CONTRACT_FAMILY,
     CAN_EDIT_CONTRAGENTS,
+    CAN_EDIT_REQUISITES,
     CAN_EXPORT_CONTRAGENTS,
     SEES_HIDDEN_TEMPLATES,
 )
 from app.tags import (
+    ALL_REQUISITE_FIELDS,
     COUNTRIES,
     CONTRACT_FAMILIES,
     CONTRAGENT_TYPES,
     OBLIGATION_DOC_TYPES,
+    REQUISITE_FIELDS_BY_TYPE,
     normalize_optional_tag,
     normalize_reg_number,
     normalize_tag,
@@ -135,6 +139,44 @@ def _contragent_summary(c: Contragent) -> dict:
         # флаг для подсветки неполных карточек в списке (см. _contragent_is_complete)
         "is_complete": _contragent_is_complete(c),
     }
+
+
+def _parse_requisites(raw: str | None, contragent_type: str | None) -> dict | None:
+    """
+    Разбирает реквизиты карточки из JSON-строки формы (Contragent.requisites).
+
+    Форма шлёт реквизиты одним JSON-объектом {имя_метки: значение} — так их
+    удобно принять в общем Form-эндпоинте рядом с остальными полями, не
+    заводя колонку на каждый реквизит.
+
+    Оставляем только КЛЮЧИ, допустимые для этого типа контрагента
+    (REQUISITE_FIELDS_BY_TYPE) — чужие/незнакомые ключи отбрасываем, чтобы в
+    карточку не попадал мусор или поля не того типа. Тип неизвестен -> любой
+    известный реквизит (ALL_REQUISITE_FIELDS) как мягкий фолбэк. Пустые
+    значения выкидываем (незаполненное поле = «нет реквизита»), значения
+    приводим к строке и обрезаем пробелы.
+
+    None -> None (поле не передано, «не трогать» — см. update_contragent).
+    Пустой после чистки словарь -> {} (реквизиты явно очищены).
+    """
+    if raw is None:
+        return None
+    try:
+        data = json.loads(raw)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Реквизиты должны быть корректным JSON-объектом")
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=400, detail="Реквизиты должны быть объектом {поле: значение}")
+
+    allowed = set(REQUISITE_FIELDS_BY_TYPE.get(contragent_type or "", ())) or ALL_REQUISITE_FIELDS
+    cleaned: dict[str, str] = {}
+    for key, value in data.items():
+        if key not in allowed:
+            continue
+        text = ("" if value is None else str(value)).strip()
+        if text:
+            cleaned[key] = text
+    return cleaned
 
 
 def _parse_excel_date(value) -> _date | None:
@@ -328,6 +370,7 @@ def create_contragent(
     royalty_percent: float = Form(...),
     reg_number: str | None = Form(None),  # ИНН (СГ) / ОГРНИП (ИП) / ОГРН (ООО)
     nicknames: str | None = Form(None), # через запятую, тот же формат, что и в импорте
+    requisites: str | None = Form(None),  # JSON {имя_метки: значение}, необязательно
     db: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> dict:
@@ -406,6 +449,11 @@ def create_contragent(
         doc_kind=contragent_type,
     )
 
+    # Реквизиты при создании необязательны (по решению владельца) — пустой
+    # блок допустим, дозаполнят позже в карточке. Чужие/неизвестные ключи и
+    # пустые значения отсекаются (_parse_requisites). None/{} -> None в БД.
+    requisites_dict = _parse_requisites(requisites, contragent_type) or None
+
     contragent = Contragent(
         name=name,
         title=title,
@@ -416,6 +464,7 @@ def create_contragent(
         contract_number=contract_number,
         royalty_percent=royalty_percent,
         reg_number=reg_number,
+        requisites=requisites_dict,
     )
     db.add(contragent)
     db.flush()   # нужен contragent.id до вставки никнеймов
@@ -735,6 +784,9 @@ def get_contragent(contragent_id: uuid.UUID, db: Session = Depends(get_session))
         ),
         "reg_number": contragent.reg_number,
         "nicknames": [n.nickname for n in contragent.nicknames],
+        # Реквизиты (адреса, банк, паспорт СГ…) — словарь {имя_метки: значение};
+        # пусто -> {} (фронт рисует сворачиваемый блок из /tags-описаний).
+        "requisites": contragent.requisites or {},
     }
 
 
@@ -751,6 +803,7 @@ def update_contragent(
     royalty_percent: str | None = Form(None),
     reg_number: str | None = Form(None),
     nicknames: str | None = Form(None),
+    requisites: str | None = Form(None),  # JSON {имя_метки: значение}, полная замена
     db: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> dict:
@@ -792,9 +845,11 @@ def update_contragent(
         raise HTTPException(status_code=404, detail="Контрагент не найден")
 
     # Роли вне CAN_EDIT_CONTRAGENTS (сейчас — manager) правят ТОЛЬКО тип
-    # договора. Эндпоинт им доступен (CAN_EDIT_CONTRACT_FAMILY), но любое
-    # другое переданное поле — 403. Это серверная защита, не только UI:
-    # модалка менеджеру показывает одно поле, но запрос можно подделать.
+    # договора И реквизиты (CAN_EDIT_REQUISITES = все роли, по решению
+    # владельца). Эндпоинт им доступен (CAN_EDIT_CONTRACT_FAMILY), но любое
+    # ДРУГОЕ переданное поле — 403. Это серверная защита, не только UI:
+    # модалка менеджеру показывает ограниченный набор, но запрос можно подделать.
+    # contract_family и requisites в список ниже НЕ входят — они разрешены.
     if current_user.role not in CAN_EDIT_CONTRAGENTS:
         others = (
             title, name, country, contragent_type, contract_date,
@@ -803,8 +858,11 @@ def update_contragent(
         if any(v is not None for v in others):
             raise HTTPException(
                 status_code=403,
-                detail="Вам доступно изменение только типа договора контрагента",
+                detail="Вам доступно изменение только типа договора и реквизитов контрагента",
             )
+        if requisites is not None and current_user.role not in CAN_EDIT_REQUISITES:
+            # страховка на будущее: если CAN_EDIT_REQUISITES когда-то сузят
+            raise HTTPException(status_code=403, detail="Правка реквизитов недоступна")
 
     if name is not None:
         contragent.name = name.strip() or None
@@ -893,6 +951,12 @@ def update_contragent(
         for nick in [n.strip() for n in nicknames.split(",") if n.strip()]:
             db.add(ContragentNickname(contragent_id=contragent.id, nickname=nick))
 
+    # Реквизиты: переданный JSON ПОЛНОСТЬЮ заменяет прежний словарь (как
+    # nicknames). Чистятся под текущий тип (contragent.type уже обновлён выше,
+    # если тип меняли). Пустой после чистки -> None (реквизиты очищены).
+    if requisites is not None:
+        contragent.requisites = _parse_requisites(requisites, contragent.type) or None
+
     try:
         db.commit()
     except IntegrityError:
@@ -923,6 +987,7 @@ def update_contragent(
         ),
         "reg_number": contragent.reg_number,
         "nicknames": [n.nickname for n in contragent.nicknames],
+        "requisites": contragent.requisites or {},
     }
 
 

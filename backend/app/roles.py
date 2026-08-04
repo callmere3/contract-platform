@@ -105,8 +105,17 @@ CAN_EDIT_CONTRAGENTS = (ADMIN, DIRECTOR, TOP_MANAGER, TESTER)
 # договора контрагента (от него зависит подбор документов), но НЕ трогать
 # остальные поля карточки. Поэтому эндпоинт update_contragent доступен всем
 # этим ролям, но тем, кого нет в CAN_EDIT_CONTRAGENTS (сейчас — manager),
-# разрешено передать ТОЛЬКО contract_family; любое другое поле → 403.
+# разрешено передать ТОЛЬКО contract_family (и requisites, см. ниже); любое
+# другое поле → 403.
 CAN_EDIT_CONTRACT_FAMILY = ROLES
+
+# Реквизиты карточки (requisites — адреса, банк, паспорт СГ и т.п.) может
+# править ЛЮБАЯ роль, включая manager (по просьбе владельца): реквизиты — не
+# идентификатор и не привилегия, их дозаполняют по ходу работы. Как и с
+# contract_family, поле-уровневая проверка в update_contragent пропускает
+# requisites даже для тех, кого нет в CAN_EDIT_CONTRAGENTS, а остальные поля
+# им по-прежнему запрещены.
+CAN_EDIT_REQUISITES = ROLES
 
 # Кто видит шаблоны, помеченные "скрыт для менеджеров" (hidden_for_managers):
 # admin/director/tester. У top_manager видимость скрытых убрана (по просьбе

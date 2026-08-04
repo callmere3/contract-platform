@@ -680,6 +680,39 @@ def analyze_template(docx_bytes: bytes, doc_type: str | None = None) -> list[For
     return fields
 
 
+def requisite_field_descriptors(contragent_type: str | None) -> list[dict]:
+    """
+    Описания полей-реквизитов для карточки контрагента данного типа:
+    [{name, type, label, hint, choices?}] в порядке REQUISITE_FIELDS_BY_TYPE.
+
+    Подписи/типы берутся из тех же FIELD_META/DATE_FIELDS/KNOWN_CHOICES, что и
+    поля формы генерации, — единый источник, чтобы «Юридический адрес», «Ставка
+    НДС» и т.п. не разошлись между формой и карточкой. Карточка не привязана к
+    шаблону, поэтому НАБОР полей приходит из tags.REQUISITE_FIELDS_BY_TYPE (а не
+    из .docx), но МЕТАДАННЫЕ каждого поля — отсюда.
+
+    Пустой список, если у типа реквизитов нет (напр. тип не задан).
+    """
+    from app.tags import REQUISITE_FIELDS_BY_TYPE
+
+    out: list[dict] = []
+    for name in REQUISITE_FIELDS_BY_TYPE.get(contragent_type or "", []):
+        _group, label, hint = FIELD_META.get(name, ("Реквизиты", name, ""))
+        if name in KNOWN_CHOICES:
+            ftype = "choice"
+        elif name in DATE_FIELDS:
+            ftype = "date"
+        else:
+            ftype = "text"
+        item = {"name": name, "type": ftype, "label": label, "hint": hint}
+        if ftype == "choice":
+            item["choices"] = [
+                {"value": v, "label": l} for v, l in KNOWN_CHOICES[name]
+            ]
+        out.append(item)
+    return out
+
+
 def _demo_for(field: FormField, contragent_type: str | None):
     """
     Демо-значение поля для кнопки «Тестовые данные». Обычно берётся из

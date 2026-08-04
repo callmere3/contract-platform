@@ -26,6 +26,9 @@ export function TagsProvider({ children }) {
     reg_number_meta: {},
     company_type_by_country: {},
     roles: [],
+    // Поля реквизитов карточки по типу: {тип: [{name, type, label, hint, choices?}]}.
+    // Из них строится сворачиваемый блок реквизитов в карточке контрагента.
+    requisite_fields_by_type: {},
   });
   const [error, setError] = useState('');
 

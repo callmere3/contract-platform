@@ -6,6 +6,7 @@ import { useModal } from './ModalProvider';
 import { useTags } from '../api/TagsContext';
 import { contragentNameLabel, isCompanyType, typesForCountry } from '../api/contragentTypes';
 import { createContragent, searchContragents } from '../api/contragents';
+import { RequisitesSection } from '../components/ui/RequisitesSection';
 
 /**
  * Создание контрагента. Доступно всем ролям (CAN_CREATE_CONTRAGENTS).
@@ -35,6 +36,10 @@ export function NewContragentModal({ level, isTop }) {
   const [royalty, setRoyalty] = useState('70');
   const [regNumber, setRegNumber] = useState('');
   const [nicknames, setNicknames] = useState('');
+  // Реквизиты при создании необязательны (по решению владельца) — сворачиваемый
+  // блок, скрыт по умолчанию. Набор полей — по выбранному типу.
+  const [requisites, setRequisites] = useState({});
+  const setReq = (name, value) => setRequisites((r) => ({ ...r, [name]: value }));
 
   const [duplicates, setDuplicates] = useState(null); // {exact: bool, titles: []}
   const [error, setError] = useState('');
@@ -144,6 +149,8 @@ export function NewContragentModal({ level, isTop }) {
         royaltyPercent: royaltyNum,
         regNumber: regNumber.trim(),
         nicknames: nicknames.trim(),
+        // сервер сам отсеет пустые/чужие ключи (_parse_requisites)
+        requisites,
       });
       closeModal();
       // Сразу показываем документы созданного контрагента — не нужно его
@@ -265,6 +272,10 @@ export function NewContragentModal({ level, isTop }) {
           />
         </div>
       </div>
+
+      {/* Реквизиты — необязательны при создании, сворачиваемый блок (скрыт по
+          умолчанию). Появляется, когда выбран тип (иначе набора полей нет). */}
+      <RequisitesSection contragentType={type} values={requisites} onChange={setReq} />
 
       {error && <div className="text-[13px] text-accent mt-4 leading-snug">{error}</div>}
     </Modal>

@@ -676,6 +676,22 @@ def get_template_fields(
             item["locked"] = True
             item["hint"] = "Дата зафиксирована в карточке контрагента и не редактируется здесь."
 
+        # Автоподстановка РЕКВИЗИТОВ по ИМЕНИ метки (без настройки maps_to):
+        # поле без явного источника (manual), у которого имя совпадает с
+        # ключом в carточке (contragent.requisites), предзаполняется этим
+        # значением. Остаётся редактируемым — это предзаполнение, как и любой
+        # default (см. докстринг). Явный maps_to приоритетнее (для него —
+        # ветка ниже), заблокированный c_date не трогаем.
+        if (
+            contragent is not None
+            and maps_to == "manual"
+            and not item.get("locked")
+            and contragent.requisites
+        ):
+            req_value = contragent.requisites.get(item["name"])
+            if req_value:
+                item["default"] = req_value
+
         if contragent is None or maps_to == "manual":
             continue
 

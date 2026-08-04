@@ -227,6 +227,18 @@ class Contragent(Base):
 
     royalty_percent: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
 
+    # Реквизиты для документов (адреса, банк, паспорт СГ, ЭДО-почта/НДС и т.п.).
+    # ОДИН JSONB-словарь {имя_метки: значение}, а не колонка на поле: набор
+    # реквизитов разный по типу контрагента и завязан на метки .docx, поэтому
+    # добавление новой метки в шаблон не требует миграции. Ключи — те же имена
+    # меток, что и в форме генерации (phone, rs, bik, legal_adress, vat…),
+    # поэтому подстановка при генерации идёт по совпадению имени (см.
+    # get_template_fields), без ручной настройки maps_to на каждом шаблоне.
+    # reg_number сюда НЕ входит — он отдельная колонка-идентификатор выше.
+    # nullable/пустой словарь — реквизиты необязательны (карточку заводят
+    # неполной, дозаполняют позже).
+    requisites: Mapped[dict | None] = mapped_column(JSONB)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

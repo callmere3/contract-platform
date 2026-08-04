@@ -7,6 +7,7 @@ import { useAuth } from '../auth/AuthContext';
 import { canDeleteContragents, canEditContragents, canEditContractFamily } from '../auth/permissions';
 import { deleteContragent, getContragent } from '../api/contragents';
 import { contragentNameLabel } from '../api/contragentTypes';
+import { RequisitesSection } from '../components/ui/RequisitesSection';
 
 const ROWS = [
   ['name', 'ФИО / название'],
@@ -161,6 +162,12 @@ export function ContragentCardModal({ contragentId, level, isTop, onChanged }) {
             </tr>
           </tbody>
         </table>
+      )}
+      {/* Реквизиты — сворачиваемый блок под основными полями, скрыт по
+          умолчанию (см. RequisitesSection). Только просмотр; правка — по
+          кнопке «Редактировать» (EditContragentModal). */}
+      {data && (
+        <RequisitesSection contragentType={data.type} values={data.requisites} readOnly />
       )}
     </Modal>
   );

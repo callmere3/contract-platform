@@ -18,7 +18,9 @@ from app.tags import (
     COUNTRIES,
     OBLIGATION_BUCKETS,
     REG_NUMBER_META,
+    REQUISITE_FIELDS_BY_TYPE,
 )
+from app.template_analysis import requisite_field_descriptors
 
 tags_router = APIRouter(prefix="/tags", tags=["tags"])
 
@@ -48,4 +50,12 @@ def get_tags() -> dict:
         # единственного источника правды (app/roles.py: ROLES), которым
         # валидируется роль при создании/правке пользователя.
         "roles": list(ROLES),
+        # Поля реквизитов карточки по типу контрагента: {тип: [{name, type,
+        # label, hint, choices?}]}. Фронт рисует по ним сворачиваемый блок
+        # реквизитов в карточке — набор и подписи не хардкодит. Ключи значений
+        # (Contragent.requisites) — те же name. См. REQUISITE_FIELDS_BY_TYPE и
+        # requisite_field_descriptors.
+        "requisite_fields_by_type": {
+            t: requisite_field_descriptors(t) for t in REQUISITE_FIELDS_BY_TYPE
+        },
     }
