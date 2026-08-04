@@ -64,6 +64,7 @@ export function EditContragentModal({ contragent, level, isTop, onSaved }) {
     contract_families: families,
     reg_number_meta: regMeta,
     company_type_by_country: companyTypeByCountry,
+    requisite_fields_by_type: reqByType,
   } = useTags();
 
   // Менеджеру доступна правка ТОЛЬКО типа договора (contract_family): он может
@@ -95,6 +96,11 @@ export function EditContragentModal({ contragent, level, isTop, onSaved }) {
   const setReq = (name, value) => setRequisites((r) => ({ ...r, [name]: value }));
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  // Шаг подтверждения: null — показываем форму; иначе {fields, rows} —
+  // экран «было → стало» перед сохранением (по просьбе владельца 04.08.2026,
+  // чтобы наглядно видеть, что именно меняется). Сохранение идёт только после
+  // явного «Подтвердить».
+  const [pending, setPending] = useState(null);
 
   const meta = regMeta?.[type];
   const royaltyNum = useMemo(() => (royalty.trim() ? parseFloat(royalty.replace(',', '.')) : null), [royalty]);
@@ -168,7 +174,79 @@ export function EditContragentModal({ contragent, level, isTop, onSaved }) {
     return fields;
   }
 
-  async function submit() {
+  // ---- Формирование дифа «было → стало» для экрана подтверждения ----
+  const fmt = (v) => {
+    const s = v === null || v === undefined ? '' : String(v).trim();
+    return s === '' ? '—' : s;
+  };
+  const fmtDate = (v) => {
+    if (!v) return '—';
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v));
+    return m ? `${m[3]}.${m[2]}.${m[1]}` : String(v);
+  };
+  // Значение одного реквизита для показа: choice → подпись варианта, date →
+  // ДД.ММ.ГГГГ, пусто → «—» (зеркалит RequisitesSection.displayValue).
+  const reqDisplay = (descriptor, raw) => {
+    const s = (raw ?? '').toString().trim();
+    if (!s) return '—';
+    if (descriptor?.type === 'choice') {
+      const opt = descriptor.choices?.find((c) => c.value === s);
+      return opt ? opt.label : s;
+    }
+    if (descriptor?.type === 'date') {
+      const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+      if (m) return `${m[3]}.${m[2]}.${m[1]}`;
+    }
+    return s;
+  };
+
+  /**
+   * Человекочитаемый диф по payload changedFields(): [{key,label,before,after}].
+   * reg_number/contract_number/дата форматируются под показ; requisites
+   * разворачиваются пополе (одна строка на каждый изменившийся реквизит)
+   * — так в подтверждении видно конкретное поле, а не JSON целиком.
+   */
+  function buildDiffRows(fields) {
+    const rows = [];
+    const push = (key, label, before, after) => rows.push({ key, label, before, after });
+
+    if ('name' in fields)
+      push('name', contragentNameLabel(type, companyTypeByCountry), fmt(contragent.name), fmt(fields.name));
+    if ('country' in fields) push('country', 'Страна', fmt(contragent.country), fmt(fields.country));
+    if ('contragent_type' in fields)
+      push('contragent_type', 'Тип контрагента', fmt(contragent.type), fmt(fields.contragent_type));
+    if ('contract_family' in fields)
+      push('contract_family', 'Тип договора', fmt(contragent.contract_family), fmt(fields.contract_family));
+    if ('contract_date' in fields)
+      push('contract_date', 'Дата договора', fmtDate(contragent.contract_date), fmtDate(fields.contract_date));
+    if ('royalty_percent' in fields)
+      push('royalty_percent', 'Роялти %', fmt(contragent.royalty_percent), fmt(fields.royalty_percent));
+    if ('reg_number' in fields)
+      push('reg_number', meta?.label ?? 'Рег. номер', fmt(contragent.reg_number), fmt(fields.reg_number));
+    if ('contract_number' in fields)
+      push('contract_number', 'Номер договора', fmt(contragent.contract_number), fmt(fields.contract_number));
+    if ('nicknames' in fields)
+      push('nicknames', 'Псевдонимы', fmt((contragent.nicknames ?? []).join(', ')), fmt(fields.nicknames));
+
+    if ('requisites' in fields) {
+      const after = JSON.parse(fields.requisites); // нормализованный словарь непустых
+      const before = contragent.requisites ?? {};
+      const descriptors = reqByType?.[type] || [];
+      const descByName = Object.fromEntries(descriptors.map((d) => [d.name, d]));
+      const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
+      [...keys].forEach((k) => {
+        const b = (before[k] ?? '').toString().trim();
+        const a = (after[k] ?? '').toString().trim();
+        if (b === a) return;
+        const d = descByName[k];
+        push(`req.${k}`, d?.label ?? k, reqDisplay(d, b), reqDisplay(d, a));
+      });
+    }
+    return rows;
+  }
+
+  /** «Сохранить» → сначала валидация и экран подтверждения (не сохраняем сразу). */
+  function review() {
     const problem = validate();
     if (problem) {
       setError(problem);
@@ -176,13 +254,19 @@ export function EditContragentModal({ contragent, level, isTop, onSaved }) {
     }
     const fields = changedFields();
     if (Object.keys(fields).length === 0) {
-      closeModal();
+      closeModal(); // менять нечего — просто закрыть
       return;
     }
+    setError('');
+    setPending({ fields, rows: buildDiffRows(fields) });
+  }
+
+  /** «Подтвердить» на экране дифа — фактическое сохранение. */
+  async function doSave() {
     setBusy(true);
     setError('');
     try {
-      await updateContragent(contragent.id, fields);
+      await updateContragent(contragent.id, pending.fields);
       onSaved?.(); // обновить список сразу — сбросить красную подсветку и т.п.
       // Закрываем и эту модалку, и карточку под ней: карточка показывает
       // данные, загруженные ДО правки, и после сохранения они устарели.
@@ -190,29 +274,78 @@ export function EditContragentModal({ contragent, level, isTop, onSaved }) {
       closeModal();
       closeModal();
     } catch (e) {
+      // Ошибка (напр. конфликт рег. номера) — вернуть к форме, чтобы поправить.
       setError(e.message);
       setBusy(false);
+      setPending(null);
     }
   }
 
   return (
     <Modal
-      title={restricted ? 'Тип договора контрагента' : 'Редактировать контрагента'}
+      title={
+        pending
+          ? 'Подтвердите изменения'
+          : restricted
+            ? 'Тип договора контрагента'
+            : 'Редактировать контрагента'
+      }
       onClose={closeModal}
       level={level}
       isTop={isTop}
       width={560}
       footer={
-        <>
-          <Button variant="secondary" size="sm" onClick={closeModal}>
-            Отмена
-          </Button>
-          <Button variant="primary" size="sm" onClick={submit} disabled={busy}>
-            {busy ? 'Сохраняем…' : 'Сохранить'}
-          </Button>
-        </>
+        pending ? (
+          <>
+            <Button variant="secondary" size="sm" onClick={() => setPending(null)} disabled={busy}>
+              Назад
+            </Button>
+            <Button variant="primary" size="sm" onClick={doSave} disabled={busy}>
+              {busy ? 'Сохраняем…' : 'Подтвердить'}
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button variant="secondary" size="sm" onClick={closeModal}>
+              Отмена
+            </Button>
+            <Button variant="primary" size="sm" onClick={review} disabled={busy}>
+              Сохранить
+            </Button>
+          </>
+        )
       }
     >
+      {pending && (
+        <div>
+          <p className="text-[13px] text-text-secondary mb-3 leading-snug">
+            Проверьте, что изменится в карточке. Сохранение произойдёт только после подтверждения.
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-[11px] uppercase tracking-wider text-text-muted">
+                  <th className="text-left font-medium pb-2 pr-4">Поле</th>
+                  <th className="text-left font-medium pb-2 pr-4">Было</th>
+                  <th className="text-left font-medium pb-2">Стало</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pending.rows.map((r) => (
+                  <tr key={r.key} className="border-t border-border align-top">
+                    <td className="py-2 pr-4 text-text-secondary whitespace-nowrap">{r.label}</td>
+                    <td className="py-2 pr-4 text-text-muted break-words">{r.before}</td>
+                    <td className="py-2 text-text font-medium break-words">{r.after}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {!pending && (
+      <>
       <div className="grid grid-cols-2 gap-4">
         {!restricted && (
           <div className="col-span-2">
@@ -328,6 +461,8 @@ export function EditContragentModal({ contragent, level, isTop, onSaved }) {
         regNumberLabel={meta?.label ?? 'Рег. номер'}
         regNumberHint={meta ? `${meta.length} цифр` : undefined}
       />
+      </>
+      )}
 
       {error && <div className="text-[13px] text-accent mt-4 leading-snug">{error}</div>}
     </Modal>
