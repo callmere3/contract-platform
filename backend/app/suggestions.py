@@ -37,6 +37,7 @@ from decimal import Decimal, InvalidOperation
 from sqlalchemy.orm import Session
 
 from app.models import CardSuggestion, Contragent, User
+from app.tags import ALL_REQUISITE_FIELDS, REQUISITE_FIELDS_BY_TYPE
 
 logger = logging.getLogger("suggestions")
 
@@ -82,7 +83,7 @@ def _submitted_value(field: str, raw) -> str | None:
 
 
 def current_value(field: str, contragent: Contragent) -> str:
-    """Текущее значение колонки карточки в том же каноничном виде ('' если пусто)."""
+    """Текущее значение поля карточки в том же каноничном виде ('' если пусто)."""
     if field == "reg_number":
         return contragent.reg_number or ""
     if field == "name":
@@ -93,6 +94,10 @@ def current_value(field: str, contragent: Contragent) -> str:
         return _royalty_canon(contragent.royalty_percent) or "" if contragent.royalty_percent is not None else ""
     if field == "contract_date":
         return contragent.contract_date.isoformat() if contragent.contract_date else ""
+    # Реквизиты (адреса, банк, паспорт, vat…) — лежат в JSONB-словаре
+    # contragent.requisites по имени метки (= field).
+    if field in ALL_REQUISITE_FIELDS:
+        return str((contragent.requisites or {}).get(field, "") or "")
     return ""
 
 
@@ -109,13 +114,22 @@ def capture_suggestions(
     """
     try:
         seen: set[tuple[str, str]] = set()
+        # Что захватываем: поля по maps_to (reg_number/royalty/name/номер) +
+        # дата договора (метка c_date) + РЕКВИЗИТЫ карточки (по имени метки,
+        # совпадающему с ключом requisites — тот же принцип, что и
+        # автоподстановка в get_template_fields). Реквизиты этого типа
+        # контрагента добавляем к списку меток как «field == placeholder».
+        capture: list[tuple[str, str]] = []  # (field, placeholder)
         for placeholder, maps_to in fields:
             field = FIELD_BY_MAPS_TO.get(maps_to)
             if field is None and placeholder == CONTRACT_DATE_PLACEHOLDER:
                 field = "contract_date"
-            if field is None:
-                continue
+            if field is not None:
+                capture.append((field, placeholder))
+        for name in REQUISITE_FIELDS_BY_TYPE.get(contragent.type or "", ()):
+            capture.append((name, name))  # поле реквизита = имя метки формы
 
+        for field, placeholder in capture:
             value = _submitted_value(field, data.get(placeholder))
             if value is None or value == current_value(field, contragent):
                 continue

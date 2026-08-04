@@ -28,6 +28,7 @@ app/suggestions.py: capture_suggestions). Админ применяет пред
 нет вовсе, см. update_contragent) — для name это принципиально: имя правим,
 подпись оставляем как в базе.
 """
+import re
 import uuid
 from datetime import date as _date, datetime, timezone
 from decimal import Decimal, InvalidOperation
@@ -43,7 +44,8 @@ from app.db import get_session
 from app.models import CardSuggestion, Contragent, User
 from app.roles import CAN_VIEW_NOTIFICATIONS
 from app.suggestions import current_value
-from app.tags import normalize_reg_number
+from app.tags import ALL_REQUISITE_FIELDS, normalize_reg_number
+from app.template_analysis import DATE_FIELDS, FIELD_META, KNOWN_CHOICES
 
 notifications_router = APIRouter(prefix="/notifications", tags=["notifications"])
 
@@ -54,6 +56,17 @@ FIELD_LABELS = {
     "contract_number": "Номер договора",
     "contract_date": "Дата договора",
 }
+
+
+def _field_label(field: str) -> str:
+    """Подпись поля: сначала свои (FIELD_LABELS), потом реквизиты (FIELD_META)."""
+    if field in FIELD_LABELS:
+        return FIELD_LABELS[field]
+    return FIELD_META.get(field, ("", field, ""))[1]
+
+
+# Реквизиты-даты в JSONB тоже в ISO — показываем ДД.ММ.ГГГГ, как contract_date.
+_ISO_DATE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})")
 
 
 def _evaluate(field: str, value: str, contragent: Contragent, db: Session):
@@ -96,17 +109,36 @@ def _evaluate(field: str, value: str, contragent: Contragent, db: Session):
             return (True, None, _date(int(year_full), int(month), int(day)))
         except ValueError:
             return (False, "некорректная дата", None)
+    # Реквизиты карточки (адреса, банк, паспорт, vat…): coerced — строка для
+    # записи в contragent.requisites[field] (не колонка). vat — из списка
+    # вариантов; даты-реквизиты — проверяем распознаваемость; прочее — свободный
+    # текст (любое непустое годится).
+    if field in ALL_REQUISITE_FIELDS:
+        if field in KNOWN_CHOICES:
+            allowed = {v for v, _ in KNOWN_CHOICES[field]}
+            if value not in allowed:
+                return (False, "недопустимое значение", None)
+        elif field in DATE_FIELDS:
+            if not parse_date(value):
+                return (False, "не распознать дату", None)
+        return (True, None, value)
     return (False, "неизвестное поле", None)
 
 
 def _display(field: str, value: str | None) -> str | None:
-    """Человекочитаемый вид значения: дату ISO -> ДД.ММ.ГГГГ, остальное как есть."""
-    if value and field == "contract_date":
-        try:
-            y, m, d = value.split("-")
-            return f"{d}.{m}.{y}"
-        except ValueError:
-            return value
+    """
+    Человекочитаемый вид значения: даты (contract_date и даты-реквизиты) ISO ->
+    ДД.ММ.ГГГГ; choice-реквизиты (vat) -> подпись варианта; остальное как есть.
+    """
+    if not value:
+        return value
+    if field == "contract_date" or field in DATE_FIELDS:
+        m = _ISO_DATE.match(value)
+        return f"{m.group(3)}.{m.group(2)}.{m.group(1)}" if m else value
+    if field in KNOWN_CHOICES:
+        for v, label in KNOWN_CHOICES[field]:
+            if v == value:
+                return label
     return value
 
 
@@ -140,7 +172,7 @@ def _visible_pending(db: Session) -> list[dict]:
                 "contragent_id": str(s.contragent_id),
                 "contragent_title": c.title,
                 "field": s.field,
-                "field_label": FIELD_LABELS.get(s.field, s.field),
+                "field_label": _field_label(s.field),
                 "value": s.value,
                 "value_display": _display(s.field, s.value),
                 "severity": severity,
@@ -215,7 +247,12 @@ def apply_notification(
     if not ok:
         raise HTTPException(status_code=400, detail=f"Значение не проходит проверку: {error}")
 
-    setattr(c, s.field, coerced)  # имя колонки == s.field (см. CardSuggestion.field)
+    if s.field in ALL_REQUISITE_FIELDS:
+        # Реквизит — в JSONB-словарь contragent.requisites (реассайн словаря,
+        # чтобы SQLAlchemy заметил изменение), а не в колонку.
+        c.requisites = {**(c.requisites or {}), s.field: coerced}
+    else:
+        setattr(c, s.field, coerced)  # имя колонки == s.field (см. CardSuggestion.field)
     s.status, s.resolved_by, s.resolved_at = "applied", current_user.id, now
     try:
         db.commit()
