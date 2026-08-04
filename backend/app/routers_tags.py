@@ -42,8 +42,8 @@ def get_tags() -> dict:
         "reg_number_meta": {
             k: {"label": label, "length": length} for k, (label, length) in REG_NUMBER_META.items()
         },
-        # {"РУ": "ООО", "КЗ": "ТОО"} — фронт фильтрует список типов под
-        # выбранную страну (для КЗ предлагает ТОО, а не ООО), не хардкодя
+        # {"РУ": "ООО", "KZ": "ТОО"} — фронт фильтрует список типов под
+        # выбранную страну (для KZ предлагает ТОО, а не ООО), не хардкодя
         # связку у себя. См. COMPANY_TYPE_BY_COUNTRY в app/tags.py.
         "company_type_by_country": COMPANY_TYPE_BY_COUNTRY,
         # Список ролей для селекта на вкладке "Пользователи" — из того же

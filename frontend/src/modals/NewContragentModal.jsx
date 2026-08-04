@@ -50,7 +50,7 @@ export function NewContragentModal({ level, isTop }) {
   // валидирует бэкенд в normalize_reg_number.
   const meta = regMeta?.[type];
 
-  // Типы под выбранную страну: для КЗ предлагается ТОО, а не ООО (см.
+  // Типы под выбранную страну: для KZ предлагается ТОО, а не ООО (см.
   // typesForCountry). При смене страны сбрасываем тип, если он стал скрыт.
   const visibleTypes = typesForCountry(types, country, companyTypeByCountry);
   function onCountryChange(next) {

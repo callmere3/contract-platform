@@ -95,9 +95,9 @@ export function NewTemplateModal({ folderId, onDone, level, isTop }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
-  // Типы под выбранную страну: для КЗ предлагается ТОО, а не ООО (см.
+  // Типы под выбранную страну: для KZ предлагается ТОО, а не ООО (см.
   // typesForCountry). При смене страны сбрасываем тип, если он стал скрыт —
-  // иначе КЗ-шаблон мог бы уехать с тегом ООО и не найтись при подборе.
+  // иначе KZ-шаблон мог бы уехать с тегом ООО и не найтись при подборе.
   const visibleTypes = typesForCountry(types, country, companyTypeByCountry);
   function onCountryChange(next) {
     setCountry(next);

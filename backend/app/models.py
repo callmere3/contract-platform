@@ -91,7 +91,7 @@ class Template(Base):
 
     # теги для подбора документов через контрагента (этап 4, брейншторм).
     # Nullable: у 8 текущих шаблонов заполняются вручную ПОСЛЕ миграции.
-    country: Mapped[str | None] = mapped_column(String(16))          # 'РУ' | 'КЗ'
+    country: Mapped[str | None] = mapped_column(String(16))          # 'РУ' | 'KZ'
     contragent_type: Mapped[str | None] = mapped_column(String(16))  # 'ФЛ' | 'СГ' | 'ИП' | 'ООО' | 'ТОО'
     contract_family: Mapped[str | None] = mapped_column(String(32))  # 'РОЯЛТИ' | 'АВАНС' | 'АВАНС_ОБЯЗАТЕЛЬСТВО'
 
@@ -209,7 +209,7 @@ class Contragent(Base):
     name: Mapped[str | None] = mapped_column(String(255))   # полное ФИО/название
     title: Mapped[str] = mapped_column(String(255))         # "Иванов И. И. (СГ)" — по нему поиск
 
-    country: Mapped[str | None] = mapped_column(String(16))          # 'РУ' | 'КЗ'
+    country: Mapped[str | None] = mapped_column(String(16))          # 'РУ' | 'KZ'
     type: Mapped[str | None] = mapped_column(String(16))             # 'ФЛ' | 'СГ' | 'ИП' | 'ООО' | 'ТОО'
     contract_family: Mapped[str | None] = mapped_column(String(32))  # 'РОЯЛТИ' | 'АВАНС' | 'АВАНС_ОБЯЗАТЕЛЬСТВО'
 

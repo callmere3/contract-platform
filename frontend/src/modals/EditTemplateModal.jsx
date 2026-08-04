@@ -56,9 +56,9 @@ export function EditTemplateModal({ template, onDone, level, isTop }) {
   const [contragentType, setContragentType] = useState(template.contragent_type ?? '');
   const [contractFamily, setContractFamily] = useState(template.contract_family ?? '');
 
-  // Типы под выбранную страну (для КЗ — ТОО, не ООО). Уже сохранённое
+  // Типы под выбранную страну (для KZ — ТОО, не ООО). Уже сохранённое
   // значение всегда оставляем в списке, даже если оно «чужое» (легаси-шаблон
-  // с ООО+КЗ), — иначе селект молча показал бы не то. При смене страны руками
+  // с ООО+KZ), — иначе селект молча показал бы не то. При смене страны руками
   // сбрасываем ставший скрытым тип.
   const base = typesForCountry(types, country, companyTypeByCountry);
   const visibleTypes =

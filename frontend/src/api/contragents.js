@@ -97,7 +97,7 @@ export function importContragents(file) {
  *
  * Принимает те же фильтры, что и searchContragents: экспорт выгружает ровно
  * то, что показано в "Базе контрагентов" при текущем фильтре (напр. только
- * РУ, или только КЗ+ИП). Без фильтров — вся база.
+ * РУ, или только KZ+ИП). Без фильтров — вся база.
  */
 export async function exportContragents({ q, country, contragentType } = {}) {
   const params = new URLSearchParams();

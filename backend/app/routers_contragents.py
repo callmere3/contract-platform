@@ -365,7 +365,7 @@ def search_contragents(
 @contragents_router.post("", dependencies=[Depends(require_role(*CAN_CREATE_CONTRAGENTS))])
 def create_contragent(
     name: str = Form(...),
-    country: str = Form(...),           # 'РУ' | 'КЗ'
+    country: str = Form(...),           # 'РУ' | 'KZ'
     contragent_type: str = Form(...),   # 'ФЛ' | 'СГ' | 'ИП' | 'ООО' | 'ТОО'
     contract_family: str = Form(...),   # 'РОЯЛТИ' | 'АВАНС' | 'АВАНС_ОБЯЗАТЕЛЬСТВО'
     contract_date: str = Form(...),     # ISO из <input type="date">, напр. '2026-03-15'
@@ -720,7 +720,7 @@ def export_contragents(
     q/country/contragent_type — те же фильтры, что и у поиска
     (_filtered_contragents_query): экспорт выгружает ровно то, что видно в
     "Базе контрагентов" при текущем фильтре (напр. только РУ, или только
-    КЗ+ИП). Без фильтров — вся база. В отличие от поиска, без лимита 200:
+    KZ+ИП). Без фильтров — вся база. В отличие от поиска, без лимита 200:
     выгружаем всё, что попало под фильтр.
 
     Доступно Admin/Director/TopManager (см. CAN_EXPORT_CONTRAGENTS) —
