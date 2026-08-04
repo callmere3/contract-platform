@@ -38,11 +38,14 @@ function stableJson(obj) {
  * без изменений гоняла бы проверку уникальности вхолостую, а пустая
  * строка в необязательном поле молча затирала бы значение.
  *
- * title и contract_number не редактируются и БОЛЬШЕ НЕ ПЕРЕСЧИТЫВАЮТСЯ при
- * правке карточки (решение 31.07.2026, см. update_contragent): все титлы
- * соответствуют базе компании, старые номера собраны по другой формуле —
- * пересчёт разошёлся бы с подписанными документами. Меняются они только
- * через импорт, поэтому полей для них здесь нет.
+ * title НЕ редактируется и НЕ ПЕРЕСЧИТЫВАЕТСЯ при правке карточки (решение
+ * 31.07.2026, см. update_contragent): все титлы соответствуют базе компании,
+ * пересчёт разошёлся бы с подписанными документами. Меняется он только через
+ * импорт, поэтому поля для него здесь нет.
+ *
+ * contract_number, наоборот, ВЫВЕДЕН в форму и редактируется (по просьбе
+ * владельца 04.08.2026, период заполнения базы) — это ручной override: сервер
+ * сохраняет переданное значение как есть, без пересчёта по build_contract_number.
  *
  * nicknames редактируются: непустое значение (через запятую) ПОЛНОСТЬЮ
  * заменяет прежний список, пустое — очищает его (см. update_contragent).
@@ -80,6 +83,11 @@ export function EditContragentModal({ contragent, level, isTop, onSaved }) {
       : String(contragent.royalty_percent),
   );
   const [regNumber, setRegNumber] = useState(contragent.reg_number ?? '');
+  // Номер договора выведен в форму и редактируется (по просьбе владельца
+  // 04.08.2026). Это РУЧНОЙ OVERRIDE: сервер сохраняет переданное значение
+  // как есть, без пересчёта по формуле (title по-прежнему не редактируется —
+  // поля для него в форме нет). Пустая строка = очистить номер.
+  const [contractNumber, setContractNumber] = useState(contragent.contract_number ?? '');
   const [nicknames, setNicknames] = useState((contragent.nicknames ?? []).join(', '));
   // Реквизиты доступны для правки ЛЮБОЙ роли (в т.ч. менеджеру в restricted-
   // режиме) — по решению владельца (CAN_EDIT_REQUISITES). Полная замена словаря.
@@ -145,6 +153,7 @@ export function EditContragentModal({ contragent, level, isTop, onSaved }) {
     put('contract_date', contractDate, contragent.contract_date);
     put('royalty_percent', royalty.trim(), contragent.royalty_percent);
     put('reg_number', regNumber.trim(), contragent.reg_number);
+    put('contract_number', contractNumber.trim(), contragent.contract_number);
 
     // Псевдонимы: нормализуем обе стороны (убираем лишние пробелы/пустые),
     // чтобы правка "IVAN,PETROV" -> "IVAN, PETROV" не считалась изменением.
@@ -211,7 +220,7 @@ export function EditContragentModal({ contragent, level, isTop, onSaved }) {
               label={contragentNameLabel(type, companyTypeByCountry)}
               value={name}
               onChange={(e) => setName(e.target.value)}
-              hint="Титл и номер договора при правке карточки не меняются — они соответствуют базе компании и обновляются только импортом"
+              hint="Титл при правке карточки не пересчитывается — он соответствует базе компании и обновляется только импортом"
             />
           </div>
         )}
@@ -276,6 +285,20 @@ export function EditContragentModal({ contragent, level, isTop, onSaved }) {
 
         {!restricted && (
           <Field label="Роялти %" value={royalty} onChange={(e) => setRoyalty(e.target.value)} />
+        )}
+
+        {/* Номер договора — ручной override (по просьбе владельца 04.08.2026):
+            сервер сохраняет значение как есть, без пересчёта по формуле. */}
+        {!restricted && (
+          <div className="col-span-2">
+            <Field
+              label="Номер договора"
+              value={contractNumber}
+              onChange={(e) => setContractNumber(e.target.value)}
+              placeholder="как в подписанном документе"
+              hint="Сохраняется как есть, без пересчёта; пусто — очистить"
+            />
+          </div>
         )}
 
         {/* Псевдонимы правит любая роль (в т.ч. менеджер в restricted) — по

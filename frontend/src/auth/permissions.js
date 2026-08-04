@@ -53,8 +53,11 @@ const is = (role, ...allowed) => allowed.includes(role);
 export const canCreateContragents = (role) =>
   is(role, ADMIN, DIRECTOR, TOP_MANAGER, TESTER, MANAGER);
 
-// backend: CAN_EDIT_CONTRAGENTS = (ADMIN, DIRECTOR, TOP_MANAGER, TESTER) — карточка и никнеймы
-export const canEditContragents = (role) => is(role, ADMIN, DIRECTOR, TOP_MANAGER, TESTER);
+// backend: CAN_EDIT_CONTRAGENTS = ROLES
+// ⚠️ ВРЕМЕННО (04.08.2026): на период массового заполнения базы менеджерам
+// открыты ВСЕ поля карточки. Вернуть к (ADMIN, DIRECTOR, TOP_MANAGER, TESTER)
+// и синхронно в roles.py, когда менеджеры закончат заполнение.
+export const canEditContragents = (role) => is(role, ADMIN, DIRECTOR, TOP_MANAGER, TESTER, MANAGER);
 
 // backend: CAN_EDIT_CONTRACT_FAMILY = ROLES — тип договора карточки может менять
 // ЛЮБАЯ роль, включая manager (остальные поля — только canEditContragents).
