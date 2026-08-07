@@ -1,4 +1,4 @@
-import { API, apiJson } from './client';
+import { API, apiFetch, apiJson } from './client';
 
 /**
  * Вызовы вкладки «Dista Connect» (сверка нашей базы с выгрузкой Dista Music).
@@ -14,4 +14,19 @@ export function distaReconcile(file, commit = false) {
   fd.append('file', file);
   fd.append('commit', commit ? 'true' : 'false');
   return apiJson(`${API}/dista/reconcile`, { method: 'POST', body: fd });
+}
+
+/** Сводка связки: {total, linked, unlinked}. */
+export function distaStatus() {
+  return apiJson(`${API}/dista/status`);
+}
+
+/**
+ * Выгрузка списка «Нет в Dista» (карточки без dista_id) в .xlsx — имя + артикул.
+ * Возвращает Blob (как exportContragents), поэтому идём через apiFetch.
+ */
+export async function distaOnlyOursExport() {
+  const r = await apiFetch(`${API}/dista/only-ours-export`);
+  if (!r.ok) throw new Error(`Не удалось выгрузить файл (${r.status})`);
+  return r.blob();
 }

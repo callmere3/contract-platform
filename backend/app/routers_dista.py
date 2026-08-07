@@ -32,6 +32,7 @@ import uuid
 
 import openpyxl
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -40,6 +41,9 @@ from app.auth import get_current_user, require_role
 from app.db import get_session
 from app.models import Contragent, User
 from app.roles import CAN_USE_DISTA_SYNC
+from app.tags import build_article
+
+_XLSX_MEDIA = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 dista_router = APIRouter(prefix="/dista", tags=["dista"])
 
@@ -206,3 +210,55 @@ def reconcile(
         "only_ours": only_ours,
         "skipped": skipped,
     }
+
+
+@dista_router.get("/status", dependencies=[Depends(require_role(*CAN_USE_DISTA_SYNC))])
+def status(db: Session = Depends(get_session)) -> dict:
+    """Сводка связки для страницы: сколько карточек связано с Dista, сколько нет."""
+    total = db.query(Contragent).count()
+    linked = db.query(Contragent).filter(Contragent.dista_id.isnot(None)).count()
+    return {"total": total, "linked": linked, "unlinked": total - linked}
+
+
+@dista_router.get("/only-ours-export", dependencies=[Depends(require_role(*CAN_USE_DISTA_SYNC))])
+def only_ours_export(
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> StreamingResponse:
+    """
+    Выгрузка «Нет в Dista» (Этап 2): наши карточки без dista_id — те, кого нужно
+    завести в Dista вручную (импорта туда пока нет). Колонки: Название +
+    Артикул (+ контекст). Артикул вписывают в заметку карточки в Dista — тогда
+    следующая сверка свяжет их по нему автоматически (Этап 3), а не по имени.
+    """
+    rows = (
+        db.query(Contragent)
+        .filter(Contragent.dista_id.is_(None))
+        .order_by(Contragent.title)
+        .all()
+    )
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Нет в Dista"
+    ws.append(["Название", "Артикул", "Страна", "Тип", "Рег. номер"])
+    for c in rows:
+        ws.append([
+            c.title,
+            build_article(c.country, c.reg_number) or "",
+            c.country or "",
+            c.type or "",
+            c.reg_number or "",
+        ])
+
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+
+    log_action(db, current_user, "dista_only_ours_export", meta={"rows": len(rows)})
+
+    return StreamingResponse(
+        buffer,
+        media_type=_XLSX_MEDIA,
+        headers={"Content-Disposition": 'attachment; filename="dista_to_add.xlsx"'},
+    )

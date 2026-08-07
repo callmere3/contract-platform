@@ -1,7 +1,7 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
-import { distaReconcile } from '../api/dista';
+import { distaOnlyOursExport, distaReconcile, distaStatus } from '../api/dista';
 
 /**
  * «Dista Connect» — только admin (canUseDistaSync / CAN_USE_DISTA_SYNC).
@@ -81,6 +81,33 @@ export function DistaConnectPage() {
   const [applied, setApplied] = useState(null); // {linked, created} после commit
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [status, setStatus] = useState(null); // {total, linked, unlinked}
+  const [downloading, setDownloading] = useState(false);
+
+  const loadStatus = () => distaStatus().then(setStatus).catch(() => {});
+  useEffect(() => {
+    loadStatus();
+  }, []);
+
+  async function downloadOnlyOurs() {
+    setDownloading(true);
+    setError('');
+    try {
+      const blob = await distaOnlyOursExport();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'dista_to_add.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setDownloading(false);
+    }
+  }
 
   function onPick(e) {
     setFile(e.target.files?.[0] || null);
@@ -112,6 +139,7 @@ export function DistaConnectPage() {
       const res = await distaReconcile(file, true);
       setApplied(res.applied);
       setPreview(null); // план применён — устарел; для нового цикла жмут «Проверить»
+      loadStatus(); // связанных стало больше — обновить сводку и счётчик «нет в Dista»
     } catch (e) {
       setError(e.message);
     } finally {
@@ -133,7 +161,42 @@ export function DistaConnectPage() {
         не затрагиваются.
       </p>
 
+      {/* Сводка связки + выгрузка «Нет в Dista» (Этап 2). Доступна всегда, без
+          загрузки файла: это standing-список карточек без dista_id — тех, кого
+          нужно завести в Dista вручную. */}
       <Card className="mt-6 p-5">
+        <div className="flex items-center gap-4 flex-wrap">
+          <div className="text-sm text-text-secondary">
+            {status ? (
+              <>
+                Всего карточек <b className="text-text tabular-nums">{status.total}</b> · связано с
+                Dista <b className="text-text tabular-nums">{status.linked}</b> · не связано{' '}
+                <b className="text-text tabular-nums">{status.unlinked}</b>
+              </>
+            ) : (
+              'Загрузка сводки…'
+            )}
+          </div>
+          <div className="ml-auto">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={downloadOnlyOurs}
+              disabled={downloading || (status && status.unlinked === 0)}
+            >
+              {downloading
+                ? 'Готовим файл…'
+                : `Скачать список «Нет в Dista»${status ? ` (${status.unlinked})` : ''}`}
+            </Button>
+          </div>
+        </div>
+        <p className="text-xs text-text-muted mt-2 leading-relaxed">
+          Файл с колонками Название + Артикул — заведите этих контрагентов в Dista вручную и впишите
+          артикул в заметку карточки. Тогда следующая сверка свяжет их автоматически по артикулу.
+        </p>
+      </Card>
+
+      <Card className="mt-4 p-5">
         <div className="flex items-center gap-3 flex-wrap">
           <input
             ref={fileRef}
