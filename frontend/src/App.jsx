@@ -1,7 +1,12 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { ThemeProvider } from './theme/ThemeContext';
 import { AuthProvider, useAuth } from './auth/AuthContext';
-import { canViewUsers, canViewGenerationHistory, canViewNotifications } from './auth/permissions';
+import {
+  canViewUsers,
+  canViewGenerationHistory,
+  canViewNotifications,
+  canUseDistaSync,
+} from './auth/permissions';
 import { TagsProvider } from './api/TagsContext';
 import { ModalProvider } from './modals/ModalProvider';
 import { ModalRoot } from './modals/ModalRoot';
@@ -16,6 +21,7 @@ import { DocFormPage } from './pages/DocFormPage';
 import { UsersPage } from './pages/UsersPage';
 import { GenerationHistoryPage } from './pages/GenerationHistoryPage';
 import { NotificationsPage } from './pages/NotificationsPage';
+import { DistaConnectPage } from './pages/DistaConnectPage';
 
 /**
  * Фронт отдаётся с того же FastAPI по пути /app (см. base в vite.config.js) —
@@ -75,6 +81,13 @@ function AppShell() {
             ) : (
               <Navigate to="/search" replace />
             )
+          }
+        />
+        {/* Dista Connect — только admin, та же защита от прямого захода по адресу. */}
+        <Route
+          path="/dista"
+          element={
+            canUseDistaSync(user?.role) ? <DistaConnectPage /> : <Navigate to="/search" replace />
           }
         />
         {/* Неизвестный адрес — не 404-экран, а тихий возврат на поиск:

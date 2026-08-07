@@ -2,7 +2,12 @@ import { useEffect, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useTheme } from '../theme/ThemeContext';
 import { useAuth } from '../auth/AuthContext';
-import { canViewUsers, canViewGenerationHistory, canViewNotifications } from '../auth/permissions';
+import {
+  canViewUsers,
+  canViewGenerationHistory,
+  canViewNotifications,
+  canUseDistaSync,
+} from '../auth/permissions';
 import { notificationsCount, NOTIFICATIONS_CHANGED_EVENT } from '../api/notifications';
 import { useModal } from '../modals/ModalProvider';
 
@@ -59,6 +64,9 @@ export function Header({ companyName = 'ML Docs' }) {
   }
   if (canViewUsers(user?.role)) {
     tabs = [...tabs, { to: '/users', label: 'Пользователи' }];
+  }
+  if (canUseDistaSync(user?.role)) {
+    tabs = [...tabs, { to: '/dista', label: 'Dista Connect' }];
   }
 
   return (

@@ -29,6 +29,7 @@ from app.auth import ensure_bootstrap_admin
 from app.db import SessionLocal, check_db_connection
 from app.routers_auth import audit_router, auth_router, users_router
 from app.routers_contragents import contragents_router
+from app.routers_dista import dista_router
 from app.routers_generation_history import generation_history_router
 from app.routers_notifications import notifications_router
 from app.routers_tags import tags_router
@@ -43,6 +44,7 @@ app.include_router(audit_router)
 app.include_router(folders_router)
 app.include_router(templates_router)
 app.include_router(contragents_router)
+app.include_router(dista_router)
 app.include_router(tags_router)
 app.include_router(generation_history_router)
 app.include_router(notifications_router)

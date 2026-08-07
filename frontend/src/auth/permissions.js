@@ -73,6 +73,10 @@ export const canDeleteContragents = (role) => is(role, ADMIN);
 // country+reg_number, которые в карточке видны всем; здесь скрываем строку.
 export const canViewArticle = (role) => is(role, ADMIN);
 
+// backend: CAN_USE_DISTA_SYNC = (ADMIN,) — вкладка «Dista Connect» (сверка
+// базы контрагентов с выгрузкой Dista Music). Только admin.
+export const canUseDistaSync = (role) => is(role, ADMIN);
+
 // backend: CAN_EXPORT_CONTRAGENTS = (ADMIN, DIRECTOR) — у top_manager/tester убран
 export const canExport = (role) => is(role, ADMIN, DIRECTOR);
 

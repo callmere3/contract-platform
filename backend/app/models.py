@@ -239,6 +239,14 @@ class Contragent(Base):
     # неполной, дозаполняют позже).
     requisites: Mapped[dict | None] = mapped_column(JSONB)
 
+    # Связка с базой контрагентов Dista Music (вкладка «Dista Connect»):
+    # внутренний id записи в Dista. Наш сервис — мастер данных, а Dista держит
+    # по контрагенту только id + название; dista_id хранит этот id, чтобы
+    # сопоставлять карточки НАПРЯМУЮ по нему, а не по расходящемуся имени.
+    # Связь 1:1 (unique), nullable — у большинства карточек связки ещё нет
+    # (проставляется сверкой). См. routers_dista.py.
+    dista_id: Mapped[str | None] = mapped_column(String(32), unique=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
