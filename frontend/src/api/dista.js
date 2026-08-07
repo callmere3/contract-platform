@@ -16,9 +16,20 @@ export function distaReconcile(file, commit = false) {
   return apiJson(`${API}/dista/reconcile`, { method: 'POST', body: fd });
 }
 
-/** Сводка связки: {total, linked, unlinked}. */
+/** Сводка связки: {total, linked, excluded, unlinked}. */
 export function distaStatus() {
   return apiJson(`${API}/dista/status`);
+}
+
+/** Списки карточек без dista_id: {pending: [...], excluded: [...]}. */
+export function distaOnlyOurs() {
+  return apiJson(`${API}/dista/only-ours`);
+}
+
+/** Пометить карточку «не заводить в Dista» (excluded=true) или вернуть (false). */
+export function distaSetExcluded(id, excluded) {
+  const body = new URLSearchParams({ excluded: excluded ? 'true' : 'false' });
+  return apiJson(`${API}/dista/exclude/${id}`, { method: 'POST', body });
 }
 
 /**

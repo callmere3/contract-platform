@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
-import { distaOnlyOursExport, distaReconcile, distaStatus } from '../api/dista';
+import {
+  distaOnlyOurs,
+  distaOnlyOursExport,
+  distaReconcile,
+  distaSetExcluded,
+  distaStatus,
+} from '../api/dista';
 
 /**
  * «Dista Connect» — только admin (canUseDistaSync / CAN_USE_DISTA_SYNC).
@@ -81,13 +87,33 @@ export function DistaConnectPage() {
   const [applied, setApplied] = useState(null); // {linked, created} после commit
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [status, setStatus] = useState(null); // {total, linked, unlinked}
+  const [status, setStatus] = useState(null); // {total, linked, excluded, unlinked}
+  const [lists, setLists] = useState(null); // {pending: [...], excluded: [...]}
   const [downloading, setDownloading] = useState(false);
+  const [excludeBusyId, setExcludeBusyId] = useState(null);
 
   const loadStatus = () => distaStatus().then(setStatus).catch(() => {});
-  useEffect(() => {
+  const loadLists = () => distaOnlyOurs().then(setLists).catch(() => {});
+  const refresh = () => {
     loadStatus();
+    loadLists();
+  };
+  useEffect(() => {
+    refresh();
   }, []);
+
+  async function toggleExclude(id, excluded) {
+    setExcludeBusyId(id);
+    setError('');
+    try {
+      await distaSetExcluded(id, excluded);
+      refresh();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setExcludeBusyId(null);
+    }
+  }
 
   async function downloadOnlyOurs() {
     setDownloading(true);
@@ -139,7 +165,7 @@ export function DistaConnectPage() {
       const res = await distaReconcile(file, true);
       setApplied(res.applied);
       setPreview(null); // план применён — устарел; для нового цикла жмут «Проверить»
-      loadStatus(); // связанных стало больше — обновить сводку и счётчик «нет в Dista»
+      refresh(); // связанных стало больше — обновить сводку и список «нет в Dista»
     } catch (e) {
       setError(e.message);
     } finally {
@@ -172,6 +198,9 @@ export function DistaConnectPage() {
                 Всего карточек <b className="text-text tabular-nums">{status.total}</b> · связано с
                 Dista <b className="text-text tabular-nums">{status.linked}</b> · не связано{' '}
                 <b className="text-text tabular-nums">{status.unlinked}</b>
+                {status.excluded > 0 && (
+                  <> · исключено <b className="text-text tabular-nums">{status.excluded}</b></>
+                )}
               </>
             ) : (
               'Загрузка сводки…'
@@ -193,7 +222,63 @@ export function DistaConnectPage() {
         <p className="text-xs text-text-muted mt-2 leading-relaxed">
           Файл с колонками Название + Артикул — заведите этих контрагентов в Dista вручную и впишите
           артикул в заметку карточки. Тогда следующая сверка свяжет их автоматически по артикулу.
+          Тестовых контрагентов можно «Исключить» — они уйдут из списка и из файла.
         </p>
+
+        {lists && (
+          <div className="mt-4 border-t border-border pt-3">
+            {lists.pending.length === 0 ? (
+              <div className="text-[13px] text-text-muted">
+                Нечего заводить: все карточки связаны или исключены.
+              </div>
+            ) : (
+              <div className="flex flex-col max-h-[320px] overflow-y-auto">
+                {lists.pending.map((c) => (
+                  <div
+                    key={c.id}
+                    className="flex items-center gap-3 py-1.5 border-b border-border/50 last:border-b-0"
+                  >
+                    <span className="text-[13px] text-text flex-1 truncate">{c.title}</span>
+                    <span className="text-[12px] text-text-muted tabular-nums">{c.article || '—'}</span>
+                    <button
+                      onClick={() => toggleExclude(c.id, true)}
+                      disabled={excludeBusyId === c.id}
+                      className="text-[12px] text-text-secondary hover:text-accent bg-transparent border-none cursor-pointer p-0 font-sans disabled:opacity-40"
+                    >
+                      Исключить
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {lists.excluded.length > 0 && (
+              <details className="mt-3">
+                <summary className="cursor-pointer list-none text-[12px] font-semibold text-text-muted select-none">
+                  Исключённые из Dista · {lists.excluded.length}
+                </summary>
+                <div className="flex flex-col mt-1 max-h-[240px] overflow-y-auto">
+                  {lists.excluded.map((c) => (
+                    <div
+                      key={c.id}
+                      className="flex items-center gap-3 py-1.5 border-b border-border/50 last:border-b-0"
+                    >
+                      <span className="text-[13px] text-text-secondary flex-1 truncate">{c.title}</span>
+                      <span className="text-[12px] text-text-muted tabular-nums">{c.article || '—'}</span>
+                      <button
+                        onClick={() => toggleExclude(c.id, false)}
+                        disabled={excludeBusyId === c.id}
+                        className="text-[12px] text-text-secondary hover:text-text bg-transparent border-none cursor-pointer p-0 font-sans disabled:opacity-40"
+                      >
+                        Вернуть
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )}
+          </div>
+        )}
       </Card>
 
       <Card className="mt-4 p-5">

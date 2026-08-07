@@ -792,6 +792,7 @@ def get_contragent(contragent_id: uuid.UUID, db: Session = Depends(get_session))
         "article": build_article(contragent.country, contragent.reg_number),
         # Связка с Dista (вкладка «Dista Connect»); в карточке видит только админ.
         "dista_id": contragent.dista_id,
+        "dista_excluded": contragent.dista_excluded,
         "nicknames": [n.nickname for n in contragent.nicknames],
         # Реквизиты (адреса, банк, паспорт СГ…) — словарь {имя_метки: значение};
         # пусто -> {} (фронт рисует сворачиваемый блок из /tags-описаний).

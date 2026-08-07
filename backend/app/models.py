@@ -247,6 +247,13 @@ class Contragent(Base):
     # (проставляется сверкой). См. routers_dista.py.
     dista_id: Mapped[str | None] = mapped_column(String(32), unique=True)
 
+    # «Не заводить в Dista»: карточка без dista_id, помеченная этим флагом,
+    # убирается из списка «Нет в Dista» и не считается несвязанной. Для тестовых
+    # контрагентов (обкатка шаблонов), которых в Dista добавлять не нужно.
+    dista_excluded: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=false(), default=False
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

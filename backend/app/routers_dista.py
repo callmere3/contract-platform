@@ -165,10 +165,11 @@ def reconcile(
         else:
             create.append({"dista_id": dista_id, "name": name})
 
+    # Исключённые из Dista (тестовые) в «нет в Dista» не показываем.
     only_ours = [
         {"card_id": str(c.id), "title": c.title}
         for c in contragents
-        if not c.dista_id and _norm(c.title) not in incoming_names
+        if not c.dista_id and not c.dista_excluded and _norm(c.title) not in incoming_names
     ]
 
     applied = None
@@ -214,10 +215,64 @@ def reconcile(
 
 @dista_router.get("/status", dependencies=[Depends(require_role(*CAN_USE_DISTA_SYNC))])
 def status(db: Session = Depends(get_session)) -> dict:
-    """Сводка связки для страницы: сколько карточек связано с Dista, сколько нет."""
+    """
+    Сводка связки для страницы. unlinked — те, кого реально нужно завести в
+    Dista (без dista_id и НЕ исключённые); excluded — помеченные «не заводить».
+    """
     total = db.query(Contragent).count()
     linked = db.query(Contragent).filter(Contragent.dista_id.isnot(None)).count()
-    return {"total": total, "linked": linked, "unlinked": total - linked}
+    excluded = (
+        db.query(Contragent)
+        .filter(Contragent.dista_id.is_(None), Contragent.dista_excluded.is_(True))
+        .count()
+    )
+    return {"total": total, "linked": linked, "excluded": excluded, "unlinked": total - linked - excluded}
+
+
+def _only_ours_row(c: Contragent) -> dict:
+    return {
+        "id": str(c.id),
+        "title": c.title,
+        "article": build_article(c.country, c.reg_number),
+    }
+
+
+@dista_router.get("/only-ours", dependencies=[Depends(require_role(*CAN_USE_DISTA_SYNC))])
+def only_ours(db: Session = Depends(get_session)) -> dict:
+    """
+    Списки карточек без dista_id: pending — нужно завести в Dista; excluded —
+    помеченные «не заводить» (тестовые). Для управления на вкладке Dista Connect.
+    """
+    rows = (
+        db.query(Contragent)
+        .filter(Contragent.dista_id.is_(None))
+        .order_by(Contragent.title)
+        .all()
+    )
+    return {
+        "pending": [_only_ours_row(c) for c in rows if not c.dista_excluded],
+        "excluded": [_only_ours_row(c) for c in rows if c.dista_excluded],
+    }
+
+
+@dista_router.post("/exclude/{contragent_id}", dependencies=[Depends(require_role(*CAN_USE_DISTA_SYNC))])
+def set_excluded(
+    contragent_id: uuid.UUID,
+    excluded: bool = Form(...),
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Пометить карточку «не заводить в Dista» (excluded=true) или вернуть (false)."""
+    c = db.get(Contragent, contragent_id)
+    if c is None:
+        raise HTTPException(status_code=404, detail="Контрагент не найден")
+    c.dista_excluded = excluded
+    db.commit()
+    log_action(
+        db, current_user, "dista_set_excluded",
+        entity_type="contragent", entity_id=contragent_id, meta={"excluded": excluded},
+    )
+    return {"id": str(contragent_id), "dista_excluded": excluded}
 
 
 @dista_router.get("/only-ours-export", dependencies=[Depends(require_role(*CAN_USE_DISTA_SYNC))])
@@ -226,14 +281,14 @@ def only_ours_export(
     current_user: User = Depends(get_current_user),
 ) -> StreamingResponse:
     """
-    Выгрузка «Нет в Dista» (Этап 2): наши карточки без dista_id — те, кого нужно
-    завести в Dista вручную (импорта туда пока нет). Колонки: Название +
-    Артикул (+ контекст). Артикул вписывают в заметку карточки в Dista — тогда
-    следующая сверка свяжет их по нему автоматически (Этап 3), а не по имени.
+    Выгрузка «Нет в Dista» (Этап 2): наши карточки без dista_id и НЕ исключённые —
+    те, кого нужно завести в Dista вручную (импорта туда пока нет). Колонки:
+    Название + Артикул (+ контекст). Артикул вписывают в заметку карточки в
+    Dista — тогда следующая сверка свяжет их по нему автоматически (Этап 3).
     """
     rows = (
         db.query(Contragent)
-        .filter(Contragent.dista_id.is_(None))
+        .filter(Contragent.dista_id.is_(None), Contragent.dista_excluded.is_(False))
         .order_by(Contragent.title)
         .all()
     )

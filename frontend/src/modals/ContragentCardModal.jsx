@@ -166,7 +166,7 @@ export function ContragentCardModal({ contragentId, level, isTop, onChanged }) {
               <tr>
                 <td className="text-text-secondary py-1.5 whitespace-nowrap pr-4">Dista ID</td>
                 <td className="text-right py-1.5 text-text tabular-nums">
-                  {data.dista_id || '—'}
+                  {data.dista_id || (data.dista_excluded ? 'исключён из Dista' : '—')}
                 </td>
               </tr>
             )}
