@@ -3,12 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import {
+  deleteGenerationEntry,
   getGenerationEntry,
   listGenerationHistory,
   recreateGeneratedDocument,
 } from '../api/generationHistory';
 import { useAuth } from '../auth/AuthContext';
-import { canViewAllGenerationHistory } from '../auth/permissions';
+import { canDeleteGenerationHistory, canViewAllGenerationHistory } from '../auth/permissions';
 
 const FILTER_TYPES = [
   { value: 'contragent', label: 'Контрагент' },
@@ -19,9 +20,10 @@ const FILTER_TYPES = [
 ];
 
 /**
- * "История генерации" — Admin/Director (вся история) и Top-manager (только
- * СВОИ документы, ограничение серверное по user_id — см. app/roles.py:
- * CAN_VIEW_GENERATION_HISTORY / SEES_ALL_GENERATION_HISTORY). Показывает факт
+ * "История генерации" — вкладка у ВСЕХ ролей: Admin/Director видят всю историю,
+ * остальные (top_manager/tester/manager) — только СВОИ документы (ограничение
+ * серверное по user_id — см. app/roles.py: CAN_VIEW_GENERATION_HISTORY /
+ * SEES_ALL_GENERATION_HISTORY). Удаление записей — только Admin. Показывает факт
  * генерации: контрагент, псевдоним, шаблон, кто сгенерировал, когда — и
  * позволяет посмотреть сам документ (этап 2): он нигде не хранится, а
  * воссоздаётся на лету по сохранённому payload формы через тот же рендер, что
@@ -36,6 +38,7 @@ export function GenerationHistoryPage() {
   const navigate = useNavigate();
   const { role } = useAuth();
   const seesAll = canViewAllGenerationHistory(role);
+  const canDelete = canDeleteGenerationHistory(role);
   const filterTypes = FILTER_TYPES.filter((t) => seesAll || !t.allOnly);
 
   const [entries, setEntries] = useState([]);
@@ -46,6 +49,9 @@ export function GenerationHistoryPage() {
   // `${entryId}:${format}` — какая именно кнопка сейчас скачивает, чтобы
   // не блокировать всю строку из-за соседней кнопки docx/pdf.
   const [downloading, setDownloading] = useState(null);
+  // id записи, для которой показываем подтверждение удаления (админ). Удаление
+  // необратимо, поэтому в два клика: ✕ → «Удалить / Отмена».
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
 
   useEffect(() => {
     setLoading(true);
@@ -97,6 +103,20 @@ export function GenerationHistoryPage() {
    * Пришло на замену предпросмотру в браузере: тот конвертировал в PDF на
    * каждый клик (долго), а рядом и так есть кнопки скачивания.
    */
+  async function removeEntry(id) {
+    setDownloading(`${id}:del`);
+    setError('');
+    try {
+      await deleteGenerationEntry(id);
+      setEntries((list) => list.filter((x) => x.id !== id));
+      setConfirmDeleteId(null);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setDownloading(null);
+    }
+  }
+
   async function openForm(entry) {
     setDownloading(`${entry.id}:form`);
     setError('');
@@ -208,6 +228,37 @@ export function GenerationHistoryPage() {
                   >
                     {downloading === `${e.id}:pdf` ? '…' : 'pdf'}
                   </Button>
+                  {/* Удаление записи — только админ, чистка тестовых. В два
+                      клика: ✕ раскрывает подтверждение «Удалить / Отмена». */}
+                  {canDelete &&
+                    (confirmDeleteId === e.id ? (
+                      <>
+                        <Button
+                          variant="accent"
+                          size="sm"
+                          disabled={downloading === `${e.id}:del`}
+                          onClick={() => removeEntry(e.id)}
+                        >
+                          {downloading === `${e.id}:del` ? '…' : 'Удалить'}
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => setConfirmDeleteId(null)}
+                        >
+                          Отмена
+                        </Button>
+                      </>
+                    ) : (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        title="Удалить запись из истории"
+                        onClick={() => setConfirmDeleteId(e.id)}
+                      >
+                        ✕
+                      </Button>
+                    ))}
                 </div>
               </div>
             </div>

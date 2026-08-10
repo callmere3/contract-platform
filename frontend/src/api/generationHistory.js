@@ -30,6 +30,11 @@ export function getGenerationEntry(entryId) {
   return apiJson(`${API}/generation-history/${entryId}`);
 }
 
+/** Удалить запись истории генерации (только admin — чистка тестовых). */
+export function deleteGenerationEntry(entryId) {
+  return apiJson(`${API}/generation-history/${entryId}`, { method: 'DELETE' });
+}
+
 /**
  * Пересоздать документ по сохранённому payload (этап 2). Файл нигде не
  * хранился — это рендер "на лету", такой же, каким был оригинал, но

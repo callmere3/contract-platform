@@ -24,10 +24,15 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from app.audit import log_action
 from app.auth import get_current_user, require_role
 from app.db import get_session
 from app.models import GeneratedDocument, Template, User
-from app.roles import CAN_VIEW_GENERATION_HISTORY, SEES_ALL_GENERATION_HISTORY
+from app.roles import (
+    CAN_DELETE_GENERATION_HISTORY,
+    CAN_VIEW_GENERATION_HISTORY,
+    SEES_ALL_GENERATION_HISTORY,
+)
 from app.routers_templates import build_document_response
 
 generation_history_router = APIRouter(prefix="/generation-history", tags=["generation-history"])
@@ -184,3 +189,31 @@ def recreate_generated_document(
     # если карточку с тех пор переименовали или удалили (тогда titl остался
     # только здесь, contragent_id обнулился по ondelete=SET NULL).
     return build_document_response(template, entry.payload, format, entry.contragent_title)
+
+
+@generation_history_router.delete(
+    "/{entry_id}", dependencies=[Depends(require_role(*CAN_DELETE_GENERATION_HISTORY))]
+)
+def delete_generation_entry(
+    entry_id: uuid.UUID,
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """
+    Удалить запись истории генерации — только Admin (чистка тестовых записей).
+    Физическое удаление: сама запись — лишь снимок факта генерации (payload +
+    метаданные), готовых файлов нигде не хранится (см. GeneratedDocument), так
+    что терять нечего. Само действие фиксируется в audit_log.
+    """
+    entry = db.get(GeneratedDocument, entry_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Запись в истории не найдена")
+    # Снимаем поля ДО удаления: после commit объект expired, обращаться нельзя.
+    meta = {"template_name": entry.template_name, "contragent_title": entry.contragent_title}
+    db.delete(entry)
+    db.commit()
+    log_action(
+        db, current_user, "generation_history.delete",
+        entity_type="generated_document", entity_id=entry_id, meta=meta,
+    )
+    return {"id": str(entry_id), "deleted": True}

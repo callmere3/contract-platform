@@ -52,16 +52,19 @@ ANY_ROLE = ROLES                              # любой залогиненн�
 CAN_EXPORT_CONTRAGENTS = (ADMIN, DIRECTOR)  # экспорт в Excel (у top_manager/tester убран)
 CAN_VIEW_AUDIT_LOG = (ADMIN, DIRECTOR)                    # просмотр audit_log
 # Доступ к вкладке "История генерации" (эндпоинты /generation-history).
-# TOP_MANAGER сюда добавлен, но видит ТОЛЬКО свои документы — сервер жёстко
-# ограничивает выдачу его user_id (см. SEES_ALL_GENERATION_HISTORY ниже и
-# routers_generation_history.py). Разница именно в объёме: доступ к вкладке
-# есть, объём — свой.
-CAN_VIEW_GENERATION_HISTORY = (ADMIN, DIRECTOR, TOP_MANAGER)
+# Вкладка есть у ВСЕХ ролей (по просьбе владельца 08.08.2026): каждый должен
+# видеть СВОЮ генерацию. Разница только в ОБЪЁМЕ: admin/director видят всё
+# (SEES_ALL_GENERATION_HISTORY), остальные (top_manager/tester/manager) — только
+# свои документы, сервер жёстко ограничивает выдачу их user_id (см. ниже и
+# routers_generation_history.py). Поэтому здесь = ROLES, а не перечисление.
+CAN_VIEW_GENERATION_HISTORY = ROLES
 # Кто видит историю ВСЕХ пользователей. Остальные из CAN_VIEW_GENERATION_HISTORY
-# (сейчас только TOP_MANAGER) видят и пересоздают лишь свои записи. Ограничение
-# серверное, а не UX: без него top_manager по filter_type=user или прямым
+# (top_manager/tester/manager) видят и пересоздают лишь свои записи. Ограничение
+# серверное, а не UX: без него любой из них по filter_type=user или прямым
 # entry_id мог бы дотянуться до чужих документов.
 SEES_ALL_GENERATION_HISTORY = (ADMIN, DIRECTOR)
+# Удаление записей истории генерации — только Admin (чистка тестовых записей).
+CAN_DELETE_GENERATION_HISTORY = (ADMIN,)
 CAN_IMPORT = (ADMIN,)               # импорт контрагентов — только Admin
 # Вкладка "Пользователи" разведена на два права:
 #   VIEW   — видеть список пользователей и их роли (Admin + Director);

@@ -103,15 +103,20 @@ export const canViewNotifications = (role) => is(role, ADMIN);
 // (у director она видна, но блок импорта внутри скрыт — см. canImport).
 export const canOpenImportExport = (role) => canExport(role) || canImport(role);
 
-// backend: CAN_VIEW_GENERATION_HISTORY = (ADMIN, DIRECTOR, TOP_MANAGER) — доступ
-// к вкладке "История генерации". TOP_MANAGER видит ТОЛЬКО свои документы (сервер
-// ограничивает выдачу его user_id, см. routers_generation_history.py).
-export const canViewGenerationHistory = (role) => is(role, ADMIN, DIRECTOR, TOP_MANAGER);
+// backend: CAN_VIEW_GENERATION_HISTORY = ROLES — вкладка "История генерации" у
+// ВСЕХ ролей, каждый видит СВОЮ генерацию. admin/director — всё, остальные
+// (top_manager/tester/manager) только свои (сервер ограничивает по user_id).
+export const canViewGenerationHistory = (role) =>
+  is(role, ADMIN, DIRECTOR, TOP_MANAGER, TESTER, MANAGER);
 
 // backend: SEES_ALL_GENERATION_HISTORY = (ADMIN, DIRECTOR) — видит историю ВСЕХ.
-// Остальные (top_manager) видят лишь свою — поэтому им бесполезен фильтр по
-// пользователю (он всегда они сами), UI его для них скрывает.
+// Остальные видят лишь свою — поэтому им бесполезен фильтр по пользователю
+// (он всегда они сами), UI его для них скрывает.
 export const canViewAllGenerationHistory = (role) => is(role, ADMIN, DIRECTOR);
+
+// backend: CAN_DELETE_GENERATION_HISTORY = (ADMIN,) — удаление записей истории
+// генерации (чистка тестовых). Кнопка удаления в строке — только админу.
+export const canDeleteGenerationHistory = (role) => is(role, ADMIN);
 
 // Кнопка "Заполнить тестовыми" в форме генерации.
 //
