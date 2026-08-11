@@ -42,7 +42,6 @@ export function NewContragentModal({ level, isTop }) {
   const setReq = (name, value) => setRequisites((r) => ({ ...r, [name]: value }));
 
   const [duplicates, setDuplicates] = useState(null); // {exact: bool, titles: []}
-  const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
   // Подпись и длина рег. номера зависят от типа: ИНН 12 / ОГРНИП 15 / ОГРН 13.
@@ -110,11 +109,10 @@ export function NewContragentModal({ level, isTop }) {
   async function submit() {
     const problem = validate();
     if (problem) {
-      setError(problem);
+      openModal('alert', { title: 'Проверьте форму', message: problem });
       return;
     }
     setBusy(true);
-    setError('');
     try {
       // Свежая проверка дубля по ФИО прямо перед созданием — на случай, если
       // оператор кликнул "Создать" раньше, чем отработал дебаунс живой
@@ -136,7 +134,10 @@ export function NewContragentModal({ level, isTop }) {
         /* сеть недоступна — не блокируем создание из-за сбоя самой проверки */
       }
       if (exact) {
-        setError(`Контрагент с таким именем/названием уже существует: «${exact.title}».`);
+        openModal('alert', {
+          title: 'Контрагент уже существует',
+          message: `Контрагент с таким именем/названием уже существует: «${exact.title}».`,
+        });
         return; // finally ниже вернёт busy=false
       }
 
@@ -157,7 +158,7 @@ export function NewContragentModal({ level, isTop }) {
       // потом искать заново, чтобы сделать документ (как в боевой версии).
       openModal('contragentDocs', { contragentId: created.id });
     } catch (e) {
-      setError(e.message);
+      openModal('alert', { title: 'Не удалось создать контрагента', message: e.message });
     } finally {
       setBusy(false);
     }
@@ -288,7 +289,6 @@ export function NewContragentModal({ level, isTop }) {
         }
       />
 
-      {error && <div className="text-[13px] text-accent mt-4 leading-snug">{error}</div>}
     </Modal>
   );
 }

@@ -9,8 +9,10 @@ import { EditTemplateModal } from './EditTemplateModal';
 import { NewUserModal } from './NewUserModal';
 import { ChangePasswordModal } from './ChangePasswordModal';
 import { ConfirmExitDraftModal } from './ConfirmExitDraftModal';
+import { AlertModal } from './AlertModal';
 
 const REGISTRY = {
+  alert: AlertModal,
   newContragent: NewContragentModal,
   editContragent: EditContragentModal,
   contragentCard: ContragentCardModal,

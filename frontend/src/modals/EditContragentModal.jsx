@@ -56,7 +56,7 @@ function stableJson(obj) {
  * подсветку неполной карточки), а не ждать перезагрузки/смены вкладки.
  */
 export function EditContragentModal({ contragent, level, isTop, onSaved }) {
-  const { closeModal } = useModal();
+  const { closeModal, openModal } = useModal();
   const { user: me } = useAuth();
   const {
     countries,
@@ -94,7 +94,6 @@ export function EditContragentModal({ contragent, level, isTop, onSaved }) {
   // режиме) — по решению владельца (CAN_EDIT_REQUISITES). Полная замена словаря.
   const [requisites, setRequisites] = useState({ ...(contragent.requisites ?? {}) });
   const setReq = (name, value) => setRequisites((r) => ({ ...r, [name]: value }));
-  const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   // Шаг подтверждения: null — показываем форму; иначе {fields, rows} —
   // экран «было → стало» перед сохранением (по просьбе владельца 04.08.2026,
@@ -253,7 +252,7 @@ export function EditContragentModal({ contragent, level, isTop, onSaved }) {
   function review() {
     const problem = validate();
     if (problem) {
-      setError(problem);
+      openModal('alert', { title: 'Проверьте форму', message: problem });
       return;
     }
     const fields = changedFields();
@@ -261,14 +260,12 @@ export function EditContragentModal({ contragent, level, isTop, onSaved }) {
       closeModal(); // менять нечего — просто закрыть
       return;
     }
-    setError('');
     setPending({ fields, rows: buildDiffRows(fields) });
   }
 
   /** «Подтвердить» на экране дифа — фактическое сохранение. */
   async function doSave() {
     setBusy(true);
-    setError('');
     try {
       await updateContragent(contragent.id, pending.fields);
       onSaved?.(); // обновить список сразу — сбросить красную подсветку и т.п.
@@ -278,8 +275,9 @@ export function EditContragentModal({ contragent, level, isTop, onSaved }) {
       closeModal();
       closeModal();
     } catch (e) {
-      // Ошибка (напр. конфликт рег. номера) — вернуть к форме, чтобы поправить.
-      setError(e.message);
+      // Ошибка (напр. конфликт рег. номера) — показываем заметным окном и
+      // возвращаем к форме, чтобы поправить.
+      openModal('alert', { title: 'Не удалось сохранить', message: e.message });
       setBusy(false);
       setPending(null);
     }
@@ -466,8 +464,6 @@ export function EditContragentModal({ contragent, level, isTop, onSaved }) {
       />
       </>
       )}
-
-      {error && <div className="text-[13px] text-accent mt-4 leading-snug">{error}</div>}
     </Modal>
   );
 }
