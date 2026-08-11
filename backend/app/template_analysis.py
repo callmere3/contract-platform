@@ -393,6 +393,45 @@ def field_meta_for(
         return (group, "Название компании", "без «ООО»/«ТОО» и кавычек — их добавит шаблон")
     return (group, label, hint)
 
+
+# Вычисляемые метки (…_text — пропись из числа, name_short — из ФИО, а в
+# комбинированном Договоре contract/date собираются из даты договора), которых
+# НЕТ в FIELD_META. Для сообщений оператору показываем подпись их ИСХОДНОГО
+# поля, которое он реально заполняет: «advance_text» → «Сумма аванса, ₽»,
+# «contract» → «Дата договора» (номер соберётся из неё). В Приложении/Акте
+# contract/date — самостоятельные поля со своими подписями
+# (LINKED_DOC_FIELD_META), туда фолбэк не доходит: field_meta_for уже вернёт
+# нормальную подпись, а не сырое имя.
+COMPUTED_LABEL_SOURCE = {
+    "royalty_text": "royalty",
+    "advance_text": "advance",
+    "smm_text": "smm",
+    "penalty_text": "penalty",
+    "count_text": "count",
+    "advance_days_text": "advance_days",
+    "vat_text": "vat",
+    "name_short": "name",
+    "name_short_table": "name",
+    "contract": "c_date",
+    "date": "c_date",
+}
+
+
+def field_label_for(
+    name: str, doc_type: str | None = None, contragent_type: str | None = None
+) -> str:
+    """
+    Человеческая подпись метки для сообщений оператору (напр. «не заполнены
+    обязательные поля: Номер договора, Дата договора»). Как field_meta_for, но
+    для вычисляемых меток без собственной записи в FIELD_META подставляет
+    подпись их исходного поля (COMPUTED_LABEL_SOURCE) — чтобы менеджер видел
+    понятное название, а не сырое имя метки вроде «advance_text» или «contract».
+    """
+    label = field_meta_for(name, doc_type, contragent_type)[1]
+    if label == name and name in COMPUTED_LABEL_SOURCE:
+        label = field_meta_for(COMPUTED_LABEL_SOURCE[name], doc_type, contragent_type)[1]
+    return label
+
 # Подписи к колонкам таблиц
 ITEM_FIELD_LABELS = {
     "title":         "Название",

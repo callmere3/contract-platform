@@ -71,7 +71,7 @@ from app.tags import (
     normalize_optional_tag,
     validate_reg_number_mapping,
 )
-from app.template_analysis import analyze_template, fields_to_dict
+from app.template_analysis import analyze_template, field_label_for, fields_to_dict
 
 folders_router = APIRouter(prefix="/folders", tags=["folders"])
 templates_router = APIRouter(prefix="/templates", tags=["templates"])
@@ -818,9 +818,21 @@ def build_document_response(
         if m not in optional
     ]
     if missing:
+        # Переводим сырые имена меток (contract, c_date, inn…) в человеческие
+        # подписи, которые оператор видит в форме — иначе менеджер получал
+        # «не хватает contract, c_date» вместо «Номер договора, Дата договора».
+        # Источник подписей тот же, что и у формы (field_meta_for →
+        # FIELD_META/LINKED_DOC_FIELD_META), поэтому текст совпадает с полем.
+        # Дедуп по подписи: разные метки (напр. contract → c_date) могут дать
+        # одну и ту же подпись, дважды её показывать не нужно.
+        labels: list[str] = []
+        for m in missing:
+            label = field_label_for(m, template.doc_type, template.contragent_type)
+            if label not in labels:
+                labels.append(label)
         raise HTTPException(
             status_code=400,
-            detail=f"Не заполнены обязательные поля: {', '.join(missing)}",
+            detail=f"Не заполнены обязательные поля: {', '.join(labels)}",
         )
 
     result_bytes = render_document(docx_bytes, context)
