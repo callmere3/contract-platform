@@ -836,13 +836,21 @@ export function DocFormPage() {
                         onChange={(v) => setValue(f.name, v)}
                         // Номер договора при генерации по контрагенту берётся
                         // из карточки и не редактируется — визуально обычный
-                        // input (см. design-tokens §6.1). f.locked — то же
-                        // самое для c_date, когда дата договора уже
-                        // зафиксирована в карточке (см. get_template_fields
-                        // на бэкенде) — там уже готов и подставлен hint с
-                        // объяснением, почему поле нередактируемо.
+                        // input (см. design-tokens §6.1). НО блокируем его,
+                        // ТОЛЬКО если номер в карточке действительно есть
+                        // (пришёл непустым default'ом): если карточка без номера
+                        // — оставляем поле редактируемым, чтобы оператор ввёл его
+                        // прямо в форме. Смотрим на f.default (значение из
+                        // карточки), а НЕ на текущее values[...] — иначе поле
+                        // заблокировалось бы на первом же введённом символе.
+                        // f.locked — то же самое для c_date, когда дата договора
+                        // уже зафиксирована в карточке (см. get_template_fields
+                        // на бэкенде) — там уже подставлен hint с объяснением.
                         readOnly={
-                          (f.name === 'contract' && f.maps_to === 'contragent.contract_number' && Boolean(contragentId)) ||
+                          (f.name === 'contract' &&
+                            f.maps_to === 'contragent.contract_number' &&
+                            Boolean(contragentId) &&
+                            Boolean((f.default ?? '').toString().trim())) ||
                           Boolean(f.locked)
                         }
                       />

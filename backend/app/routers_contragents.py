@@ -49,6 +49,7 @@ from app.roles import (
     ADMIN,
     CAN_CREATE_CONTRAGENTS,
     CAN_EDIT_CONTRACT_FAMILY,
+    CAN_EDIT_CONTRACT_NUMBER,
     CAN_EDIT_CONTRAGENTS,
     CAN_EDIT_NICKNAMES,
     CAN_EDIT_REG_NUMBER,
@@ -855,22 +856,24 @@ def update_contragent(
         raise HTTPException(status_code=404, detail="Контрагент не найден")
 
     # Роли вне CAN_EDIT_CONTRAGENTS (сейчас — manager) правят тип договора,
-    # реквизиты, рег. номер И псевдонимы (все открыты всем ролям по решению
-    # владельца — CAN_EDIT_CONTRACT_FAMILY / CAN_EDIT_REQUISITES /
-    # CAN_EDIT_REG_NUMBER / CAN_EDIT_NICKNAMES). Любое ДРУГОЕ переданное поле —
-    # 403. Это серверная защита, не только UI: модалка менеджеру показывает
-    # ограниченный набор, но запрос можно подделать. contract_family /
-    # requisites / reg_number / nicknames в список ниже НЕ входят.
+    # номер договора, реквизиты, рег. номер И псевдонимы (все открыты всем ролям
+    # по решению владельца — CAN_EDIT_CONTRACT_FAMILY / CAN_EDIT_CONTRACT_NUMBER /
+    # CAN_EDIT_REQUISITES / CAN_EDIT_REG_NUMBER / CAN_EDIT_NICKNAMES). Любое
+    # ДРУГОЕ переданное поле — 403. Это серверная защита, не только UI: модалка
+    # менеджеру показывает ограниченный набор, но запрос можно подделать.
+    # contract_family / contract_number / requisites / reg_number / nicknames
+    # в список `others` ниже НЕ входят.
     if current_user.role not in CAN_EDIT_CONTRAGENTS:
         others = (
-            title, name, country, contragent_type, contract_date,
-            contract_number, royalty_percent,
+            title, name, country, contragent_type, contract_date, royalty_percent,
         )
         if any(v is not None for v in others):
             raise HTTPException(
                 status_code=403,
-                detail="Вам доступно изменение только типа договора, реквизитов, рег. номера и псевдонимов контрагента",
+                detail="Вам доступно изменение только типа договора, номера договора, реквизитов, рег. номера и псевдонимов контрагента",
             )
+        if contract_number is not None and current_user.role not in CAN_EDIT_CONTRACT_NUMBER:
+            raise HTTPException(status_code=403, detail="Правка номера договора недоступна")
         if requisites is not None and current_user.role not in CAN_EDIT_REQUISITES:
             raise HTTPException(status_code=403, detail="Правка реквизитов недоступна")
         if reg_number is not None and current_user.role not in CAN_EDIT_REG_NUMBER:

@@ -139,6 +139,10 @@ export function EditContragentModal({ contragent, level, isTop, onSaved }) {
       if ((regNumber ?? '').trim() !== (contragent.reg_number ?? '')) {
         out.reg_number = regNumber.trim();
       }
+      // Номер договора менеджер тоже правит (CAN_EDIT_CONTRACT_NUMBER = ROLES).
+      if ((contractNumber ?? '').trim() !== (contragent.contract_number ?? '')) {
+        out.contract_number = contractNumber.trim();
+      }
       // Псевдонимы менеджер тоже правит (по просьбе владельца). Нормализуем обе
       // стороны так же, как в полном режиме (см. ниже).
       const nickInput = nicknames.split(',').map((n) => n.trim()).filter(Boolean).join(', ');
@@ -420,19 +424,18 @@ export function EditContragentModal({ contragent, level, isTop, onSaved }) {
           <Field label="Роялти %" value={royalty} onChange={(e) => setRoyalty(e.target.value)} />
         )}
 
-        {/* Номер договора — ручной override (по просьбе владельца 04.08.2026):
-            сервер сохраняет значение как есть, без пересчёта по формуле. */}
-        {!restricted && (
-          <div className="col-span-2">
-            <Field
-              label="Номер договора"
-              value={contractNumber}
-              onChange={(e) => setContractNumber(e.target.value)}
-              placeholder="как в подписанном документе"
-              hint="Сохраняется как есть, без пересчёта; пусто — очистить"
-            />
-          </div>
-        )}
+        {/* Номер договора — ручной override, правит любая роль (в т.ч. менеджер
+            в restricted-режиме, CAN_EDIT_CONTRACT_NUMBER = ROLES): сервер
+            сохраняет значение как есть, без пересчёта по формуле. */}
+        <div className="col-span-2">
+          <Field
+            label="Номер договора"
+            value={contractNumber}
+            onChange={(e) => setContractNumber(e.target.value)}
+            placeholder="как в подписанном документе"
+            hint="Сохраняется как есть, без пересчёта; пусто — очистить"
+          />
+        </div>
 
         {/* Псевдонимы правит любая роль (в т.ч. менеджер в restricted) — по
             просьбе владельца. В restricted-режиме это поле идёт после select
