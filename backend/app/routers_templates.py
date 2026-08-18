@@ -954,26 +954,30 @@ def generate_document(
         template, data, format, contragent_title, country=contragent_country
     )
 
-    # nickname — тот же ключ формы, что и в build_context()/optional-полях
-    # выше: конкретный псевдоним, для которого сгенерирован ИМЕННО этот
-    # документ (у контрагента их может быть несколько, см. GeneratedDocument).
-    nickname = data.get("nickname") or None
+    # Генерации с АДМИНСКОГО аккаунта — тестовые (решение владельца 11.08.2026):
+    # не пишем их в историю генерации и не поднимаем предложения дозаполнить
+    # карточку («Уведомления»). Всё остальное (рендер, скачивание) — как обычно.
+    if current_user.role != ADMIN:
+        # nickname — тот же ключ формы, что и в build_context()/optional-полях
+        # выше: конкретный псевдоним, для которого сгенерирован ИМЕННО этот
+        # документ (у контрагента их может быть несколько, см. GeneratedDocument).
+        nickname = data.get("nickname") or None
 
-    generation_id = log_generation(
-        db, current_user, template.id, template.name, format, data,
-        contragent_id=contragent_id, contragent_title=contragent_title, nickname=nickname,
-    )
-
-    # Захват предложений дозаполнить карточку — только когда генерация привязана
-    # к контрагенту (иначе некуда предлагать). Значения, что менеджер вписал в
-    # форму и которых нет/иначе в карточке, поднимаются во вкладку "Уведомления"
-    # для админа (см. app/suggestions.py). Не должен ронять генерацию — внутри
-    # свой try/except, документ уже собран выше.
-    if contragent is not None:
-        capture_suggestions(
-            db, current_user, contragent, data,
-            [(f.placeholder, f.maps_to) for f in template.fields],
-            generation_id,
+        generation_id = log_generation(
+            db, current_user, template.id, template.name, format, data,
+            contragent_id=contragent_id, contragent_title=contragent_title, nickname=nickname,
         )
+
+        # Захват предложений дозаполнить карточку — только когда генерация привязана
+        # к контрагенту (иначе некуда предлагать). Значения, что менеджер вписал в
+        # форму и которых нет/иначе в карточке, поднимаются во вкладку "Уведомления"
+        # для админа (см. app/suggestions.py). Не должен ронять генерацию — внутри
+        # свой try/except, документ уже собран выше.
+        if contragent is not None:
+            capture_suggestions(
+                db, current_user, contragent, data,
+                [(f.placeholder, f.maps_to) for f in template.fields],
+                generation_id,
+            )
 
     return response
