@@ -38,14 +38,12 @@ function stableJson(obj) {
  * без изменений гоняла бы проверку уникальности вхолостую, а пустая
  * строка в необязательном поле молча затирала бы значение.
  *
- * title НЕ редактируется и НЕ ПЕРЕСЧИТЫВАЕТСЯ при правке карточки (решение
- * 31.07.2026, см. update_contragent): все титлы соответствуют базе компании,
- * пересчёт разошёлся бы с подписанными документами. Меняется он только через
- * импорт, поэтому поля для него здесь нет.
+ * title ВЫВЕДЕН в форму и редактируется (11.08.2026): уникальный ключ карточки
+ * теперь dista_id, а не титл, поэтому титл — обычное правимое поле (ручной
+ * override, сервер сохраняет как есть, НЕ пересчитывает). Пустым быть не может.
  *
- * contract_number, наоборот, ВЫВЕДЕН в форму и редактируется (по просьбе
- * владельца 04.08.2026, период заполнения базы) — это ручной override: сервер
- * сохраняет переданное значение как есть, без пересчёта по build_contract_number.
+ * contract_number так же ВЫВЕДЕН в форму и редактируется (ручной override,
+ * сервер сохраняет как есть, без пересчёта по build_contract_number).
  *
  * nicknames редактируются: непустое значение (через запятую) ПОЛНОСТЬЮ
  * заменяет прежний список, пустое — очищает его (см. update_contragent).
@@ -73,6 +71,10 @@ export function EditContragentModal({ contragent, level, isTop, onSaved }) {
   // Полноправные редакторы (admin/director/top_manager/tester) правят всё.
   const restricted = !canEditContragents(me?.role);
 
+  // Титл теперь редактируется в форме (11.08.2026): уникальный ключ —
+  // dista_id, а не титл, поэтому титл — обычное поле (ручной override, сервер
+  // сохраняет как есть). Пустым быть не может (NOT NULL).
+  const [title, setTitle] = useState(contragent.title ?? '');
   const [name, setName] = useState(contragent.name ?? '');
   const [country, setCountry] = useState(contragent.country ?? '');
   const [type, setType] = useState(contragent.type ?? '');
@@ -111,6 +113,7 @@ export function EditContragentModal({ contragent, level, isTop, onSaved }) {
     if (regNumber && meta && regNumber.length !== meta.length)
       return `${meta.label} должен содержать ${meta.length} цифр, сейчас ${regNumber.length}.`;
     if (restricted) return ''; // остальные поля менеджеру недоступны — валидировать нечего
+    if (!title.trim()) return 'Титл не может быть пустым.';
     if (!name.trim()) return 'ФИО/название не может быть пустым.';
     if (royalty.trim() && (Number.isNaN(royaltyNum) || royaltyNum < 0 || royaltyNum > 100))
       return 'Роялти должно быть числом от 0 до 100.';
@@ -155,6 +158,7 @@ export function EditContragentModal({ contragent, level, isTop, onSaved }) {
       const b = prev ?? '';
       if (String(a) !== String(b)) fields[key] = a;
     };
+    put('title', title.trim(), contragent.title);
     put('name', name.trim(), contragent.name);
     put('country', country, contragent.country);
     put('contragent_type', type, contragent.type);
@@ -213,6 +217,7 @@ export function EditContragentModal({ contragent, level, isTop, onSaved }) {
     const rows = [];
     const push = (key, label, before, after) => rows.push({ key, label, before, after });
 
+    if ('title' in fields) push('title', 'Титл', fmt(contragent.title), fmt(fields.title));
     if ('name' in fields)
       push('name', contragentNameLabel(type, companyTypeByCountry), fmt(contragent.name), fmt(fields.name));
     if ('country' in fields) push('country', 'Страна', fmt(contragent.country), fmt(fields.country));
@@ -352,10 +357,21 @@ export function EditContragentModal({ contragent, level, isTop, onSaved }) {
         {!restricted && (
           <div className="col-span-2">
             <Field
+              label="Титл"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              hint="Отображаемое название карточки (по нему идёт поиск). Уникальный ключ — Dista ID, а не титл, поэтому титл можно править"
+            />
+          </div>
+        )}
+
+        {!restricted && (
+          <div className="col-span-2">
+            <Field
               label={contragentNameLabel(type, companyTypeByCountry)}
               value={name}
               onChange={(e) => setName(e.target.value)}
-              hint="Титл при правке карточки не пересчитывается — он соответствует базе компании и обновляется только импортом"
+              hint="ФИО/название для документов. Титл (выше) отдельно — он для поиска и списков"
             />
           </div>
         )}

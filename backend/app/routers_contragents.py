@@ -669,6 +669,11 @@ def import_contragents(
                 {"row": row_num, "status": "создано", "title": title, "warnings": warnings}
             )
         else:
+            # Титл теперь обычное поле (ключ — dista_id), поэтому непустой титл
+            # из строки перезаписывает. При совпадении по титлу это no-op (титл
+            # и так равен), при совпадении по Dista ID — реально меняет титл.
+            if title:
+                existing.title = title
             if name is not None:
                 existing.name = name
             if country is not None:
