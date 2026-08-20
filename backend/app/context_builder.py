@@ -138,51 +138,46 @@ def build_name_short_table(full_name: str) -> str:
     return f"{surname} {inits}."
 
 
-_COMPANY_MARKERS = ("ООО", "ОАО", "ЗАО", "ПАО", "АО ", "ТОО", "ИП ")
+# ФИО в свободном тексте колонки таблицы: «Фамилия Имя [Отчество]» из TitleCase-
+# слов кириллицы. Компании под шаблон не подходят (ООО — не TitleCase, кавычки —
+# не буквы), а хронометраж/доли/страна-год содержат цифры и тоже не совпадают,
+# поэтому «Иванов Иван Иванович / 3:20» сокращается, а «ООО «Ромашка»» — нет.
+_FIO_IN_TEXT_RE = re.compile(r"\b([А-ЯЁ][а-яё]+)\s+([А-ЯЁ][а-яё]+)(?:\s+([А-ЯЁ][а-яё]+))?\b")
 
 
-def _short_person_name(value: str) -> str:
+def _fio_repl(m):
+    surname = m.group(1)
+    inits = "".join(f"{g[0]}." for g in (m.group(2), m.group(3)) if g)
+    return f"{surname} {inits}"
+
+
+def shorten_fio_in_text(value: str) -> str:
     """
-    Сократить ПОЛНОЕ ФИО до «Фамилия И.И.» (табличный вид, см.
-    build_name_short_table). Не-ФИО возвращаем как есть — сокращать нечего или
-    нельзя: одно слово, значение с цифрами/кавычками, явный маркер компании
-    (ООО/ТОО/ИП …). Так «Медиа Лэнд» не превратится в «Медиа Л.» по ошибке.
+    Сокращает КАЖДОЕ вхождение ФИО «Фамилия Имя [Отчество]» до «Фамилия И.И.»
+    внутри строки, НЕ трогая остальное: хронометраж после «/», доли, запятые,
+    несколько ФИО подряд. Для колонок таблиц, где менеджер вписывает ФИО.
+
+        «Иванов Иван Иванович / 3:20»            -> «Иванов И.И. / 3:20»
+        «Иванов Иван Иванович, Петров Пётр Петр.»-> «Иванов И.И., Петров П.П.»
     """
-    s = str(value or "").strip()
-    toks = s.split()
-    if not (2 <= len(toks) <= 4):
-        return s
-    if any(ch.isdigit() for ch in s):
-        return s
-    if "«" in s or '"' in s or any(m in s.upper() for m in _COMPANY_MARKERS):
-        return s
-    return build_name_short_table(s)
+    return _FIO_IN_TEXT_RE.sub(_fio_repl, str(value or ""))
 
 
-def shorten_producer_field(value: str) -> str:
-    """
-    Колонка «Изготовитель» в таблицах треков/клипов: менеджер вводит полное ФИО,
-    а в документе должно стоять «Фамилия И.И.» (по просьбе владельца 11.08.2026).
-    У треков поле имеет вид «ФИО / хронометраж» — сокращаем только ФИО до слэша,
-    хронометраж не трогаем; у клипов — просто ФИО.
-    """
-    s = str(value or "").strip()
-    if not s:
-        return s
-    if "/" in s:
-        name_part, rest = s.split("/", 1)
-        short = _short_person_name(name_part.strip())
-        rest = rest.strip()
-        return f"{short} / {rest}" if rest else short
-    return _short_person_name(s)
+# Колонки таблиц треков/клипов, где стоит ФИО и его нужно сократить (по просьбе
+# владельца 11.08.2026 — во ВСЕХ ФИО-колонках). Исполнитель (performer) НЕ
+# трогаем: там, как правило, сценический псевдоним, а не ФИО, и «Мари Краймбрери»
+# не должна превратиться в «Мари К.». title/share*/production — не ФИО.
+_FIO_COLUMNS = ("music_author", "lyrics_author", "producer", "director")
 
 
-def _shorten_producers(rows):
-    """Копия списка строк таблицы с сокращённым ФИО в колонке producer."""
+def _shorten_fio_columns(rows):
+    """Копия списка строк таблицы с сокращённым ФИО во всех ФИО-колонках."""
     out = []
     for row in rows or []:
-        if isinstance(row, dict) and "producer" in row:
-            out.append({**row, "producer": shorten_producer_field(row.get("producer"))})
+        if isinstance(row, dict):
+            out.append(
+                {**row, **{c: shorten_fio_in_text(row[c]) for c in _FIO_COLUMNS if c in row}}
+            )
         else:
             out.append(row)
     return out
@@ -1178,11 +1173,12 @@ def build_context(
         "performers",
     }
 
-    # Сокращаем ФИО в колонке «Изготовитель» (producer) треков и клипов до
-    # «Фамилия И.И.» — менеджер вводит полное ФИО, а в таблицах документа должно
-    # стоять сокращение (см. shorten_producer_field).
-    tracks = _shorten_producers(raw.get("tracks", []))
-    videoclips = _shorten_producers(raw.get("videoclips", []))
+    # Сокращаем ФИО во ВСЕХ ФИО-колонках таблиц треков и клипов (автор музыки,
+    # автор текста, изготовитель, режиссёр) до «Фамилия И.И.» — менеджер вводит
+    # полное ФИО, а в таблицах документа должно стоять сокращение (см.
+    # _FIO_COLUMNS / shorten_fio_in_text).
+    tracks = _shorten_fio_columns(raw.get("tracks", []))
+    videoclips = _shorten_fio_columns(raw.get("videoclips", []))
     full_name = raw.get("name", "")
 
     release_type = raw.get("release_type", "none")
@@ -1338,7 +1334,7 @@ def build_context(
         # вызова API в обход формы, чтобы пустая дата не ушла в документ.
         "delivery_date": format_date_ru(raw.get("delivery_date") or default_delivery_date()),
 
-        # таблицы (ФИО в колонке «Изготовитель» уже сокращены выше)
+        # таблицы (ФИО во всех ФИО-колонках уже сокращены выше)
         "tracks": tracks,
         "has_videoclip": bool(raw.get("has_videoclip")),
         "videoclips": videoclips,
