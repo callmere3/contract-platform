@@ -1,4 +1,31 @@
+import { useEffect, useRef } from 'react';
 import { ComboCell } from './ComboCell';
+
+/**
+ * Ячейка-textarea, растущая по высоте под содержимое: колонки таблицы узкие
+ * (tableLayout: fixed), в одну строку не влезает даже одно ФИО, а авторов может
+ * быть несколько. Текст переносится (soft-wrap), высота подгоняется под контент,
+ * ручной resize и скролл убраны. Значение остаётся обычной строкой — перенос
+ * строки добавляется только если оператор сам нажмёт Enter.
+ */
+function AutoGrowCell({ value, onChange }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, [value]);
+  return (
+    <textarea
+      ref={ref}
+      rows={1}
+      value={value ?? ''}
+      onChange={(e) => onChange(e.target.value)}
+      className="w-full bg-transparent border-none outline-none text-[13px] text-text font-sans resize-none overflow-hidden leading-snug block break-words"
+    />
+  );
+}
 
 /**
  * columns: [{ key, label, width, type?, options? }] — width опционален
@@ -39,13 +66,13 @@ export function EditableTable({ columns, rows, onChangeCell, onRemoveRow, onAddR
             предыдущей (и первую строку от шапки). */}
         {rows.map((row, i) => (
           <div key={row.id} style={{ display: 'table-row' }} className="text-[13px] text-text">
-            <div style={{ display: 'table-cell', width: 36 }} className="border-r border-t border-border py-2 pl-3.5 pr-2 text-text-muted tabular-nums">
+            <div style={{ display: 'table-cell', width: 36, verticalAlign: 'top' }} className="border-r border-t border-border py-2 pl-3.5 pr-2 text-text-muted tabular-nums">
               {i + 1}
             </div>
             {columns.map((col) => (
               <div
                 key={col.key}
-                style={{ display: 'table-cell', width: col.width }}
+                style={{ display: 'table-cell', width: col.width, verticalAlign: 'top' }}
                 className="border-r border-t border-border last:border-r-0 py-1.5 px-2"
               >
                 {/* Тип ячейки диктует схема поля с сервера:
@@ -68,16 +95,15 @@ export function EditableTable({ columns, rows, onChangeCell, onRemoveRow, onAddR
                     onChange={(v) => onChangeCell(row.id, col.key, v)}
                   />
                 ) : (
-                  <input
+                  <AutoGrowCell
                     value={row[col.key] ?? ''}
-                    onChange={(e) => onChangeCell(row.id, col.key, e.target.value)}
-                    className="w-full bg-transparent border-none outline-none text-[13px] text-text font-sans"
+                    onChange={(v) => onChangeCell(row.id, col.key, v)}
                   />
                 )}
               </div>
             ))}
             <div
-              style={{ display: 'table-cell', width: 44 }}
+              style={{ display: 'table-cell', width: 44, verticalAlign: 'top' }}
               onClick={() => onRemoveRow(row.id)}
               className="border-t border-border text-text-muted cursor-pointer text-center py-2 px-2 hover:text-accent"
             >
