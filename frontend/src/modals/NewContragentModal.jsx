@@ -228,11 +228,7 @@ export function NewContragentModal({ level, isTop }) {
           value={regNumber}
           onChange={(e) => setRegNumber(e.target.value)}
           placeholder="только цифры"
-          hint={
-            meta
-              ? `${meta.length} цифр, необязательно — можно дозаполнить позже`
-              : 'Сначала выберите тип контрагента'
-          }
+          hint={meta ? `${meta.length} цифр, необязательно` : 'Сначала выберите тип контрагента'}
         />
 
         <Field
@@ -269,7 +265,7 @@ export function NewContragentModal({ level, isTop }) {
             value={nicknames}
             onChange={(e) => setNicknames(e.target.value)}
             placeholder="July Jones, Vladimir Ivanov"
-            hint="через запятую, можно оставить пустым и добавить позже"
+            hint="через запятую, необязательно"
           />
         </div>
       </div>

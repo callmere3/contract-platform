@@ -362,7 +362,7 @@ export function EditContragentModal({ contragent, level, isTop, onSaved }) {
               label="Титл"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              hint="Отображаемое название карточки (по нему идёт поиск). Правит только админ; уникальный ключ — Dista ID, а не титл"
+              hint="Название карточки для поиска"
             />
           </div>
         )}
@@ -373,7 +373,6 @@ export function EditContragentModal({ contragent, level, isTop, onSaved }) {
               label={contragentNameLabel(type, companyTypeByCountry)}
               value={name}
               onChange={(e) => setName(e.target.value)}
-              hint="ФИО/название для документов. Титл (выше) отдельно — он для поиска и списков"
             />
           </div>
         )}
@@ -406,7 +405,7 @@ export function EditContragentModal({ contragent, level, isTop, onSaved }) {
             value={regNumber}
             onChange={(e) => setRegNumber(e.target.value)}
             placeholder="только цифры"
-            hint={meta ? `${meta.length} цифр` : 'Зависит от типа контрагента'}
+            hint={meta ? `${meta.length} цифр` : undefined}
           />
         )}
 
@@ -416,7 +415,6 @@ export function EditContragentModal({ contragent, level, isTop, onSaved }) {
             label="Тип договора"
             value={contractFamily}
             onChange={(e) => setContractFamily(e.target.value)}
-            hint={restricted ? 'Определяет, какие документы подбираются контрагенту' : undefined}
           >
             <option value="">— не задано —</option>
             {families.map((f) => (
@@ -440,29 +438,22 @@ export function EditContragentModal({ contragent, level, isTop, onSaved }) {
           <Field label="Роялти %" value={royalty} onChange={(e) => setRoyalty(e.target.value)} />
         )}
 
-        {/* Номер договора — ручной override, правит любая роль (в т.ч. менеджер
-            в restricted-режиме, CAN_EDIT_CONTRACT_NUMBER = ROLES): сервер
-            сохраняет значение как есть, без пересчёта по формуле. */}
         <div className="col-span-2">
           <Field
             label="Номер договора"
             value={contractNumber}
             onChange={(e) => setContractNumber(e.target.value)}
             placeholder="как в подписанном документе"
-            hint="Сохраняется как есть, без пересчёта; пусто — очистить"
           />
         </div>
 
-        {/* Псевдонимы правит любая роль (в т.ч. менеджер в restricted) — по
-            просьбе владельца. В restricted-режиме это поле идёт после select
-            типа договора. */}
         <div className="col-span-2">
           <Field
             label="Псевдоним(ы)"
             value={nicknames}
             onChange={(e) => setNicknames(e.target.value)}
             placeholder="July Jones, Vladimir Ivanov"
-            hint="через запятую; заменяет весь список, пусто — очистить"
+            hint="через запятую"
           />
         </div>
       </div>
