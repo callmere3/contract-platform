@@ -5,7 +5,7 @@ import { Button } from '../components/ui/Button';
 import { useModal } from './ModalProvider';
 import { useTags } from '../api/TagsContext';
 import { useAuth } from '../auth/AuthContext';
-import { canEditContragents } from '../auth/permissions';
+import { canEditContragents, canEditTitle } from '../auth/permissions';
 import { updateContragent } from '../api/contragents';
 import { contragentNameLabel } from '../api/contragentTypes';
 import { RequisitesSection } from '../components/ui/RequisitesSection';
@@ -70,6 +70,8 @@ export function EditContragentModal({ contragent, level, isTop, onSaved }) {
   // изменить что-то ещё (см. CAN_EDIT_CONTRACT_FAMILY / update_contragent).
   // Полноправные редакторы (admin/director/top_manager/tester) правят всё.
   const restricted = !canEditContragents(me?.role);
+  // Титл правит только админ (даже при временном полном доступе менеджеров).
+  const canTitle = canEditTitle(me?.role);
 
   // Титл теперь редактируется в форме (11.08.2026): уникальный ключ —
   // dista_id, а не титл, поэтому титл — обычное поле (ручной override, сервер
@@ -113,7 +115,7 @@ export function EditContragentModal({ contragent, level, isTop, onSaved }) {
     if (regNumber && meta && regNumber.length !== meta.length)
       return `${meta.label} должен содержать ${meta.length} цифр, сейчас ${regNumber.length}.`;
     if (restricted) return ''; // остальные поля менеджеру недоступны — валидировать нечего
-    if (!title.trim()) return 'Титл не может быть пустым.';
+    if (canTitle && !title.trim()) return 'Титл не может быть пустым.';
     if (!name.trim()) return 'ФИО/название не может быть пустым.';
     if (royalty.trim() && (Number.isNaN(royaltyNum) || royaltyNum < 0 || royaltyNum > 100))
       return 'Роялти должно быть числом от 0 до 100.';
@@ -158,7 +160,7 @@ export function EditContragentModal({ contragent, level, isTop, onSaved }) {
       const b = prev ?? '';
       if (String(a) !== String(b)) fields[key] = a;
     };
-    put('title', title.trim(), contragent.title);
+    if (canTitle) put('title', title.trim(), contragent.title);
     put('name', name.trim(), contragent.name);
     put('country', country, contragent.country);
     put('contragent_type', type, contragent.type);
@@ -354,13 +356,13 @@ export function EditContragentModal({ contragent, level, isTop, onSaved }) {
       {!pending && (
       <>
       <div className="grid grid-cols-2 gap-4">
-        {!restricted && (
+        {canTitle && (
           <div className="col-span-2">
             <Field
               label="Титл"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              hint="Отображаемое название карточки (по нему идёт поиск). Уникальный ключ — Dista ID, а не титл, поэтому титл можно править"
+              hint="Отображаемое название карточки (по нему идёт поиск). Правит только админ; уникальный ключ — Dista ID, а не титл"
             />
           </div>
         )}
