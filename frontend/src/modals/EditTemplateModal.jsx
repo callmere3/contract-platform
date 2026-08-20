@@ -79,6 +79,10 @@ export function EditTemplateModal({ template, onDone, level, isTop }) {
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // Выбранный для замены файл ждёт подтверждения: показываем, ЧТО и на ЧТО
+  // меняем (имя шаблона + имя файла) — чтобы случайно не залить, напр.,
+  // роялти-шаблон в аванс.
+  const [pendingFile, setPendingFile] = useState(null);
 
   // Схема полей + список допустимых maps_to. Без contragent_id: здесь нас
   // интересует структура шаблона, а не подстановка значений конкретного
@@ -284,30 +288,64 @@ export function EditTemplateModal({ template, onDone, level, isTop }) {
       {/* --- замена файла (нужна часто — выше источников) --- */}
       <div className="mt-7 pt-6 border-t border-border">
         <div className="text-[11px] font-bold tracking-[0.08em] text-text-muted mb-4">ФАЙЛ</div>
-        <div className="flex items-center gap-2.5">
-          {/* Скачать → поправить у себя → заменить: цикл правки шаблона
-              целиком в одном месте, без поиска исходника на диске. */}
-          <Button variant="secondary" size="sm" onClick={handleDownloadFile} disabled={busy}>
-            Скачать .docx
-          </Button>
-          <label className="inline-block">
-            <input
-              type="file"
-              accept=".docx"
-              disabled={busy}
-              onChange={(e) => handleReplaceFile(e.target.files?.[0])}
-              className="hidden"
-            />
-            <span className="cursor-pointer inline-block bg-transparent border border-border text-text rounded-input px-4 py-2.5 text-[13px] font-semibold">
-              Заменить .docx…
-            </span>
-          </label>
-        </div>
-        <div className="text-[11px] text-text-muted mt-1.5 leading-snug">
-          Скачайте исходник, внесите правки и залейте обратно. При замене метки
-          пересканируются, а настроенные источники значений сохранятся у полей, которые остались
-          в шаблоне.
-        </div>
+        {pendingFile ? (
+          <div className="border border-accent/40 bg-accent/5 rounded-input p-3.5">
+            <div className="text-[13px] text-text leading-relaxed">
+              Заменить файл шаблона <b>«{template.name}»</b> на <b>«{pendingFile.name}»</b>?
+            </div>
+            <div className="text-[11px] text-text-muted mt-1.5 leading-snug">
+              Проверьте, что тип совпадает — например, не залить роялти-шаблон в аванс.
+            </div>
+            <div className="flex items-center gap-2.5 mt-3">
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={busy}
+                onClick={() => {
+                  const f = pendingFile;
+                  setPendingFile(null);
+                  handleReplaceFile(f);
+                }}
+              >
+                {busy ? 'Заменяем…' : 'Заменить'}
+              </Button>
+              <Button variant="secondary" size="sm" disabled={busy} onClick={() => setPendingFile(null)}>
+                Отмена
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="flex items-center gap-2.5">
+              {/* Скачать → поправить у себя → заменить: цикл правки шаблона
+                  целиком в одном месте, без поиска исходника на диске. */}
+              <Button variant="secondary" size="sm" onClick={handleDownloadFile} disabled={busy}>
+                Скачать .docx
+              </Button>
+              <label className="inline-block">
+                <input
+                  type="file"
+                  accept=".docx"
+                  disabled={busy}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) setPendingFile(f); // не заменяем сразу — сперва подтверждение
+                    e.target.value = ''; // сброс, чтобы тот же файл можно было выбрать снова
+                  }}
+                  className="hidden"
+                />
+                <span className="cursor-pointer inline-block bg-transparent border border-border text-text rounded-input px-4 py-2.5 text-[13px] font-semibold">
+                  Заменить .docx…
+                </span>
+              </label>
+            </div>
+            <div className="text-[11px] text-text-muted mt-1.5 leading-snug">
+              Скачайте исходник, внесите правки и залейте обратно. При замене метки
+              пересканируются, а настроенные источники значений сохранятся у полей, которые остались
+              в шаблоне.
+            </div>
+          </>
+        )}
       </div>
 
       {/* --- источники значений (maps_to) — настраиваются один раз, поэтому внизу --- */}

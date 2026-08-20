@@ -846,6 +846,7 @@ def build_document_response(
         template.doc_type, template.name, data, contragent_title,
         country=country or template.country,
         contragent_type=template.contragent_type,
+        contract_family=template.contract_family,
     )
 
     if format == "docx":

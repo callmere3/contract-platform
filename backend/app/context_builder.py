@@ -138,6 +138,56 @@ def build_name_short_table(full_name: str) -> str:
     return f"{surname} {inits}."
 
 
+_COMPANY_MARKERS = ("ООО", "ОАО", "ЗАО", "ПАО", "АО ", "ТОО", "ИП ")
+
+
+def _short_person_name(value: str) -> str:
+    """
+    Сократить ПОЛНОЕ ФИО до «Фамилия И.И.» (табличный вид, см.
+    build_name_short_table). Не-ФИО возвращаем как есть — сокращать нечего или
+    нельзя: одно слово, значение с цифрами/кавычками, явный маркер компании
+    (ООО/ТОО/ИП …). Так «Медиа Лэнд» не превратится в «Медиа Л.» по ошибке.
+    """
+    s = str(value or "").strip()
+    toks = s.split()
+    if not (2 <= len(toks) <= 4):
+        return s
+    if any(ch.isdigit() for ch in s):
+        return s
+    if "«" in s or '"' in s or any(m in s.upper() for m in _COMPANY_MARKERS):
+        return s
+    return build_name_short_table(s)
+
+
+def shorten_producer_field(value: str) -> str:
+    """
+    Колонка «Изготовитель» в таблицах треков/клипов: менеджер вводит полное ФИО,
+    а в документе должно стоять «Фамилия И.И.» (по просьбе владельца 11.08.2026).
+    У треков поле имеет вид «ФИО / хронометраж» — сокращаем только ФИО до слэша,
+    хронометраж не трогаем; у клипов — просто ФИО.
+    """
+    s = str(value or "").strip()
+    if not s:
+        return s
+    if "/" in s:
+        name_part, rest = s.split("/", 1)
+        short = _short_person_name(name_part.strip())
+        rest = rest.strip()
+        return f"{short} / {rest}" if rest else short
+    return _short_person_name(s)
+
+
+def _shorten_producers(rows):
+    """Копия списка строк таблицы с сокращённым ФИО в колонке producer."""
+    out = []
+    for row in rows or []:
+        if isinstance(row, dict) and "producer" in row:
+            out.append({**row, "producer": shorten_producer_field(row.get("producer"))})
+        else:
+            out.append(row)
+    return out
+
+
 def build_director_short(raw: str) -> str:
     """
     Имя гендиректора компании -> 'Фамилия И. О.' (фамилия, затем инициалы
@@ -253,6 +303,18 @@ def sanitize_filename(value: str) -> str:
     return value.strip(" .")
 
 
+# Суффикс типа договора в имени файла (по просьбе владельца 11.08.2026):
+# договор получает в конце _Аванс/_Роялти/_Аванс_обяз/_Роялти_обяз по своему
+# contract_family. Только у doc_type='contract'; у приложения/акта суффикс
+# другой (тип+номер). Ключи — значения CONTRACT_FAMILIES из app/tags.py.
+CONTRACT_FAMILY_FILE_SUFFIX = {
+    "АВАНС": "Аванс",
+    "РОЯЛТИ": "Роялти",
+    "АВАНС_ОБЯЗАТЕЛЬСТВО": "Аванс_обяз",
+    "РОЯЛТИ_ОБЯЗАТЕЛЬСТВО": "Роялти_обяз",
+}
+
+
 def build_document_filename(
     doc_type: str | None,
     template_name: str,
@@ -260,14 +322,15 @@ def build_document_filename(
     contragent_title: str | None = None,
     country: str | None = None,
     contragent_type: str | None = None,
+    contract_family: str | None = None,
 ) -> str:
     """
     Имя готового файла (без расширения) по формуле владельца (04.08.2026):
 
-        Договор:         {гг}_{маркер}_ЛД_{титл}
+        Договор:         {гг}_{маркер}_ЛД_{титл}_{тип договора}
         Приложение/Акт:  {гг}_{маркер}_ЛД_{титл}_{тип и номер}
 
-        26_ML_ЛД_Иванов И. И. (СГ)
+        26_ML_ЛД_Иванов И. И. (СГ)_Аванс
         26_ML_ЛД_Иванов И. И. (СГ)_Приложение 1
         26_ML_ЛД_Иванов И. И. (СГ)_Акт к Пр. 1      (акт к приложению)
         26_KZ.ML_ЛД_ТОО «Астана Медиа» (ТОО)        (KZ-контрагент)
@@ -353,7 +416,12 @@ def build_document_filename(
         else:
             act_no = str(data.get("act_no") or "").strip()   # самостоятельный
             suffix = f"Акт {act_no}".strip()
-    elif doc_type not in ("contract", None):
+    elif doc_type == "contract":
+        # Договор: суффикс — тип договора (_Аванс/_Роялти/_Аванс_обяз/…). Так
+        # два договора одного человека (аванс и роялти) больше не дают
+        # одинаковое имя файла. Нетегированный договор — без суффикса.
+        suffix = CONTRACT_FAMILY_FILE_SUFFIX.get(contract_family or "", "")
+    elif doc_type is not None:
         # прочие типы документов — сохраняем узнаваемость по имени шаблона
         suffix = template_name.strip()
 
@@ -1108,7 +1176,11 @@ def build_context(
         "performers",
     }
 
-    tracks = raw.get("tracks", [])
+    # Сокращаем ФИО в колонке «Изготовитель» (producer) треков и клипов до
+    # «Фамилия И.И.» — менеджер вводит полное ФИО, а в таблицах документа должно
+    # стоять сокращение (см. shorten_producer_field).
+    tracks = _shorten_producers(raw.get("tracks", []))
+    videoclips = _shorten_producers(raw.get("videoclips", []))
     full_name = raw.get("name", "")
 
     release_type = raw.get("release_type", "none")
@@ -1264,10 +1336,10 @@ def build_context(
         # вызова API в обход формы, чтобы пустая дата не ушла в документ.
         "delivery_date": format_date_ru(raw.get("delivery_date") or default_delivery_date()),
 
-        # таблицы
+        # таблицы (ФИО в колонке «Изготовитель» уже сокращены выше)
         "tracks": tracks,
         "has_videoclip": bool(raw.get("has_videoclip")),
-        "videoclips": raw.get("videoclips", []),
+        "videoclips": videoclips,
 
         # вычисляемые сноски
         "profanity_note": build_profanity_note(tracks),
