@@ -123,8 +123,9 @@ export function ImportExportModal({ level, isTop, filters = {} }) {
         <div>
           <div className="text-sm font-semibold text-text mb-1.5">Импорт</div>
           <div className="text-[13px] text-text-secondary mb-3">
-            Загрузить контрагентов из Excel-файла того же формата. Совпадение ищется по титлу:
-            существующие карточки обновляются, новые — создаются.
+            Загрузить контрагентов из Excel того же формата. Совпадение ищется по <b>Dista ID</b>
+            {' '}(если он есть в строке), иначе — по титлу: существующие карточки обновляются, новые —
+            создаются. Титл нужен только для новых карточек.
           </div>
           <div className="flex items-center gap-2.5">
             <label className="inline-block">

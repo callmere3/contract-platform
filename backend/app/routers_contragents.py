@@ -85,22 +85,33 @@ contragents_router = APIRouter(prefix="/contragents", tags=["contragents"])
 # через UI (POST /contragents), где name обязателен, а title вычисляется
 # из него автоматически. При импорте — наоборот: title всегда берётся из
 # файла как есть, а name опционален.
-# Колонки, которые ЧИТАЕТ импорт (и из них же — шаблон импорта). «Титл» —
-# обязательный ключ (по нему ищется совпадение), остальные опциональны.
+# Колонки, которые ЧИТАЕТ импорт (и из них же — шаблон импорта). «Dista ID» —
+# наш уникальный код контрагента и ГЛАВНЫЙ ключ совпадения при импорте (титл и
+# рег.номер больше не уникальны). «Титл» — запасной ключ и обязателен только
+# для НОВОЙ карточки (NOT NULL). Остальные поля опциональны.
 IMPORT_COLUMNS = [
-    "Титл", "Название", "Никнеймы", "Тип", "Страна",
+    "Dista ID", "Титл", "Название", "Никнеймы", "Тип", "Страна",
     "Тип договора", "Номер договора", "Дата договора", "Роялти %",
     "Рег. номер",
 ]
 
-# Полный экспорт базы = максимально подробный. Dista ID и Титл — ПЕРВЫЕ два
-# столбца (по просьбе владельца), далее остальные поля импорта + платёжные
-# реквизиты (из requisites). Импорт читает столбцы по их заголовкам и лишние
-# просто игнорирует, поэтому добавленные колонки его не ломают (обратно
-# requisites/Dista ID импортом не загружаются — они не в его области).
-EXCEL_COLUMNS = (
-    ["Dista ID"] + IMPORT_COLUMNS + [label for _key, label in PAYMENT_REQUISITE_COLUMNS]
-)
+# Полный экспорт базы = максимально подробный: колонки импорта (Dista ID и Титл
+# первыми) + платёжные реквизиты (из requisites). requisites импортом обратно не
+# загружаются (не в его области); Dista ID — загружается (это ключ, см. импорт).
+EXCEL_COLUMNS = IMPORT_COLUMNS + [label for _key, label in PAYMENT_REQUISITE_COLUMNS]
+
+
+def _clean_dista_id(raw) -> str | None:
+    """Значение из колонки «Dista ID» → строка (openpyxl отдаёт целые как 385.0
+    — срезаем '.0'); пусто → None."""
+    if raw in (None, ""):
+        return None
+    s = str(raw).strip()
+    if s.endswith(".0") and s[:-2].isdigit():
+        s = s[:-2]
+    return s or None
+
+
 # "Рег. номер" — ИНН (ФЛ/СГ) / ОГРНИП (ИП) / ОГРН (ООО) / БИН (ТОО), см.
 # app/tags.py: REG_NUMBER_META. Одна колонка на все смыслы, как и в самой БД.
 
@@ -442,19 +453,9 @@ def create_contragent(
         )
     day, month, year_full = parsed
 
+    # Рег. номер: только формат (длина/цифры под тип), БЕЗ проверки уникальности
+    # — reg_number больше не уникален (у человека карточки аванс/роялти делят ИНН).
     reg_number = normalize_reg_number(reg_number, contragent_type)
-    if reg_number is not None:
-        existing_by_reg = (
-            db.query(Contragent).filter(Contragent.reg_number == reg_number).one_or_none()
-        )
-        if existing_by_reg is not None:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"Контрагент с рег. номером {reg_number!r} уже существует: "
-                    f"{existing_by_reg.title!r}"
-                ),
-            )
 
     title = build_contragent_title(name, contragent_type)
     contract_number = build_contract_number(
@@ -566,9 +567,10 @@ def import_contragents(
 
     header_row = next(ws.iter_rows(min_row=1, max_row=1, values_only=True), ())
     header = [str(v).strip() if v is not None else "" for v in header_row]
-    if "Титл" not in header:
+    if "Титл" not in header and "Dista ID" not in header:
         raise HTTPException(
-            status_code=400, detail="В файле нет обязательной колонки «Титл»"
+            status_code=400,
+            detail="В файле нет ни колонки «Dista ID», ни «Титл» — не по чему сопоставлять",
         )
     col_index = {name: i for i, name in enumerate(header)}
 
@@ -583,12 +585,9 @@ def import_contragents(
         if row is None or all(v is None for v in row):
             continue   # полностью пустая строка — не считаем ни пропуском, ни ошибкой
 
+        dista_id = _clean_dista_id(cell(row, "Dista ID"))
         title_raw = cell(row, "Титл")
         title = str(title_raw).strip() if title_raw not in (None, "") else ""
-        if not title:
-            skipped += 1
-            details.append({"row": row_num, "status": "пропущено", "reason": "нет титла (title)"})
-            continue
 
         name_raw = cell(row, "Название")
         name = str(name_raw).strip() if name_raw not in (None, "") else None
@@ -621,34 +620,35 @@ def import_contragents(
             else None
         )
 
-        existing = db.query(Contragent).filter(Contragent.title == title).one_or_none()
+        # Ключ совпадения — Dista ID (наш уникальный код). Если его в строке нет
+        # — запасной ключ титл (легаси/первичное заполнение). Титл и рег.номер
+        # больше НЕ уникальны, поэтому .first(), а не .one_or_none().
+        existing = None
+        if dista_id:
+            existing = db.query(Contragent).filter(Contragent.dista_id == dista_id).first()
+        if existing is None and title:
+            existing = db.query(Contragent).filter(Contragent.title == title).first()
 
-        # тип для проверки длины reg_number — из этой же строки, а если
-        # там пусто (ячейка "Тип" не заполнена в файле) — из уже
-        # существующей записи (обновление без изменения типа).
+        # Новая карточка требует титл (NOT NULL). Нет совпадения и нет титла —
+        # заводить не из чего.
+        if existing is None and not title:
+            skipped += 1
+            details.append(
+                {"row": row_num, "status": "пропущено",
+                 "reason": "нет совпадения по Dista ID и пустой титл"}
+            )
+            continue
+
+        # Рег. номер: только формат (длина/цифры под тип), БЕЗ проверки
+        # уникальности — reg_number больше не уникален (аванс/роялти делят ИНН).
         reg_number_type = contragent_type or (existing.type if existing else None)
         reg_number, w = _try_normalize_reg_number(cell(row, "Рег. номер"), reg_number_type)
         if w:
             warnings.append(w)
-        elif reg_number is not None:
-            conflict = (
-                db.query(Contragent)
-                .filter(
-                    Contragent.reg_number == reg_number,
-                    Contragent.id != (existing.id if existing else None),
-                )
-                .one_or_none()
-            )
-            if conflict is not None:
-                warnings.append(
-                    f"рег. номер {reg_number!r} уже занят контрагентом {conflict.title!r} — "
-                    f"не записан для этой строки"
-                )
-                reg_number = None
 
         if existing is None:
             contragent = Contragent(
-                name=name,   # теперь отдельная опциональная колонка "Название", не заглушка
+                name=name,
                 title=title,
                 country=country,
                 type=contragent_type,
@@ -657,9 +657,11 @@ def import_contragents(
                 contract_number=contract_number,
                 royalty_percent=royalty_percent,
                 reg_number=reg_number,
+                dista_id=dista_id,
             )
             db.add(contragent)
-            db.flush()   # нужен contragent.id до вставки никнеймов
+            db.flush()   # нужен contragent.id до вставки никнеймов; и чтобы
+            # следующая строка с тем же dista_id нашла эту карточку по ключу
             for nick in (nicknames or []):
                 db.add(ContragentNickname(contragent_id=contragent.id, nickname=nick))
             created += 1
@@ -683,6 +685,18 @@ def import_contragents(
                 existing.royalty_percent = royalty_percent
             if reg_number is not None:
                 existing.reg_number = reg_number
+            # Привязать Dista ID, если он в строке есть и отличается. dista_id
+            # уникален: занят другой карточкой — не трогаем, предупреждаем.
+            if dista_id and existing.dista_id != dista_id:
+                clash = (
+                    db.query(Contragent)
+                    .filter(Contragent.dista_id == dista_id, Contragent.id != existing.id)
+                    .first()
+                )
+                if clash is not None:
+                    warnings.append(f"Dista ID {dista_id} уже у {clash.title!r} — не записан")
+                else:
+                    existing.dista_id = dista_id
             if nicknames is not None:
                 for old_nick in list(existing.nicknames):
                     db.delete(old_nick)
@@ -691,7 +705,7 @@ def import_contragents(
                     db.add(ContragentNickname(contragent_id=existing.id, nickname=nick))
             updated += 1
             details.append(
-                {"row": row_num, "status": "обновлено", "title": title, "warnings": warnings}
+                {"row": row_num, "status": "обновлено", "title": existing.title, "warnings": warnings}
             )
 
     try:
@@ -986,19 +1000,10 @@ def update_contragent(
         if not reg_number.strip():
             contragent.reg_number = None
         else:
+            # только формат (длина/цифры под тип); уникальность НЕ проверяем —
+            # reg_number больше не уникален (аванс/роялти делят ИНН).
             type_for_check = contragent.type  # уже обновлён выше, если contragent_type передан
-            value = normalize_reg_number(reg_number, type_for_check)
-            conflict = (
-                db.query(Contragent)
-                .filter(Contragent.reg_number == value, Contragent.id != contragent.id)
-                .one_or_none()
-            )
-            if conflict is not None:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Рег. номер {value!r} уже занят контрагентом {conflict.title!r}",
-                )
-            contragent.reg_number = value
+            contragent.reg_number = normalize_reg_number(reg_number, type_for_check)
 
     if nicknames is not None:
         for old_nick in list(contragent.nicknames):
@@ -1019,7 +1024,7 @@ def update_contragent(
         db.rollback()
         raise HTTPException(
             status_code=400,
-            detail=f"Рег. номер {reg_number!r} уже занят другим контрагентом",
+            detail="Не удалось сохранить изменения (конфликт данных в базе).",
         )
 
     log_action(

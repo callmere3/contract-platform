@@ -84,13 +84,8 @@ def _evaluate(field: str, value: str, contragent: Contragent, db: Session):
             return (False, str(e.detail), None)
         if not norm:
             return (False, "пустой рег. номер", None)
-        conflict = (
-            db.query(Contragent.title)
-            .filter(Contragent.reg_number == norm, Contragent.id != contragent.id)
-            .first()
-        )
-        if conflict:
-            return (False, f"уже у контрагента «{conflict[0]}»", None)
+        # Уникальность рег.номера НЕ проверяем — он больше не уникален
+        # (аванс/роялти карточки одного человека делят ИНН/ОГРНИП).
         return (True, None, norm)
     if field == "royalty_percent":
         try:
@@ -258,7 +253,7 @@ def apply_notification(
         db.commit()
     except IntegrityError:
         db.rollback()
-        raise HTTPException(status_code=409, detail="Рег. номер уже занят другим контрагентом")
+        raise HTTPException(status_code=409, detail="Не удалось применить (конфликт данных в базе).")
 
     log_action(
         db, current_user, "contragent.suggestion_apply",
