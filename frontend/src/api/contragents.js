@@ -92,6 +92,16 @@ export function importContragents(file) {
 }
 
 /**
+ * Скачать пустой шаблон импорта (.xlsx) — одна строка заголовков (только admin).
+ * Возвращает Blob (как exportContragents).
+ */
+export async function importTemplate() {
+  const r = await apiFetch(`${API}/contragents/import-template`);
+  if (!r.ok) throw new Error(`Не удалось скачать шаблон (${r.status})`);
+  return r.blob();
+}
+
+/**
  * Экспорт в Excel (admin/director/top_manager). Возвращает Blob, а не JSON —
  * поэтому идём через apiFetch напрямую, минуя apiJson.
  *

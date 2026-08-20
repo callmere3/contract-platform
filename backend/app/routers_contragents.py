@@ -85,16 +85,22 @@ contragents_router = APIRouter(prefix="/contragents", tags=["contragents"])
 # через UI (POST /contragents), где name обязателен, а title вычисляется
 # из него автоматически. При импорте — наоборот: title всегда берётся из
 # файла как есть, а name опционален.
-# Полный экспорт базы = максимально подробный: все основные поля + связка с
-# Dista + платёжные реквизиты (из requisites). Импорт читает столбцы по их
-# заголовкам и лишние просто игнорирует, поэтому добавленные колонки его не
-# ломают (обратно requisites/Dista ID импортом не загружаются — они не в его
-# области, см. import_contragents).
-EXCEL_COLUMNS = [
+# Колонки, которые ЧИТАЕТ импорт (и из них же — шаблон импорта). «Титл» —
+# обязательный ключ (по нему ищется совпадение), остальные опциональны.
+IMPORT_COLUMNS = [
     "Титл", "Название", "Никнеймы", "Тип", "Страна",
     "Тип договора", "Номер договора", "Дата договора", "Роялти %",
-    "Рег. номер", "Dista ID",
-] + [label for _key, label in PAYMENT_REQUISITE_COLUMNS]
+    "Рег. номер",
+]
+
+# Полный экспорт базы = максимально подробный. Dista ID и Титл — ПЕРВЫЕ два
+# столбца (по просьбе владельца), далее остальные поля импорта + платёжные
+# реквизиты (из requisites). Импорт читает столбцы по их заголовкам и лишние
+# просто игнорирует, поэтому добавленные колонки его не ломают (обратно
+# requisites/Dista ID импортом не загружаются — они не в его области).
+EXCEL_COLUMNS = (
+    ["Dista ID"] + IMPORT_COLUMNS + [label for _key, label in PAYMENT_REQUISITE_COLUMNS]
+)
 # "Рег. номер" — ИНН (ФЛ/СГ) / ОГРНИП (ИП) / ОГРН (ООО) / БИН (ТОО), см.
 # app/tags.py: REG_NUMBER_META. Одна колонка на все смыслы, как и в самой БД.
 
@@ -744,6 +750,7 @@ def export_contragents(
     for c in contragents:
         req = c.requisites or {}
         ws.append([
+            c.dista_id or "",
             c.title,
             c.name or "",
             ", ".join(n.nickname for n in c.nicknames),
@@ -754,7 +761,6 @@ def export_contragents(
             c.contract_date.isoformat() if c.contract_date else "",
             float(c.royalty_percent) if c.royalty_percent is not None else "",
             c.reg_number or "",
-            c.dista_id or "",
             *[req.get(key) or "" for key, _label in PAYMENT_REQUISITE_COLUMNS],
         ])
 
@@ -771,6 +777,30 @@ def export_contragents(
         buffer,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": 'attachment; filename="contragents_export.xlsx"'},
+    )
+
+
+@contragents_router.get("/import-template", dependencies=[Depends(require_role(ADMIN))])
+def import_template() -> StreamingResponse:
+    """
+    Пустой шаблон для импорта: одна строка заголовков — ровно те колонки, что
+    читает import_contragents (IMPORT_COLUMNS; «Титл» обязателен, остальные
+    опциональны). Оператор заполняет строки и загружает через «Импорт».
+    Зарегистрирован ДО /{contragent_id}, иначе 'import-template' ушёл бы в uuid.
+    """
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Контрагенты"
+    ws.append(IMPORT_COLUMNS)
+
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="contragents_import_template.xlsx"'},
     )
 
 

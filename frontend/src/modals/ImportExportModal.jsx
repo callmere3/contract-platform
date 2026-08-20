@@ -4,7 +4,19 @@ import { Button } from '../components/ui/Button';
 import { useModal } from './ModalProvider';
 import { useAuth } from '../auth/AuthContext';
 import { canExport, canImport } from '../auth/permissions';
-import { exportContragents, importContragents } from '../api/contragents';
+import { exportContragents, importContragents, importTemplate } from '../api/contragents';
+
+/** Сохранить полученный Blob как файл (скачивание в браузере). */
+function saveBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
 
 /**
  * Импорт/экспорт контрагентов.
@@ -73,6 +85,18 @@ export function ImportExportModal({ level, isTop, filters = {} }) {
     }
   }
 
+  async function handleDownloadTemplate() {
+    setBusy(true);
+    setError('');
+    try {
+      saveBlob(await importTemplate(), 'contragents_import_template.xlsx');
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <Modal title="Импорт / экспорт" onClose={closeModal} level={level} isTop={isTop} width={520}>
       {canExport(role) && (
@@ -102,18 +126,23 @@ export function ImportExportModal({ level, isTop, filters = {} }) {
             Загрузить контрагентов из Excel-файла того же формата. Совпадение ищется по титлу:
             существующие карточки обновляются, новые — создаются.
           </div>
-          <label className="inline-block">
-            <input
-              type="file"
-              accept=".xlsx"
-              disabled={busy}
-              onChange={(e) => handleImport(e.target.files?.[0])}
-              className="hidden"
-            />
-            <span className="cursor-pointer inline-block bg-button-primary-bg text-button-primary-text rounded-input px-4 py-2.5 text-[13px] font-semibold">
-              {busy ? 'Загружаем…' : 'Выбрать файл…'}
-            </span>
-          </label>
+          <div className="flex items-center gap-2.5">
+            <label className="inline-block">
+              <input
+                type="file"
+                accept=".xlsx"
+                disabled={busy}
+                onChange={(e) => handleImport(e.target.files?.[0])}
+                className="hidden"
+              />
+              <span className="cursor-pointer inline-block bg-button-primary-bg text-button-primary-text rounded-input px-4 py-2.5 text-[13px] font-semibold">
+                {busy ? 'Загружаем…' : 'Выбрать файл…'}
+              </span>
+            </label>
+            <Button variant="secondary" size="sm" onClick={handleDownloadTemplate} disabled={busy}>
+              Скачать шаблон импорта
+            </Button>
+          </div>
         </div>
       )}
 
