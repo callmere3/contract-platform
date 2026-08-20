@@ -41,3 +41,13 @@ export async function distaOnlyOursExport() {
   if (!r.ok) throw new Error(`Не удалось выгрузить файл (${r.status})`);
   return r.blob();
 }
+
+/**
+ * Функциональный экспорт ДЛЯ Dista (.xlsx): только связанные карточки, только
+ * нужные Dista колонки (dista_id, титл, номер договора, почта, банк. реквизиты).
+ */
+export async function distaExport() {
+  const r = await apiFetch(`${API}/dista/export`);
+  if (!r.ok) throw new Error(`Не удалось выгрузить файл (${r.status})`);
+  return r.blob();
+}

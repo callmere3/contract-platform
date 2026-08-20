@@ -2,12 +2,25 @@ import { useEffect, useRef, useState } from 'react';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import {
+  distaExport,
   distaOnlyOurs,
   distaOnlyOursExport,
   distaReconcile,
   distaSetExcluded,
   distaStatus,
 } from '../api/dista';
+
+/** Сохранить полученный Blob как файл (скачивание в браузере). */
+function saveBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
 
 /**
  * «Dista Connect» — только admin (canUseDistaSync / CAN_USE_DISTA_SYNC).
@@ -90,6 +103,7 @@ export function DistaConnectPage() {
   const [status, setStatus] = useState(null); // {total, linked, excluded, unlinked}
   const [lists, setLists] = useState(null); // {pending: [...], excluded: [...]}
   const [downloading, setDownloading] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [excludeBusyId, setExcludeBusyId] = useState(null);
 
   const loadStatus = () => distaStatus().then(setStatus).catch(() => {});
@@ -119,19 +133,23 @@ export function DistaConnectPage() {
     setDownloading(true);
     setError('');
     try {
-      const blob = await distaOnlyOursExport();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'dista_to_add.xlsx';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      saveBlob(await distaOnlyOursExport(), 'dista_to_add.xlsx');
     } catch (e) {
       setError(e.message);
     } finally {
       setDownloading(false);
+    }
+  }
+
+  async function exportForDista() {
+    setExporting(true);
+    setError('');
+    try {
+      saveBlob(await distaExport(), 'dista_export.xlsx');
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setExporting(false);
     }
   }
 
@@ -206,7 +224,15 @@ export function DistaConnectPage() {
               'Загрузка сводки…'
             )}
           </div>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-2">
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={exportForDista}
+              disabled={exporting || (status && status.linked === 0)}
+            >
+              {exporting ? 'Готовим…' : `Экспорт для Dista${status ? ` (${status.linked})` : ''}`}
+            </Button>
             <Button
               variant="secondary"
               size="sm"
@@ -220,9 +246,13 @@ export function DistaConnectPage() {
           </div>
         </div>
         <p className="text-xs text-text-muted mt-2 leading-relaxed">
-          Файл с колонками Название + Артикул — заведите этих контрагентов в Dista вручную и впишите
-          артикул в заметку карточки. Тогда следующая сверка свяжет их автоматически по артикулу.
-          Тестовых контрагентов можно «Исключить» — они уйдут из списка и из файла.
+          <b>Экспорт для Dista</b> — только связанные карточки и только нужные колонки: Dista ID,
+          титл, номер договора, почта, банковские реквизиты для оплаты. Полный дамп базы —
+          в экспорте на вкладке «Контрагенты».
+          <br />
+          <b>Список «Нет в Dista»</b> (Название + Артикул) — заведите этих контрагентов в Dista
+          вручную и впишите артикул в заметку; следующая сверка свяжет их по артикулу. Тестовых
+          можно «Исключить» — уйдут из списка и файла.
         </p>
 
         {lists && (

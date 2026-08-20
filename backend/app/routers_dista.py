@@ -41,7 +41,7 @@ from app.auth import get_current_user, require_role
 from app.db import get_session
 from app.models import Contragent, User
 from app.roles import CAN_USE_DISTA_SYNC
-from app.tags import build_article
+from app.tags import PAYMENT_REQUISITE_COLUMNS, build_article
 
 _XLSX_MEDIA = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
@@ -273,6 +273,50 @@ def set_excluded(
         entity_type="contragent", entity_id=contragent_id, meta={"excluded": excluded},
     )
     return {"id": str(contragent_id), "dista_excluded": excluded}
+
+
+@dista_router.get("/export", dependencies=[Depends(require_role(*CAN_USE_DISTA_SYNC))])
+def dista_export(
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> StreamingResponse:
+    """
+    Функциональный экспорт ДЛЯ Dista: только связанные карточки (есть dista_id)
+    и только необходимые для Dista колонки — dista_id, титл, номер договора,
+    почта и платёжные банковские реквизиты (см. PAYMENT_REQUISITE_COLUMNS).
+    Полный дамп базы делает экспорт во вкладке «Контрагенты».
+    """
+    rows = (
+        db.query(Contragent)
+        .filter(Contragent.dista_id.isnot(None))
+        .order_by(Contragent.title)
+        .all()
+    )
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Для Dista"
+    ws.append(["Dista ID", "Титл", "Номер договора"] + [label for _k, label in PAYMENT_REQUISITE_COLUMNS])
+    for c in rows:
+        req = c.requisites or {}
+        ws.append([
+            c.dista_id,
+            c.title,
+            c.contract_number or "",
+            *[req.get(key) or "" for key, _label in PAYMENT_REQUISITE_COLUMNS],
+        ])
+
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+
+    log_action(db, current_user, "dista_export", meta={"rows": len(rows)})
+
+    return StreamingResponse(
+        buffer,
+        media_type=_XLSX_MEDIA,
+        headers={"Content-Disposition": 'attachment; filename="dista_export.xlsx"'},
+    )
 
 
 @dista_router.get("/only-ours-export", dependencies=[Depends(require_role(*CAN_USE_DISTA_SYNC))])

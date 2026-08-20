@@ -211,6 +211,18 @@ REQUISITE_FIELDS_BY_TYPE = {
 # при подстановке и при фильтрации входящего словаря).
 ALL_REQUISITE_FIELDS = {name for names in REQUISITE_FIELDS_BY_TYPE.values() for name in names}
 
+# Платёжные реквизиты (подмножество requisites) — для экспорта: только то, что
+# нужно для оплаты. Пара (ключ_метки_в_requisites, заголовок_колонки). Общий
+# список для «Экспорта для Dista» (routers_dista) и полного экспорта базы
+# (routers_contragents), чтобы набор был единым.
+PAYMENT_REQUISITE_COLUMNS = [
+    ("mail", "E-mail"),
+    ("rs", "Расчётный счёт"),
+    ("bank", "Банк"),
+    ("bik", "БИК"),
+    ("ks", "Корр. счёт"),
+]
+
 
 # Источники автоподстановки для полей формы генерации из карточки
 # контрагента (TemplateField.maps_to). "manual" (по умолчанию) — оператор
