@@ -145,7 +145,8 @@ export function DistaConnectPage() {
     setExporting(true);
     setError('');
     try {
-      saveBlob(await distaExport(), 'dista_export.xlsx');
+      const { blob, filename } = await distaExport();
+      saveBlob(blob, filename);
     } catch (e) {
       setError(e.message);
     } finally {

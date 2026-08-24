@@ -1,4 +1,4 @@
-import { API, apiFetch, apiJson } from './client';
+import { API, apiFetch, apiJson, filenameFromResponse } from './client';
 
 /**
  * Вызовы вкладки «Dista Connect» (сверка нашей базы с выгрузкой Dista Music).
@@ -44,10 +44,12 @@ export async function distaOnlyOursExport() {
 
 /**
  * Функциональный экспорт ДЛЯ Dista (.xlsx): только связанные карточки, только
- * нужные Dista колонки (dista_id, титл, номер договора, почта, банк. реквизиты).
+ * нужные Dista колонки (dista_id, название, номер договора, почта, банк. реквизиты).
+ * Возвращает { blob, filename }: имя («export for Dista <дата>.xlsx») придумывает
+ * сервер и шлёт в Content-Disposition.
  */
 export async function distaExport() {
   const r = await apiFetch(`${API}/dista/export`);
   if (!r.ok) throw new Error(`Не удалось выгрузить файл (${r.status})`);
-  return r.blob();
+  return { blob: await r.blob(), filename: filenameFromResponse(r, 'export for Dista.xlsx') };
 }

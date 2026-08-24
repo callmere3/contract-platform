@@ -29,6 +29,7 @@ dista_id, реквизиты пусты → карточка «неполная�
 """
 import io
 import uuid
+from datetime import date
 
 import openpyxl
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -296,7 +297,7 @@ def dista_export(
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Для Dista"
-    ws.append(["Dista ID", "Титл", "Номер договора"] + [label for _k, label in PAYMENT_REQUISITE_COLUMNS])
+    ws.append(["Dista ID", "Название", "Номер договора"] + [label for _k, label in PAYMENT_REQUISITE_COLUMNS])
     for c in rows:
         req = c.requisites or {}
         ws.append([
@@ -312,10 +313,11 @@ def dista_export(
 
     log_action(db, current_user, "dista_export", meta={"rows": len(rows)})
 
+    filename = f"export for Dista {date.today().isoformat()}.xlsx"
     return StreamingResponse(
         buffer,
         media_type=_XLSX_MEDIA,
-        headers={"Content-Disposition": 'attachment; filename="dista_export.xlsx"'},
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
