@@ -100,8 +100,6 @@ export function NewContragentModal({ level, isTop }) {
     if (Number.isNaN(royaltyNum) || royaltyNum < 0 || royaltyNum > 100)
       return 'Роялти должно быть числом от 0 до 100.';
     if (regNumber && !/^\d+$/.test(regNumber)) return 'Рег. номер должен состоять только из цифр.';
-    if (regNumber && meta && regNumber.length !== meta.length)
-      return `${meta.label} должен содержать ${meta.length} цифр, сейчас ${regNumber.length}.`;
     if (duplicates?.exact) return 'Контрагент с таким ФИО уже существует.';
     return '';
   }
@@ -228,7 +226,7 @@ export function NewContragentModal({ level, isTop }) {
           value={regNumber}
           onChange={(e) => setRegNumber(e.target.value)}
           placeholder="только цифры"
-          hint={meta ? `${meta.length} цифр, необязательно` : 'Сначала выберите тип контрагента'}
+          hint={meta ? `обычно ${meta.length} цифр, необязательно` : 'Сначала выберите тип контрагента'}
         />
 
         <Field
@@ -281,7 +279,7 @@ export function NewContragentModal({ level, isTop }) {
         onRegNumberChange={setRegNumber}
         regNumberLabel={meta?.label ?? 'Рег. номер'}
         regNumberHint={
-          meta ? `${meta.length} цифр, необязательно` : 'Сначала выберите тип контрагента'
+          meta ? `обычно ${meta.length} цифр, необязательно` : 'Сначала выберите тип контрагента'
         }
       />
 

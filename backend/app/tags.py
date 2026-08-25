@@ -267,12 +267,16 @@ def normalize_maps_to(value: str) -> str:
 
 def normalize_reg_number(value: str | None, contragent_type: str | None) -> str | None:
     """
-    Приводит рег. номер к строке только из цифр и проверяет длину,
-    ожидаемую для данного типа контрагента (см. REG_NUMBER_META).
+    Приводит рег. номер к строке только из цифр.
 
-    contragent_type может быть None (напр. тип ещё не выбран/не заполнен
-    при "неполном" импорте) — тогда проверяется только "только цифры",
-    без проверки длины: не с чем сверять.
+    Длина НЕ проверяется (снято 25.08.2026): у иностранных контрагентов
+    длина рег. номера своя (напр. ИНН гражданина Узбекистана — 9 цифр, а не
+    12), и жёсткая проверка под РФ/КЗ не давала завести карточку и
+    сформировать документ. REG_NUMBER_META остаётся только для подписи поля
+    и подсказки, но не как ограничение.
+
+    contragent_type сохранён в сигнатуре ради обратной совместимости вызовов;
+    на нормализацию он больше не влияет.
 
     Пустая строка/None -> None (поле не задано, контрагент "неполный").
     """
@@ -284,16 +288,6 @@ def normalize_reg_number(value: str | None, contragent_type: str | None) -> str 
             status_code=400,
             detail=f"Рег. номер должен состоять только из цифр: {value!r}",
         )
-    if contragent_type and contragent_type in REG_NUMBER_META:
-        label, length = REG_NUMBER_META[contragent_type]
-        if len(digits) != length:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"{label} для типа {contragent_type} должен содержать "
-                    f"{length} цифр, получено {len(digits)}: {value!r}"
-                ),
-            )
     return digits
 
 

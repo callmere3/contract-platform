@@ -112,8 +112,6 @@ export function EditContragentModal({ contragent, level, isTop, onSaved }) {
     // Рег. номер правит ЛЮБАЯ роль (в т.ч. менеджер в restricted) — проверяем
     // всегда, до early-return для restricted.
     if (regNumber && !/^\d+$/.test(regNumber)) return 'Рег. номер должен состоять только из цифр.';
-    if (regNumber && meta && regNumber.length !== meta.length)
-      return `${meta.label} должен содержать ${meta.length} цифр, сейчас ${regNumber.length}.`;
     if (restricted) return ''; // остальные поля менеджеру недоступны — валидировать нечего
     if (canTitle && !title.trim()) return 'Титл не может быть пустым.';
     if (!name.trim()) return 'ФИО/название не может быть пустым.';
@@ -405,7 +403,7 @@ export function EditContragentModal({ contragent, level, isTop, onSaved }) {
             value={regNumber}
             onChange={(e) => setRegNumber(e.target.value)}
             placeholder="только цифры"
-            hint={meta ? `${meta.length} цифр` : undefined}
+            hint={meta ? `обычно ${meta.length} цифр` : undefined}
           />
         )}
 
@@ -469,7 +467,7 @@ export function EditContragentModal({ contragent, level, isTop, onSaved }) {
         regNumber={regNumber}
         onRegNumberChange={setRegNumber}
         regNumberLabel={meta?.label ?? 'Рег. номер'}
-        regNumberHint={meta ? `${meta.length} цифр` : undefined}
+        regNumberHint={meta ? `обычно ${meta.length} цифр` : undefined}
       />
       </>
       )}
