@@ -17,7 +17,13 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.auth import require_role
-from app.champion import NOT_COMPETING, current_month_bounds, month_champions, unique_counts
+from app.champion import (
+    NOT_COMPETING,
+    current_month_bounds,
+    days_left_in_month,
+    month_champions,
+    unique_counts,
+)
 from app.db import get_session
 from app.models import User
 from app.roles import CAN_VIEW_CHAMPION_BOARD
@@ -39,7 +45,7 @@ def champion_board(db: Session = Depends(get_session)) -> dict:
     """
     {
       "current": {"period", "period_of", "documents", "winners": [...]} | null,
-      "rating":  {"period", "period_of", "rows": [...]}
+      "rating":  {"period", "period_of", "days_left", "rows": [...]}
     }
 
     winners — список, а не один человек: при ничьей кубок у всех.
@@ -82,5 +88,11 @@ def champion_board(db: Session = Depends(get_session)) -> dict:
 
     return {
         "current": current,
-        "rating": {"period": label, "period_of": label_of, "rows": rows},
+        "rating": {
+            "period": label,
+            "period_of": label_of,
+            # Сколько дней осталось до конца месяца (0 — последний день).
+            "days_left": days_left_in_month(),
+            "rows": rows,
+        },
     }

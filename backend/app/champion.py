@@ -104,6 +104,23 @@ def previous_month_bounds(now: datetime | None = None) -> tuple[datetime, dateti
     return first_of_prev.astimezone(timezone.utc), first_of_this.astimezone(timezone.utc), label, label_of
 
 
+def days_left_in_month(now: datetime | None = None) -> int:
+    """
+    Сколько ПОЛНЫХ дней месяца ещё впереди, по московскому календарю.
+    В последний день месяца — 0.
+
+    Считает сервер, а не браузер: у пользователя может стоять другой
+    часовой пояс, и 1-го числа в 00:30 по Москве его вкладка показывала бы
+    остаток прошлого месяца.
+    """
+    now_msk = (now or datetime.now(timezone.utc)).astimezone(MSK)
+    # Прыжок с 28-го на 4 дня вперёд гарантированно попадает в следующий
+    # месяц при любой его длине, включая февраль високосного года.
+    first_next = (now_msk.replace(day=28) + timedelta(days=4)).replace(day=1)
+    last_day = (first_next - timedelta(days=1)).day
+    return last_day - now_msk.day
+
+
 def _document_key(row) -> tuple:
     """Что считаем одним документом: шаблон + контрагент + содержимое формы."""
     payload_fingerprint = hashlib.sha1(

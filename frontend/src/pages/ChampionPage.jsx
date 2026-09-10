@@ -5,6 +5,57 @@ import { fetchChampionBoard } from '../api/champion';
 const MEDALS = ['🥇', '🥈', '🥉'];
 
 /**
+ * Цитаты на подвале доски. При каждом заходе на вкладку — другая: подряд
+ * одну и ту же не показываем, для этого помним номер прошлой в
+ * localStorage (переживает перезагрузку страницы, у каждого свой).
+ */
+const QUOTES = [
+  ['Успех — это сумма небольших усилий, повторяемых изо дня в день', 'Роберт Кольер'],
+  ['Дорогу осилит идущий', 'пословица'],
+  ['Не бойся идти медленно, бойся стоять на месте', 'китайская пословица'],
+  ['Лучшее время посадить дерево было двадцать лет назад. Следующее — сегодня', 'китайская пословица'],
+  ['Делай, что можешь, с тем, что имеешь, там, где ты есть', 'Теодор Рузвельт'],
+  ['Терпение и труд всё перетрут', 'русская пословица'],
+  ['Кто хочет — ищет возможности, кто не хочет — ищет причины', 'пословица'],
+];
+
+const QUOTE_KEY = 'ml_champion_quote';
+
+function pickQuote() {
+  let previous = -1;
+  try {
+    previous = Number(localStorage.getItem(QUOTE_KEY));
+  } catch {
+    /* приватный режим или запрет на хранилище — просто возьмём случайную */
+  }
+  // Выбираем из всех, кроме прошлой: так «новая цитата» гарантирована, а не
+  // выпадает случайно той же самой.
+  const pool = QUOTES.map((_, i) => i).filter((i) => i !== previous);
+  const next = pool[Math.floor(Math.random() * pool.length)];
+  try {
+    localStorage.setItem(QUOTE_KEY, String(next));
+  } catch {
+    /* не смогли запомнить — не беда, просто в следующий раз может повториться */
+  }
+  return QUOTES[next];
+}
+
+/** «остался 1 день» / «осталось 2 дня» / «осталось 5 дней». */
+function daysLeftText(days) {
+  if (days === 0) return 'последний день месяца';
+  const mod10 = days % 10;
+  const mod100 = days % 100;
+  const word =
+    mod10 === 1 && mod100 !== 11
+      ? 'день'
+      : mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)
+        ? 'дня'
+        : 'дней';
+  const verb = mod10 === 1 && mod100 !== 11 ? 'остался' : 'осталось';
+  return `${verb} ${days} ${word}`;
+}
+
+/**
  * Места с учётом равного счёта: одинаковое число документов — одно и то же
  * место и одна и та же медаль. Иначе двое с шестью документами получили бы
  * золото и серебро только потому, что один раньше по алфавиту.
@@ -59,6 +110,11 @@ export function ChampionPage() {
   const current = board?.current;
   const rating = board?.rating;
   const rows = useMemo(() => withPlaces(rating?.rows ?? []), [rating]);
+  // useState с функцией-инициализатором: pickQuote вызывается один раз за
+  // монтирование страницы. Иначе цитата менялась бы на каждой перерисовке —
+  // например, когда приходит ответ сервера.
+  const [quoteEntry] = useState(pickQuote);
+  const [quote, quoteAuthor] = quoteEntry;
   const leader = rows.length > 0 ? rows[0].documents : 0;
 
   return (
@@ -105,7 +161,12 @@ export function ChampionPage() {
           <span className="text-sm font-semibold text-text">
             Рейтинг {rating ? rating.period_of : 'месяца'}
           </span>
-          <span className="text-[12px] text-text-muted">идёт сейчас</span>
+          {/* Остаток дней считает сервер: у пользователя может стоять другой
+              часовой пояс, и 1-го числа ночью браузер показал бы остаток
+              прошлого месяца. */}
+          <span className="text-[12px] text-text-muted">
+            {rating ? daysLeftText(rating.days_left) : ''}
+          </span>
         </div>
 
         {loading && <div className="p-5 text-[13px] text-text-muted">Загружаем…</div>}
@@ -167,9 +228,9 @@ export function ChampionPage() {
           по просьбе владельца: доска мотивирует, а не объясняет арифметику. */}
       <figure className="m-0 px-1 pt-2 text-center">
         <blockquote className="m-0 text-[14px] text-text-secondary italic leading-relaxed">
-          «Успех — это сумма небольших усилий, повторяемых изо дня в день»
+          «{quote}»
         </blockquote>
-        <figcaption className="mt-1.5 text-[12px] text-text-muted">Роберт Кольер</figcaption>
+        <figcaption className="mt-1.5 text-[12px] text-text-muted">{quoteAuthor}</figcaption>
       </figure>
     </div>
   );
