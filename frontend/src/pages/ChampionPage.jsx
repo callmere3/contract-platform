@@ -1,6 +1,28 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Card } from '../components/ui/Card';
 import { fetchChampionBoard } from '../api/champion';
+
+const MEDALS = ['🥇', '🥈', '🥉'];
+
+/**
+ * Места с учётом равного счёта: одинаковое число документов — одно и то же
+ * место и одна и та же медаль. Иначе двое с 6 документами получили бы
+ * золото и серебро только потому, что один раньше по алфавиту.
+ *
+ * Нумерация «плотная» (1, 1, 2), а не спортивная (1, 1, 3): мест на доске
+ * всего три, и при дележе первого бронза всё равно должна кому-то достаться.
+ */
+function withPlaces(rows) {
+  let place = 0;
+  let previous = null;
+  return rows.map((row) => {
+    if (row.documents !== previous) {
+      place += 1;
+      previous = row.documents;
+    }
+    return { ...row, place };
+  });
+}
 
 /**
  * «Кубок» — только admin (canViewChampionBoard / CAN_VIEW_CHAMPION_BOARD).
@@ -31,7 +53,7 @@ export function ChampionPage() {
 
   const current = board?.current;
   const rating = board?.rating;
-  const rows = rating?.rows ?? [];
+  const rows = useMemo(() => withPlaces(rating?.rows ?? []), [rating]);
   const leader = rows.length > 0 ? rows[0].documents : 0;
 
   return (
@@ -90,17 +112,25 @@ export function ChampionPage() {
         )}
 
         {!loading &&
-          rows.map((r, i) => (
+          rows.map((r) => (
             <div
               key={r.id}
               className="flex items-center gap-4 px-5 py-3.5 border-b border-border last:border-b-0"
             >
+              {/* Первые три места — медалями, дальше номером. Ширина общая,
+                  чтобы имена стояли в одну колонку в обоих случаях. */}
               <span
-                className={`w-6 text-center text-[13px] font-semibold tabular-nums flex-shrink-0 ${
-                  i === 0 ? 'text-accent' : 'text-text-muted'
+                title={`${r.place} место`}
+                aria-label={`${r.place} место`}
+                className={`w-6 text-center flex-shrink-0 ${
+                  r.place <= MEDALS.length
+                    ? 'text-[17px] leading-none'
+                    : `text-[13px] font-semibold tabular-nums ${
+                        r.place === 1 ? 'text-accent' : 'text-text-muted'
+                      }`
                 }`}
               >
-                {i + 1}
+                {r.place <= MEDALS.length ? MEDALS[r.place - 1] : r.place}
               </span>
 
               <span className="text-[14px] text-text truncate flex-shrink-0 w-[190px]">
@@ -110,7 +140,7 @@ export function ChampionPage() {
               {/* Полоса — доля от лидера: глазами видно отрыв, а не только цифру */}
               <span className="flex-1 h-2 bg-input-bg rounded-full overflow-hidden">
                 <span
-                  className={`block h-full rounded-full ${i === 0 ? 'bg-accent' : 'bg-border'}`}
+                  className={`block h-full rounded-full ${r.place === 1 ? 'bg-accent' : 'bg-border'}`}
                   style={{ width: leader > 0 ? `${Math.round((r.documents / leader) * 100)}%` : 0 }}
                 />
               </span>
