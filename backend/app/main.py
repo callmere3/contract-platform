@@ -34,9 +34,14 @@ from app.routers_generation_history import generation_history_router
 from app.routers_notifications import notifications_router
 from app.routers_tags import tags_router
 from app.routers_templates import folders_router, templates_router
+from app.request_context import HttpRequestContextMiddleware
 from app.storage import download_test_file, ensure_bucket_exists, upload_test_file
 
 app = FastAPI(title="Contract Platform API")
+
+# Помечает, что код исполняется внутри HTTP-запроса. Нужно журналу действий,
+# чтобы отличать работу людей от прогонов скриптов (см. request_context.py).
+app.add_middleware(HttpRequestContextMiddleware)
 
 app.include_router(auth_router)
 app.include_router(users_router)

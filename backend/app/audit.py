@@ -13,8 +13,17 @@ import uuid
 from sqlalchemy.orm import Session
 
 from app.models import AuditLog, GeneratedDocument, User
+from app.request_context import in_http_request
 
 logger = logging.getLogger("audit")
+
+# Ключ и значение метки «запись сделана не человеком через интерфейс, а
+# скриптом внутри контейнера» (E2E-прогон, отладка). Лежит в meta, а не в
+# отдельной колонке: миграция ради служебного признака не нужна, а meta
+# для этого и заведена (см. AuditLog в models.py). По этой метке
+# list_audit_log прячет запись из журнала — см. routers_auth.py.
+SOURCE_KEY = "via"
+SOURCE_SCRIPT = "script"
 
 
 def log_action(
@@ -25,6 +34,21 @@ def log_action(
     entity_id: str | None = None,
     meta: dict | None = None,
 ) -> None:
+    """
+    Запись в журнал действий.
+
+    Действия, выполненные не через HTTP (скрипты в контейнере: E2E-прогоны,
+    ручная отладка), помечаются meta.via='script' и в журнале не
+    показываются. Запись при этом ВСЁ РАВНО СОЗДАЁТСЯ — специально: если
+    определение источника однажды собьётся, в худшем случае в журнале
+    появится лишняя строка, а не бесследно исчезнет настоящая. Тихо
+    потерянное действие — куда худшая беда для журнала, чем видимый лишний
+    шум. Полная выдача остаётся доступной через ?include_script=true.
+    """
+    if not in_http_request():
+        meta = dict(meta or {})
+        meta[SOURCE_KEY] = SOURCE_SCRIPT
+
     try:
         db.add(
             AuditLog(

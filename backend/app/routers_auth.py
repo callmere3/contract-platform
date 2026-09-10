@@ -27,7 +27,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.audit import log_action
+from app.audit import SOURCE_KEY, SOURCE_SCRIPT, log_action
 from app.auth import (
     _hash_token,
     create_access_token,
@@ -321,11 +321,29 @@ def update_user(
 def list_audit_log(
     limit: int = Query(100, le=500),
     entity_type: str | None = None,
+    include_script: bool = False,
     db: Session = Depends(get_session),
 ) -> list[dict]:
+    """
+    Журнал действий, самые новые сверху.
+
+    По умолчанию показываются только действия людей через интерфейс.
+    Записи, сделанные скриптами внутри контейнера (E2E-прогоны, отладка),
+    помечены meta.via='script' и скрыты: до 10.09.2026 они лежали в журнале
+    вперемешку с настоящими и составляли 29% всех записей — по журналу
+    выходило, будто менеджеры правили карточки в дни, когда они вообще не
+    заходили в сервис. Записи не удалены, ?include_script=true отдаёт всё.
+
+    Условие через IS DISTINCT FROM, а не '!=': у записи без метки
+    meta->>'via' равен NULL, а сравнение NULL != 'script' даёт NULL, и
+    обычный фильтр выбросил бы из выдачи ровно те строки, ради которых
+    он написан.
+    """
     query = db.query(AuditLog)
     if entity_type is not None:
         query = query.filter(AuditLog.entity_type == entity_type)
+    if not include_script:
+        query = query.filter(AuditLog.meta[SOURCE_KEY].astext.is_distinct_from(SOURCE_SCRIPT))
 
     entries = query.order_by(AuditLog.created_at.desc()).limit(limit).all()
     return [
