@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { ChampionBadge } from '../components/ui/ChampionBadge';
 import { NavLink } from 'react-router-dom';
 import { useTheme } from '../theme/ThemeContext';
 import { useAuth } from '../auth/AuthContext';
@@ -105,6 +106,10 @@ export function Header({ companyName = 'ML Docs' }) {
         >
           {theme === 'dark' ? '☀' : '☾'}
         </button>
+        {/* Кубок месяца — снаружи кнопки смены пароля: у него свой title
+            («чемпион за …»), а вложенный в кнопку он подменялся бы
+            подсказкой «Сменить пароль». */}
+        <ChampionBadge champion={user?.champion} />
         {/* Имя — точка входа в смену своего пароля: отдельная вкладка ради
             одного действия избыточна, а profile-меню в макете не заложено. */}
         <button

@@ -28,6 +28,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.audit import SOURCE_KEY, SOURCE_SCRIPT, log_action
+from app.champion import champion_badge, month_champions
 from app.auth import (
     _hash_token,
     create_access_token,
@@ -124,10 +125,21 @@ def logout(body: RefreshRequest, db: Session = Depends(get_session)) -> dict:
 
 
 @auth_router.get("/me")
-def me(user: User = Depends(get_current_user)) -> dict:
+def me(user: User = Depends(get_current_user), db: Session = Depends(get_session)) -> dict:
     """Кто я и с какой ролью — фронтенду нужно знать это сразу после логина,
-    чтобы скрыть в интерфейсе кнопки действий, недоступных текущей роли."""
-    return {"id": str(user.id), "username": user.username, "full_name": user.full_name, "role": user.role}
+    чтобы скрыть в интерфейсе кнопки действий, недоступных текущей роли.
+
+    champion — кубок месяца рядом с именем в шапке: непусто, если по итогам
+    ПРОШЛОГО месяца этот пользователь сделал больше всех уникальных
+    документов (см. app/champion.py). Считается на лету, отдельной таблицы
+    наград нет."""
+    return {
+        "id": str(user.id),
+        "username": user.username,
+        "full_name": user.full_name,
+        "role": user.role,
+        "champion": champion_badge(month_champions(db), user.id),
+    }
 
 
 class ChangePasswordRequest(BaseModel):
@@ -245,6 +257,9 @@ def list_users(db: Session = Depends(get_session)) -> list[dict]:
     # Просмотр списка — Admin и Director (CAN_VIEW_USERS). Изменение
     # (create_user/update_user ниже) осталось за Admin: director только видит.
     users = db.query(User).order_by(User.username).all()
+    # Один расчёт на весь список, а не на каждого пользователя (внутри ещё и
+    # кеш на 10 минут — список опрашивается фронтом раз в 30 секунд).
+    champions = month_champions(db)
     return [
         {
             "id": str(u.id),
@@ -255,6 +270,8 @@ def list_users(db: Session = Depends(get_session)) -> list[dict]:
             # ISO-время последнего запроса; фронт по нему считает "в сети"
             # (< 5 мин) и показывает время последнего использования.
             "last_seen_at": u.last_seen_at.isoformat() if u.last_seen_at else None,
+            # Кубок месяца — непусто у победителя(ей) прошлого месяца.
+            "champion": champion_badge(champions, u.id),
         }
         for u in users
     ]

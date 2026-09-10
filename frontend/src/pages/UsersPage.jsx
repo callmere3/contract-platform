@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Badge } from '../components/ui/Badge';
+import { ChampionBadge } from '../components/ui/ChampionBadge';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { listUsers, updateUser } from '../api/users';
@@ -139,6 +140,7 @@ export function UsersPage() {
                 <div className="min-w-0">
                   <div className="text-[15px] font-semibold text-text truncate flex items-center gap-2">
                     {u.full_name || u.username}
+                    <ChampionBadge champion={u.champion} />
                     {isMe && <Badge variant="neutral">это вы</Badge>}
                     {!u.is_active && <Badge variant="neutral">отключён</Badge>}
                   </div>
