@@ -47,6 +47,9 @@ export function createContragent({
   regNumber,
   nicknames,
   requisites, // объект {имя_метки: значение}, необязательно
+  // «Да, создать, хотя карточка с таким титлом уже есть». Без флага сервер
+  // отвечает 409 duplicate_title со списком найденных (см. create_contragent).
+  confirmDuplicate = false,
 }) {
   const body = new URLSearchParams({
     name,
@@ -63,6 +66,7 @@ export function createContragent({
   if (requisites && Object.keys(requisites).length > 0) {
     body.append('requisites', JSON.stringify(requisites));
   }
+  if (confirmDuplicate) body.append('confirm_duplicate', 'true');
   return apiJson(`${API}/contragents`, { method: 'POST', body });
 }
 

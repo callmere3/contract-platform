@@ -9,6 +9,7 @@ import { EditTemplateModal } from './EditTemplateModal';
 import { NewUserModal } from './NewUserModal';
 import { ChangePasswordModal } from './ChangePasswordModal';
 import { ConfirmExitDraftModal } from './ConfirmExitDraftModal';
+import { ConfirmDuplicateContragentModal } from './ConfirmDuplicateContragentModal';
 import { AlertModal } from './AlertModal';
 
 const REGISTRY = {
@@ -24,6 +25,7 @@ const REGISTRY = {
   newUser: NewUserModal,
   changePassword: ChangePasswordModal,
   confirmExitDraft: ConfirmExitDraftModal,
+  confirmDuplicateContragent: ConfirmDuplicateContragentModal,
 };
 
 export function ModalRoot() {

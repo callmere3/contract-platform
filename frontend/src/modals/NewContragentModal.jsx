@@ -41,7 +41,7 @@ export function NewContragentModal({ level, isTop }) {
   const [requisites, setRequisites] = useState({});
   const setReq = (name, value) => setRequisites((r) => ({ ...r, [name]: value }));
 
-  const [duplicates, setDuplicates] = useState(null); // {exact: bool, titles: []}
+  const [similar, setSimilar] = useState([]); // титлы похожих карточек (подсказка)
   const [busy, setBusy] = useState(false);
 
   // Подпись и длина рег. номера зависят от типа: ИНН 12 / ОГРНИП 15 / ОГРН 13.
@@ -59,32 +59,34 @@ export function NewContragentModal({ level, isTop }) {
     }
   }
 
-  // Проверка дублей по ФИО на лету. Дебаунс 400 мс — как в боевом index.html.
-  // Ищем по name, а не по title: у одного человека "Иванов (СГ)" и
-  // "Иванов (ИП)" — разные title, но это один и тот же человек, и завести
-  // его дважды нельзя (см. findExistingByName в боевой версии).
+  // Подсказка «похожие уже есть» на лету, дебаунс 400 мс. Это ТОЛЬКО
+  // подсказка: настоящая защита от дублей — на сервере (409 по вычисленному
+  // титлу, см. create_contragent). Прежний жёсткий блок по точному
+  // совпадению c.name снят 10.09.2026: у 465 из 828 карточек name пустой
+  // (пришли импортом), и против них он не срабатывал в принципе.
+  //
+  // Ищем по ПЕРВОМУ СЛОВУ (фамилия / начало названия), а не по всей введённой
+  // строке. Импортная карточка хранит сокращённый титл «Кеосеян Э. З. (ИП)»,
+  // подстроки «Кеосеян Эдгар Зареевич» в нём нет — поиск по полному ФИО не
+  // находил ровно тех, кого важнее всего показать (так и родился дубль).
   useEffect(() => {
-    const q = name.trim();
-    // Не ищем, пока не введено хотя бы первое слово (имя человека / первое
-    // слово названия компании): на 1–2 буквах поиск вываливал сотни
-    // совпадений. Порог — первое слово от 3 символов.
-    const firstWord = q.split(/\s+/)[0] || '';
+    // Порог — первое слово от 3 символов: на 1–2 буквах поиск вываливал сотни
+    // совпадений.
+    const firstWord = name.trim().split(/\s+/)[0] || '';
     if (firstWord.length < 3) {
-      setDuplicates(null);
+      setSimilar([]);
       return;
     }
     const timer = setTimeout(async () => {
       try {
-        const data = await searchContragents({ q });
-        const normalized = q.toLowerCase();
+        const data = await searchContragents({ q: firstWord });
         // Если тип выбран — показываем только контрагентов ЭТОГО типа: у ООО
-        // не должны всплывать СГ/ИП. При смене типа проверка перезапускается
+        // не должны всплывать СГ/ИП. При смене типа поиск перезапускается
         // (type в зависимостях эффекта).
         const matches = data.contragents.filter((c) => !type || c.type === type);
-        const exact = matches.find((c) => (c.name || '').trim().toLowerCase() === normalized);
-        setDuplicates({ exact: Boolean(exact), titles: matches.map((c) => c.title) });
+        setSimilar(matches.map((c) => c.title));
       } catch {
-        setDuplicates(null); // сеть недоступна — не мешаем работать
+        setSimilar([]); // сеть недоступна — не мешаем работать
       }
     }, 400);
     return () => clearTimeout(timer);
@@ -100,8 +102,29 @@ export function NewContragentModal({ level, isTop }) {
     if (Number.isNaN(royaltyNum) || royaltyNum < 0 || royaltyNum > 100)
       return 'Роялти должно быть числом от 0 до 100.';
     if (regNumber && !/^\d+$/.test(regNumber)) return 'Рег. номер должен состоять только из цифр.';
-    if (duplicates?.exact) return 'Контрагент с таким ФИО уже существует.';
     return '';
+  }
+
+  // Один запрос на создание. confirmDuplicate=true уходит вторым заходом,
+  // после того как оператор подтвердил совпадение титла (см. submit).
+  async function create(confirmDuplicate) {
+    const created = await createContragent({
+      name: name.trim(),
+      country,
+      contragentType: type,
+      contractFamily,
+      contractDate,
+      royaltyPercent: royaltyNum,
+      regNumber: regNumber.trim(),
+      nicknames: nicknames.trim(),
+      // сервер сам отсеет пустые/чужие ключи (_parse_requisites)
+      requisites,
+      confirmDuplicate,
+    });
+    closeModal();
+    // Сразу показываем документы созданного контрагента — не нужно его
+    // потом искать заново, чтобы сделать документ (как в боевой версии).
+    openModal('contragentDocs', { contragentId: created.id });
   }
 
   async function submit() {
@@ -112,50 +135,29 @@ export function NewContragentModal({ level, isTop }) {
     }
     setBusy(true);
     try {
-      // Свежая проверка дубля по ФИО прямо перед созданием — на случай, если
-      // оператор кликнул "Создать" раньше, чем отработал дебаунс живой
-      // проверки (или тот упал из-за сетевого сбоя во время ввода). У name
-      // нет unique-констрейнта на бэкенде, это единственная защита от дублей
-      // по ФИО — см. findExistingByName в боевом index.html.
-      const q = name.trim();
-      let exact = null;
-      try {
-        const dup = await searchContragents({ q });
-        const normalized = q.toLowerCase();
-        // Дубль — только среди контрагентов того же типа (см. живую проверку):
-        // один человек может быть и СГ, и ИП — это разные карточки.
-        exact =
-          dup.contragents.find(
-            (c) => (c.name || '').trim().toLowerCase() === normalized && (!type || c.type === type),
-          ) || null;
-      } catch {
-        /* сеть недоступна — не блокируем создание из-за сбоя самой проверки */
-      }
-      if (exact) {
-        openModal('alert', {
-          title: 'Контрагент уже существует',
-          message: `Контрагент с таким именем/названием уже существует: «${exact.title}».`,
-        });
-        return; // finally ниже вернёт busy=false
-      }
-
-      const created = await createContragent({
-        name: name.trim(),
-        country,
-        contragentType: type,
-        contractFamily,
-        contractDate,
-        royaltyPercent: royaltyNum,
-        regNumber: regNumber.trim(),
-        nicknames: nicknames.trim(),
-        // сервер сам отсеет пустые/чужие ключи (_parse_requisites)
-        requisites,
-      });
-      closeModal();
-      // Сразу показываем документы созданного контрагента — не нужно его
-      // потом искать заново, чтобы сделать документ (как в боевой версии).
-      openModal('contragentDocs', { contragentId: created.id });
+      await create(false);
     } catch (e) {
+      // 409 — сервер нашёл карточку с таким же вычисленным титлом. Это не
+      // отказ, а вопрос: полный тёзка и вторая карточка того же человека
+      // (аванс/роялти) законны. Показываем найденное и, если оператор
+      // подтвердил, повторяем запрос с флагом.
+      if (e.status === 409 && e.detail?.code === 'duplicate_title') {
+        openModal('confirmDuplicateContragent', {
+          message: e.message,
+          duplicates: e.detail.duplicates || [],
+          onConfirm: async () => {
+            setBusy(true);
+            try {
+              await create(true);
+            } catch (err) {
+              openModal('alert', { title: 'Не удалось создать контрагента', message: err.message });
+            } finally {
+              setBusy(false);
+            }
+          },
+        });
+        return;
+      }
       openModal('alert', { title: 'Не удалось создать контрагента', message: e.message });
     } finally {
       setBusy(false);
@@ -190,15 +192,10 @@ export function NewContragentModal({ level, isTop }) {
               isCompanyType(type, companyTypeByCountry) ? 'Ромашка (без «ООО»/кавычек)' : 'Иванов Иван Иванович'
             }
           />
-          {duplicates?.exact && (
-            <div className="text-[11px] text-accent mt-1.5 leading-snug">
-              Контрагент с таким именем/названием уже существует — создать через эту форму нельзя.
-            </div>
-          )}
-          {duplicates && !duplicates.exact && duplicates.titles.length > 0 && (
+          {similar.length > 0 && (
             <div className="text-[11px] text-text-muted mt-1.5 leading-snug">
-              Похожие уже есть: {duplicates.titles.slice(0, 8).join(', ')}
-              {duplicates.titles.length > 8 && ` и ещё ${duplicates.titles.length - 8}`}
+              Похожие уже есть: {similar.slice(0, 8).join(', ')}
+              {similar.length > 8 && ` и ещё ${similar.length - 8}`}
             </div>
           )}
         </div>

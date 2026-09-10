@@ -193,14 +193,26 @@ export function filenameFromResponse(response, fallback = 'document') {
 export async function apiJson(url, options = {}) {
   const r = await apiFetch(url, options);
   if (!r.ok) {
-    let detail = `Ошибка ${r.status}`;
+    let message = `Ошибка ${r.status}`;
+    let detail = null;
     try {
       const body = await r.json();
-      if (body?.detail) detail = typeof body.detail === 'string' ? body.detail : detail;
+      detail = body?.detail ?? null;
+      if (typeof detail === 'string') message = detail;
+      // detail бывает и объектом: так 409 при совпадении титла контрагента
+      // приносит {code, message, duplicates} (см. create_contragent). Текст
+      // берём из .message, а весь объект отдаём вызывающему в err.detail —
+      // форме нужен список найденных карточек, чтобы предложить подтвердить.
+      else if (typeof detail?.message === 'string') message = detail.message;
     } catch {
       /* тело не JSON — оставляем код статуса */
     }
-    throw new Error(detail);
+    // Обычный Error с человекочитаемым текстом (его показывают как есть),
+    // плюс status/detail для тех мест, где важен КОД ответа, а не текст.
+    const error = new Error(message);
+    error.status = r.status;
+    error.detail = detail;
+    throw error;
   }
   if (r.status === 204) return null;
   return r.json();
