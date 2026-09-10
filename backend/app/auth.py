@@ -34,6 +34,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.db import get_session
 from app.models import RefreshToken, User
+from app.request_context import in_http_request
 
 _pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 
@@ -174,7 +175,18 @@ def _touch_last_seen(db: Session, user: User) -> None:
     запись не удалась, глотаем ошибку и откатываем — статус "в сети" не
     настолько важен, чтобы из-за него падал реальный запрос пользователя
     (тот же принцип, что и у audit_log).
+
+    Только для настоящих запросов. E2E- и отладочные скрипты внутри
+    контейнера зовут get_current_user напрямую, чтобы получить объект
+    пользователя, — и раньше проставляли ему отметку «был(а) в сети», хотя
+    человек в сервис не заходил. Так во вкладке «Пользователи» у менеджера
+    German 20 дней висело 20.08 вместо настоящего 04.08: тестовый прогон
+    прав доступа затёр реальную отметку (разбор 10.09.2026). Признак
+    источника — тот же, что у журнала действий, см. app/request_context.py.
     """
+    if not in_http_request():
+        return
+
     now = datetime.now(timezone.utc)
     last = user.last_seen_at
     if last is not None and last.tzinfo is None:
