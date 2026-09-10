@@ -85,6 +85,11 @@ export const canUseDistaSync = (role) => is(role, ADMIN);
 // backend: CAN_EXPORT_CONTRAGENTS = (ADMIN, DIRECTOR) — у top_manager/tester убран
 export const canExport = (role) => is(role, ADMIN, DIRECTOR);
 
+// backend: CAN_VIEW_CHAMPION_BOARD = (ADMIN,) — вкладка «Кубок»: обладатель
+// кубка и рейтинг текущего месяца. Сам значок кубка у имени видят все —
+// закрыта именно сводка по всем сотрудникам.
+export const canViewChampionBoard = (role) => is(role, ADMIN);
+
 // backend: CAN_IMPORT = (ADMIN,)
 export const canImport = (role) => is(role, ADMIN);
 

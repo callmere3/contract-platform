@@ -6,6 +6,7 @@ import {
   canViewGenerationHistory,
   canViewNotifications,
   canUseDistaSync,
+  canViewChampionBoard,
 } from './auth/permissions';
 import { TagsProvider } from './api/TagsContext';
 import { ModalProvider } from './modals/ModalProvider';
@@ -22,6 +23,7 @@ import { UsersPage } from './pages/UsersPage';
 import { GenerationHistoryPage } from './pages/GenerationHistoryPage';
 import { NotificationsPage } from './pages/NotificationsPage';
 import { DistaConnectPage } from './pages/DistaConnectPage';
+import { ChampionPage } from './pages/ChampionPage';
 
 /**
  * Фронт отдаётся с того же FastAPI по пути /app (см. base в vite.config.js) —
@@ -45,6 +47,15 @@ function AppShell() {
         <Route path="/" element={<Navigate to="/search" replace />} />
         <Route path="/search" element={<SearchPage />} />
         <Route path="/database" element={<DatabasePage />} />
+        {/* Кубок — только admin. Как и у «Пользователей»: прятать вкладку
+            мало, иначе по прямому адресу /app/champion не-админ увидел бы
+            пустой экран с 403 вместо понятного поведения. */}
+        <Route
+          path="/champion"
+          element={
+            canViewChampionBoard(user?.role) ? <ChampionPage /> : <Navigate to="/search" replace />
+          }
+        />
         <Route path="/folders" element={<FoldersPage />} />
         {/* Форма генерации — отдельный роут, а не состояние: ссылку на неё
             можно сохранить/переслать, работает кнопка "назад" браузера.

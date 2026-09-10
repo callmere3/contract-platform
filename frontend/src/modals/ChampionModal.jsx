@@ -14,7 +14,10 @@ import { useModal } from './ModalProvider';
  */
 export function ChampionModal({ champion, name, isMe, level, isTop }) {
   const { closeModal } = useModal();
-  const period = champion?.period;
+  // Родительный падеж — «чемпион августа 2026», а не «чемпион август 2026».
+  // Форму даёт сервер (period_of): склонять месяцы на фронте значило бы
+  // держать второй список названий, который однажды разойдётся с первым.
+  const period = champion?.period_of;
 
   return (
     <Modal
@@ -41,7 +44,6 @@ export function ChampionModal({ champion, name, isMe, level, isTop }) {
 
         <p className="text-[13.5px] text-text-secondary leading-relaxed m-0 max-w-[46ch]">
           Кубок получает тот, кто за прошедший месяц сформировал больше всех документов.
-          Один и тот же документ, выгруженный и в Word, и в PDF, считается один раз.
           Значок обновляется первого числа каждого месяца.
         </p>
       </div>

@@ -8,6 +8,7 @@ import {
   canViewGenerationHistory,
   canViewNotifications,
   canUseDistaSync,
+  canViewChampionBoard,
 } from '../auth/permissions';
 import { notificationsCount, NOTIFICATIONS_CHANGED_EVENT } from '../api/notifications';
 import { useModal } from '../modals/ModalProvider';
@@ -68,6 +69,9 @@ export function Header({ companyName = 'ML Docs' }) {
   }
   if (canUseDistaSync(user?.role)) {
     tabs = [...tabs, { to: '/dista', label: 'Dista Connect' }];
+  }
+  if (canViewChampionBoard(user?.role)) {
+    tabs = [...tabs, { to: '/champion', label: 'Кубок' }];
   }
 
   return (

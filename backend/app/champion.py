@@ -7,10 +7,10 @@
 документ, выгруженный и в Word, и в PDF, — это один документ, ровно как
 просил владелец. Повторная выгрузка того же самого (например, второй раз
 docx) по той же причине не добавляет счётчику ничего: содержимое формы
-совпадает. А вот та же связка «шаблон + контрагент» с ДРУГИМИ данными
-(другой список треков в приложении) — это уже другой документ, и он
-считается отдельно: за месяц контрагенту законно делают несколько разных
-приложений.
+совпадает. А вот та же связка «шаблон + контрагент» с ДРУГИМИ данными —
+это отдельный документ, и так и задумано: менеджеры закрывают старые долги
+по документам, и десяток приложений одному контрагенту с разными данными
+за месяц — нормальная работа, а не накрутка.
 
 КТО УЧАСТВУЕТ. Все роли, кроме admin (NOT_COMPETING): админская учётка
 служебная, ею заводят и проверяют, а не работают. Ничья не разрешается в
@@ -51,20 +51,45 @@ _MONTHS_RU = (
     "январь", "февраль", "март", "апрель", "май", "июнь",
     "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь",
 )
+# Родительный падеж — для «чемпион августа 2026». Отдельным списком, а не
+# правилом отсечения окончания: у «март/мая» оно разное, а склонять строку
+# кодом ради двенадцати слов не стоит.
+_MONTHS_RU_OF = (
+    "января", "февраля", "марта", "апреля", "мая", "июня",
+    "июля", "августа", "сентября", "октября", "ноября", "декабря",
+)
 
 # Итог закрытого месяца уже не меняется (разве что админ удалит записи
 # истории), а список пользователей опрашивается фронтом раз в 30 секунд —
 # поэтому держим короткий кеш, чтобы не пересчитывать на каждый опрос.
 # Ключ кеша — сам месяц, так что смена месяца сбрасывает его сама.
+# Рейтинг ТЕКУЩЕГО месяца не кешируется: он меняется в течение дня.
 _CACHE_TTL_SECONDS = 600
 _cache: dict = {"period": None, "computed_at": None, "value": None}
 
 
-def previous_month_bounds(now: datetime | None = None) -> tuple[datetime, datetime, str]:
+def _labels(moment: datetime) -> tuple[str, str]:
+    """(«август 2026», «августа 2026») для месяца, в котором лежит moment."""
+    return (
+        "%s %d" % (_MONTHS_RU[moment.month - 1], moment.year),
+        "%s %d" % (_MONTHS_RU_OF[moment.month - 1], moment.year),
+    )
+
+
+def current_month_bounds(now: datetime | None = None) -> tuple[datetime, datetime, str, str]:
+    """Границы ТЕКУЩЕГО месяца по Москве (в UTC) и его названия."""
+    now_utc = now or datetime.now(timezone.utc)
+    now_msk = now_utc.astimezone(MSK)
+    first_of_this = now_msk.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    label, label_of = _labels(first_of_this)
+    return first_of_this.astimezone(timezone.utc), now_utc, label, label_of
+
+
+def previous_month_bounds(now: datetime | None = None) -> tuple[datetime, datetime, str, str]:
     """
     Границы прошлого календарного месяца по московскому времени и его
-    название («август 2026»). Границы возвращаются в UTC — created_at
-    хранится с таймзоной, сравнение идёт в UTC.
+    названия. Границы возвращаются в UTC — created_at хранится с таймзоной,
+    сравнение идёт в UTC.
     """
     now_utc = now or datetime.now(timezone.utc)
     now_msk = now_utc.astimezone(MSK)
@@ -75,8 +100,8 @@ def previous_month_bounds(now: datetime | None = None) -> tuple[datetime, dateti
     some_day_of_prev = first_of_this - timedelta(days=1)
     first_of_prev = some_day_of_prev.replace(hour=0, minute=0, second=0, microsecond=0, day=1)
 
-    label = "%s %d" % (_MONTHS_RU[first_of_prev.month - 1], first_of_prev.year)
-    return first_of_prev.astimezone(timezone.utc), first_of_this.astimezone(timezone.utc), label
+    label, label_of = _labels(first_of_prev)
+    return first_of_prev.astimezone(timezone.utc), first_of_this.astimezone(timezone.utc), label, label_of
 
 
 def _document_key(row) -> tuple:
@@ -87,12 +112,33 @@ def _document_key(row) -> tuple:
     return (str(row.template_id), str(row.contragent_id), payload_fingerprint)
 
 
+def unique_counts(db: Session, start: datetime, end: datetime) -> dict:
+    """
+    {user_id: сколько уникальных документов} за период [start, end).
+    Роли вне конкурса и записи без автора отброшены.
+    """
+    rows = (
+        db.query(GeneratedDocument)
+        .filter(GeneratedDocument.created_at >= start, GeneratedDocument.created_at < end)
+        .all()
+    )
+    out_of_contest = {u.id for u in db.query(User).filter(User.role.in_(NOT_COMPETING)).all()}
+
+    per_user: dict = {}
+    for row in rows:
+        if row.user_id is None or row.user_id in out_of_contest:
+            continue
+        per_user.setdefault(row.user_id, set()).add(_document_key(row))
+    return {user_id: len(keys) for user_id, keys in per_user.items()}
+
+
 def month_champions(db: Session, now: datetime | None = None) -> dict | None:
     """
-    Чемпион(ы) прошлого месяца: {"period": "август 2026", "documents": 21,
-    "user_ids": {UUID, ...}} либо None, если месяц пустой.
+    Чемпион(ы) прошлого месяца: {"period": "август 2026", "period_of":
+    "августа 2026", "documents": 21, "user_ids": {UUID, ...}} либо None,
+    если месяц пустой.
     """
-    start, end, label = previous_month_bounds(now)
+    start, end, label, label_of = previous_month_bounds(now)
 
     cached = _cache
     if (
@@ -102,31 +148,18 @@ def month_champions(db: Session, now: datetime | None = None) -> dict | None:
     ):
         return cached["value"]
 
-    rows = (
-        db.query(GeneratedDocument)
-        .filter(GeneratedDocument.created_at >= start, GeneratedDocument.created_at < end)
-        .all()
-    )
-
-    out_of_contest = {
-        u.id for u in db.query(User).filter(User.role.in_(NOT_COMPETING)).all()
-    }
-
-    unique_per_user: dict = {}
-    for row in rows:
-        if row.user_id is None or row.user_id in out_of_contest:
-            continue
-        unique_per_user.setdefault(row.user_id, set()).add(_document_key(row))
+    counts = unique_counts(db, start, end)
 
     value = None
-    if unique_per_user:
-        best = max(len(keys) for keys in unique_per_user.values())
+    if counts:
+        best = max(counts.values())
         if best > 0:
             value = {
                 "period": label,
+                "period_of": label_of,
                 "documents": best,
                 # Ничья — кубок у всех, кто набрал максимум.
-                "user_ids": {uid for uid, keys in unique_per_user.items() if len(keys) == best},
+                "user_ids": {uid for uid, n in counts.items() if n == best},
             }
 
     _cache.update({"period": label, "computed_at": datetime.now(timezone.utc), "value": value})
@@ -137,4 +170,8 @@ def champion_badge(champions: dict | None, user_id) -> dict | None:
     """Блок для выдачи в API: чемпион ли ЭТОТ пользователь, и с каким счётом."""
     if not champions or user_id not in champions["user_ids"]:
         return None
-    return {"period": champions["period"], "documents": champions["documents"]}
+    return {
+        "period": champions["period"],
+        "period_of": champions["period_of"],
+        "documents": champions["documents"],
+    }

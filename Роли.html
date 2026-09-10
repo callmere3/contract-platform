@@ -224,6 +224,8 @@
         <tr><td class="act">Удаление записей истории генерации</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
         <tr><td class="act">Вкладка «Уведомления» <sup>3</sup></td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
         <tr><td class="act">Вкладка «Dista Connect» <span style="color:var(--text-muted);font-size:12px">(сверка с базой Dista Music)</span></td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
+        <tr><td class="act">Вкладка «Кубок» <sup>6</sup> <span style="color:var(--text-muted);font-size:12px">(обладатель кубка и рейтинг месяца)</span></td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
+        <tr><td class="act">Значок кубка у своего имени <sup>6</sup></td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr>
         <tr><td class="act">Смена своего пароля</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr>
       </tbody>
       <caption>✓ — есть доступ · — нет доступа. Сноски пояснены ниже.</caption>
@@ -251,6 +253,10 @@
     <div class="note">
       <b><sup>3</sup> «Уведомления» — дозаполнение карточек, только админ</b>
       <p>Менеджеры вписывают недостающие карточкам данные (прежде всего рег. номер) прямо в форму генерации. Эти значения поднимаются во вкладку «Уведомления», где админ галочкой переносит их в карточку или крестиком отклоняет. Кривое или расходящееся значение показывается как ⚠ — применить нельзя, но видно, что документ стоит проверить. Только у админа (<code>CAN_VIEW_NOTIFICATIONS</code>): это правка эталонной базы.</p>
+    </div>
+    <div class="note">
+      <b><sup>6</sup> Кубок месяца</b>
+      <p>Значок 🏆 у имени получает тот, кто за прошлый календарный месяц сформировал больше всех уникальных документов (один и тот же документ в Word и в PDF — один раз; та же связка «шаблон + контрагент» с другими данными — отдельный документ). Свой значок видит каждый, а сводную вкладку с рейтингом — только админ (<code>CAN_VIEW_CHAMPION_BOARD</code>): это статистика по всем сотрудникам. Админ в зачёт не идёт. Ничья — кубок у всех, кто набрал максимум. Наград в базе не хранится: итог считается из истории генерации, победитель меняется сам 1-го числа в 00:00 по Москве.</p>
     </div>
     <div class="note">
       <b>Вкладка «Пользователи»: смотреть ≠ управлять</b>

@@ -25,8 +25,8 @@ export function ChampionBadge({ champion, name, isMe = false, className = '' }) 
     <button
       type="button"
       onClick={() => openModal('champion', { champion, name, isMe })}
-      title={`Кубок месяца: чемпион ${champion.period}`}
-      aria-label={`Кубок месяца: чемпион ${champion.period}. Открыть пояснение`}
+      title={`Кубок месяца: чемпион ${champion.period_of}`}
+      aria-label={`Кубок месяца: чемпион ${champion.period_of}. Открыть пояснение`}
       className={`inline-flex items-center text-[15px] leading-none flex-shrink-0 bg-transparent border-none p-0 cursor-pointer ${className}`}
     >
       🏆
