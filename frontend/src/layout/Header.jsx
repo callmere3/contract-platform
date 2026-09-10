@@ -71,7 +71,10 @@ export function Header({ companyName = 'ML Docs' }) {
     tabs = [...tabs, { to: '/dista', label: 'Dista Connect' }];
   }
   if (canViewChampionBoard(user?.role)) {
-    tabs = [...tabs, { to: '/champion', label: 'Кубок' }];
+    // Вместо подписи — сам кубок. title/aria-label обязательны: иначе
+    // вкладка остаётся без имени — и для screen reader, и для того, кто
+    // видит незнакомый значок и наводит мышь, чтобы понять, что это.
+    tabs = [...tabs, { to: '/champion', label: '🏆', title: 'Кубок', emoji: true }];
   }
 
   return (
@@ -83,6 +86,8 @@ export function Header({ companyName = 'ML Docs' }) {
             <NavLink
               key={tab.to}
               to={tab.to}
+              title={tab.title}
+              aria-label={tab.title}
               className={({ isActive }) =>
                 `text-sm py-5 border-b-2 transition-colors no-underline inline-flex items-center gap-1.5 ${
                   isActive
@@ -91,7 +96,11 @@ export function Header({ companyName = 'ML Docs' }) {
                 }`
               }
             >
-              {tab.label}
+              {/* Значок крупнее подписей: emoji в размере text-sm рядом со
+                  словами выглядит мелкой точкой. */}
+              <span className={tab.emoji ? 'text-[17px] leading-none' : undefined}>
+                {tab.label}
+              </span>
               {tab.badge > 0 && (
                 <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-danger text-white text-[11px] font-semibold leading-none">
                   {tab.badge}
