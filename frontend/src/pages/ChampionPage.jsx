@@ -6,16 +6,21 @@ const MEDALS = ['🥇', '🥈', '🥉'];
 
 /**
  * Места с учётом равного счёта: одинаковое число документов — одно и то же
- * место и одна и та же медаль. Иначе двое с 6 документами получили бы
+ * место и одна и та же медаль. Иначе двое с шестью документами получили бы
  * золото и серебро только потому, что один раньше по алфавиту.
  *
  * Нумерация «плотная» (1, 1, 2), а не спортивная (1, 1, 3): мест на доске
  * всего три, и при дележе первого бронза всё равно должна кому-то достаться.
+ *
+ * У кого за месяц ничего нет — место null: в списке они есть (доска
+ * показывает состав целиком), но бронза за ноль документов обесценила бы
+ * медали, а при пустом начале месяца её разделили бы вообще все.
  */
 function withPlaces(rows) {
   let place = 0;
   let previous = null;
   return rows.map((row) => {
+    if (row.documents === 0) return { ...row, place: null };
     if (row.documents !== previous) {
       place += 1;
       previous = row.documents;
@@ -105,10 +110,10 @@ export function ChampionPage() {
 
         {loading && <div className="p-5 text-[13px] text-text-muted">Загружаем…</div>}
 
+        {/* Список пуст, только если в сервисе нет ни одной учётки-участника:
+            те, кто ничего не сделал, теперь показываются с пустой шкалой. */}
         {!loading && rows.length === 0 && (
-          <div className="p-5 text-[13px] text-text-muted">
-            В этом месяце ещё никто не формировал документы.
-          </div>
+          <div className="p-5 text-[13px] text-text-muted">Участников пока нет.</div>
         )}
 
         {!loading &&
@@ -120,43 +125,52 @@ export function ChampionPage() {
               {/* Первые три места — медалями, дальше номером. Ширина общая,
                   чтобы имена стояли в одну колонку в обоих случаях. */}
               <span
-                title={`${r.place} место`}
-                aria-label={`${r.place} место`}
+                title={r.place ? `${r.place} место` : 'пока без документов'}
+                aria-label={r.place ? `${r.place} место` : 'пока без документов'}
                 className={`w-6 text-center flex-shrink-0 ${
-                  r.place <= MEDALS.length
+                  r.place && r.place <= MEDALS.length
                     ? 'text-[17px] leading-none'
                     : `text-[13px] font-semibold tabular-nums ${
                         r.place === 1 ? 'text-accent' : 'text-text-muted'
                       }`
                 }`}
               >
-                {r.place <= MEDALS.length ? MEDALS[r.place - 1] : r.place}
+                {!r.place ? '—' : r.place <= MEDALS.length ? MEDALS[r.place - 1] : r.place}
               </span>
 
-              <span className="text-[14px] text-text truncate flex-shrink-0 w-[190px]">
+              <span
+                className={`text-[14px] truncate flex-shrink-0 w-[210px] ${
+                  r.documents === 0 ? 'text-text-muted' : 'text-text'
+                }`}
+              >
                 {r.full_name || r.username}
               </span>
 
-              {/* Полоса — доля от лидера: глазами видно отрыв, а не только цифру */}
-              <span className="flex-1 h-2 bg-input-bg rounded-full overflow-hidden">
+              {/* Шкала — единственный показатель: числа на доске нет
+                  намеренно (решение владельца), отрыв читается длиной полосы.
+                  Доля считается от лидера, поэтому у первого места полоса
+                  всегда полная. Число приходит в API и нужно ровно для этого
+                  расчёта — выводить его рядом не надо. */}
+              <span className="flex-1 h-2.5 bg-input-bg rounded-full overflow-hidden">
                 <span
-                  className={`block h-full rounded-full ${r.place === 1 ? 'bg-accent' : 'bg-border'}`}
+                  className={`block h-full rounded-full transition-[width] duration-500 ${
+                    r.place === 1 ? 'bg-accent' : 'bg-border'
+                  }`}
                   style={{ width: leader > 0 ? `${Math.round((r.documents / leader) * 100)}%` : 0 }}
                 />
-              </span>
-
-              <span className="text-[13px] text-text-secondary tabular-nums w-14 text-right flex-shrink-0">
-                {r.documents}
               </span>
             </div>
           ))}
       </Card>
 
-      <p className="text-[12.5px] text-text-muted leading-relaxed m-0 px-1">
-        Считаются уникальные документы: один и тот же документ, выгруженный и в Word,
-        и в PDF, — это один документ. Тот же шаблон тому же контрагенту, но с другими
-        данными, считается отдельно. Администраторы в зачёт не идут.
-      </p>
+      {/* Раньше здесь была сноска о правилах подсчёта — заменена на цитату
+          по просьбе владельца: доска мотивирует, а не объясняет арифметику. */}
+      <figure className="m-0 px-1 pt-2 text-center">
+        <blockquote className="m-0 text-[14px] text-text-secondary italic leading-relaxed">
+          «Успех — это сумма небольших усилий, повторяемых изо дня в день»
+        </blockquote>
+        <figcaption className="mt-1.5 text-[12px] text-text-muted">Роберт Кольер</figcaption>
+      </figure>
     </div>
   );
 }

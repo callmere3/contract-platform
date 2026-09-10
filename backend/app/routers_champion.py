@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.auth import require_role
-from app.champion import current_month_bounds, month_champions, unique_counts
+from app.champion import NOT_COMPETING, current_month_bounds, month_champions, unique_counts
 from app.db import get_session
 from app.models import User
 from app.roles import CAN_VIEW_CHAMPION_BOARD
@@ -43,8 +43,15 @@ def champion_board(db: Session = Depends(get_session)) -> dict:
     }
 
     winners — список, а не один человек: при ничьей кубок у всех.
-    rows отсортированы по убыванию; пустой список — за этот месяц ещё никто
-    ничего не сформировал (нормальное состояние 1-го числа).
+
+    rows — ВСЕ участники, а не только те, кто что-то сделал: у остальных
+    documents=0, и они видны в конце списка. Смысл в том, чтобы доска
+    показывала состав целиком, а не появлялась по мере работы.
+
+    Кто попадает в rows: действующие учётки всех ролей, кроме админских
+    (NOT_COMPETING), плюс — отдельно — те, кто в этом месяце уже что-то
+    сформировал, даже если учётку с тех пор отключили: молча вычесть
+    сделанную работу из-за отключения было бы неверно.
     """
     users = {u.id: u for u in db.query(User).all()}
 
@@ -64,7 +71,11 @@ def champion_board(db: Session = Depends(get_session)) -> dict:
 
     start, end, label, label_of = current_month_bounds()
     counts = unique_counts(db, start, end)
-    rows = [_person(users[uid], n) for uid, n in counts.items() if uid in users]
+    in_contest = [
+        u for u in users.values()
+        if u.role not in NOT_COMPETING and (u.is_active or u.id in counts)
+    ]
+    rows = [_person(u, counts.get(u.id, 0)) for u in in_contest]
     # По убыванию документов, при равенстве — по имени, чтобы порядок не
     # прыгал между обновлениями страницы.
     rows.sort(key=lambda r: (-r["documents"], (r["full_name"] or r["username"]).lower()))
