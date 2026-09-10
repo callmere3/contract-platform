@@ -1,3 +1,5 @@
+import { useModal } from '../../modals/ModalProvider';
+
 /**
  * Кубок месяца рядом с именем — у того, кто за ПРОШЛЫЙ календарный месяц
  * сделал больше всех уникальных документов.
@@ -7,23 +9,27 @@
  * «Пользователи» однажды разошлись бы в том, кто чемпион. Пусто — значка
  * нет (не чемпион, либо за прошлый месяц вообще ничего не сгенерировано).
  *
+ * Нажатие открывает окно с пояснением (ChampionModal); при наведении —
+ * короткая подсказка. Ни там, ни там НЕ показывается число документов —
+ * так решил владелец: значок отмечает победителя, а не ведёт счёт.
+ *
  * Почему emoji, а не иконка: в проекте нет набора иконок, а тащить его ради
  * одного кубка избыточно. Размер задан явно — иначе emoji в строке имени
  * выглядит крупнее текста и сбивает базовую линию.
  */
-export function ChampionBadge({ champion, className = '' }) {
+export function ChampionBadge({ champion, name, isMe = false, className = '' }) {
+  const { openModal } = useModal();
   if (!champion) return null;
 
-  const title = `Чемпион месяца: больше всех уникальных документов за ${champion.period} — ${champion.documents} шт.`;
-
   return (
-    <span
-      title={title}
-      aria-label={title}
-      role="img"
-      className={`inline-block text-[15px] leading-none flex-shrink-0 cursor-default ${className}`}
+    <button
+      type="button"
+      onClick={() => openModal('champion', { champion, name, isMe })}
+      title={`Кубок месяца: чемпион ${champion.period}`}
+      aria-label={`Кубок месяца: чемпион ${champion.period}. Открыть пояснение`}
+      className={`inline-flex items-center text-[15px] leading-none flex-shrink-0 bg-transparent border-none p-0 cursor-pointer ${className}`}
     >
       🏆
-    </span>
+    </button>
   );
 }

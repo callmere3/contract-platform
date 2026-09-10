@@ -109,7 +109,7 @@ export function Header({ companyName = 'ML Docs' }) {
         {/* Кубок месяца — снаружи кнопки смены пароля: у него свой title
             («чемпион за …»), а вложенный в кнопку он подменялся бы
             подсказкой «Сменить пароль». */}
-        <ChampionBadge champion={user?.champion} />
+        <ChampionBadge champion={user?.champion} isMe />
         {/* Имя — точка входа в смену своего пароля: отдельная вкладка ради
             одного действия избыточна, а profile-меню в макете не заложено. */}
         <button

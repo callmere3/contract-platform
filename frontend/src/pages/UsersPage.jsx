@@ -140,7 +140,11 @@ export function UsersPage() {
                 <div className="min-w-0">
                   <div className="text-[15px] font-semibold text-text truncate flex items-center gap-2">
                     {u.full_name || u.username}
-                    <ChampionBadge champion={u.champion} />
+                    <ChampionBadge
+                      champion={u.champion}
+                      name={u.full_name || u.username}
+                      isMe={isMe}
+                    />
                     {isMe && <Badge variant="neutral">это вы</Badge>}
                     {!u.is_active && <Badge variant="neutral">отключён</Badge>}
                   </div>

@@ -10,6 +10,7 @@ import { NewUserModal } from './NewUserModal';
 import { ChangePasswordModal } from './ChangePasswordModal';
 import { ConfirmExitDraftModal } from './ConfirmExitDraftModal';
 import { ConfirmDuplicateContragentModal } from './ConfirmDuplicateContragentModal';
+import { ChampionModal } from './ChampionModal';
 import { AlertModal } from './AlertModal';
 
 const REGISTRY = {
@@ -26,6 +27,7 @@ const REGISTRY = {
   changePassword: ChangePasswordModal,
   confirmExitDraft: ConfirmExitDraftModal,
   confirmDuplicateContragent: ConfirmDuplicateContragentModal,
+  champion: ChampionModal,
 };
 
 export function ModalRoot() {
