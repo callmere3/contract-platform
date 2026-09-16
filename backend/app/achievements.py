@@ -6,7 +6,7 @@
 можно добавить задним числом — оно сразу учтёт всю прошлую работу.
 
 Состав:
-  🏆 Кубок месяца        — сколько раз человек был чемпионом месяца;
+  🏆 Кубок месяца        — ОТДЕЛЬНАЯ плитка на каждую победу;
   👑 Король квартала     — три победы в трёх месяцах подряд;
   📄 Вехи                — 1 / 10 / 25 / 50 / 100 документов за всё время:
                            «Проба пера», «Стопка бумаг», «Небольшой архив»,
@@ -34,6 +34,15 @@
 from sqlalchemy.orm import Session
 
 from app.champion import MSK, _document_key, as_utc, champion_history, scoring_since
+
+# Названия месяцев с большой буквы — плитка кубка подписана «Август 2026».
+# Отдельным списком, а не .capitalize() от справочника champion.py: тот
+# нужен внутри фразы («за август 2026»), и менять его регистр на месте
+# значило бы ломать те фразы.
+_MONTHS_RU_TITLE = (
+    "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+    "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
+)
 from app.models import GeneratedDocument, RefreshToken, Template, User, UserEvent
 
 # Вехи по документам. Первая намеренно равна 1: у семи учёток из десяти
@@ -125,7 +134,7 @@ def _longest_cup_streak(months: list) -> int:
     best = 0
     run = 0
     previous = None
-    for year, month, _label in months:
+    for year, month, _label, _label_of in months:
         following = previous is not None and (year, month) == (
             (previous[0], previous[1] + 1) if previous[1] < 12 else (previous[0] + 1, 1)
         )
@@ -238,24 +247,42 @@ def user_achievements(db: Session, user: User) -> list[dict]:
     )
 
     cups = champion_history(db).get(user.id, [])
-    cup_labels = [label for _year, _month, label in cups]
     cup_streak = _longest_cup_streak(cups)
 
     out = []
 
-    # 🏆 Кубки месяца. Прогресса нет намеренно: к кубку нельзя «пройти
-    # половину пути» — он либо взят за месяц, либо нет.
-    out.append(
-        _achievement(
-            code="champion",
-            icon="🏆",
-            title="Кубок месяца",
-            hint="Больше всех документов за календарный месяц",
-            earned=bool(cups),
-            subtitle=", ".join(cup_labels) if cups else None,
-            count=len(cups) if cups else None,
+    # 🏆 Кубки месяца — ПЛИТКА НА КАЖДУЮ ПОБЕДУ, а не одна со счётчиком
+    # «×2»: несколько кубков в ряд и выглядят приятнее, и читаются сразу.
+    #
+    # Побочный плюс: у каждой победы свой код (champion_2026_08), поэтому
+    # второй кубок для браузера — новое достижение, и человек получает
+    # всплывашку. С общим кодом «champion» второй кубок проходил бы молча:
+    # код уже был показан.
+    #
+    # Прогресса нет намеренно: к кубку нельзя «пройти половину пути» — он
+    # либо взят за месяц, либо нет.
+    if cups:
+        for year, month, _label, label_of in reversed(cups):   # новые сверху
+            out.append(
+                _achievement(
+                    code="champion_%04d_%02d" % (year, month),
+                    icon="🏆",
+                    title="%s %d" % (_MONTHS_RU_TITLE[month - 1], year),
+                    hint="Больше всех документов за %s" % label_of,
+                    earned=True,
+                )
+            )
+    else:
+        # Пока побед нет — одна закрытая плитка, чтобы цель была видна.
+        out.append(
+            _achievement(
+                code="champion",
+                icon="🏆",
+                title="Кубок месяца",
+                hint="Больше всех документов за календарный месяц",
+                earned=False,
+            )
         )
-    )
 
     out.append(
         _achievement(
