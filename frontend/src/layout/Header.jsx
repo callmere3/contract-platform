@@ -11,6 +11,7 @@ import {
   canViewChampionBoard,
 } from '../auth/permissions';
 import { notificationsCount, NOTIFICATIONS_CHANGED_EVENT } from '../api/notifications';
+import { ACHIEVEMENTS_CHANGED_EVENT, unopenedCodes } from '../achievements/tracker';
 import { useModal } from '../modals/ModalProvider';
 
 // Первые три вкладки видны всем ролям (см. ТЗ: "менеджер видит все вкладки").
@@ -54,6 +55,17 @@ export function Header({ companyName = 'ML Docs' }) {
       clearInterval(timer);
       window.removeEventListener(NOTIFICATIONS_CHANGED_EVENT, refresh);
     };
+  }, []);
+
+  // Точка у имени: есть полученное достижение, которое человек ещё не
+  // открывал в профиле. Гаснет при открытии профиля, а не при показе
+  // всплывашки — её легко пропустить.
+  const [freshAchievements, setFreshAchievements] = useState(0);
+  useEffect(() => {
+    const refresh = () => setFreshAchievements(unopenedCodes().length);
+    refresh();
+    window.addEventListener(ACHIEVEMENTS_CHANGED_EVENT, refresh);
+    return () => window.removeEventListener(ACHIEVEMENTS_CHANGED_EVENT, refresh);
   }, []);
 
   let tabs = TABS;
@@ -144,10 +156,16 @@ export function Header({ companyName = 'ML Docs' }) {
             и вылетало по ошибке — теперь оно внутри карточки. */}
         <button
           onClick={() => openModal('profile')}
-          title="Профиль"
-          className="text-[13px] text-text-secondary hover:text-text bg-transparent border-none cursor-pointer p-0 font-sans"
+          title={freshAchievements > 0 ? 'Профиль · есть новое достижение' : 'Профиль'}
+          className="relative text-[13px] text-text-secondary hover:text-text bg-transparent border-none cursor-pointer p-0 font-sans"
         >
           {user?.full_name || user?.username}
+          {freshAchievements > 0 && (
+            <span
+              aria-label="Есть новое достижение"
+              className="absolute -top-1 -right-2.5 w-[7px] h-[7px] rounded-full bg-accent"
+            />
+          )}
         </button>
       </div>
     </header>

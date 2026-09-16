@@ -5,6 +5,7 @@ import { ChampionBadge } from '../components/ui/ChampionBadge';
 import { useModal } from './ModalProvider';
 import { useAuth } from '../auth/AuthContext';
 import { fetchMyAchievements } from '../api/profile';
+import { markProfileOpened, unopenedCodes } from '../achievements/tracker';
 
 /**
  * Карточка профиля — открывается нажатием на своё имя в шапке.
@@ -25,11 +26,20 @@ export function ProfileModal({ level, isTop }) {
   const [achievements, setAchievements] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  // Что подсветить: значки, полученные с прошлого открытия профиля. Список
+  // снимаем ОДИН раз при монтировании — сразу после этого он гасится
+  // (markProfileOpened ниже), и без снимка анимировать было бы уже нечего.
+  const [fresh] = useState(() => unopenedCodes());
 
   useEffect(() => {
     let alive = true;
     fetchMyAchievements()
-      .then((data) => alive && setAchievements(data.achievements ?? []))
+      .then((data) => {
+        if (!alive) return;
+        setAchievements(data.achievements ?? []);
+        // Профиль открыт — точка у имени больше не нужна.
+        markProfileOpened();
+      })
       .catch((e) => alive && setError(e.message))
       .finally(() => alive && setLoading(false));
     return () => {
@@ -89,6 +99,8 @@ export function ProfileModal({ level, isTop }) {
                 <AchievementCard
                   key={a.code}
                   achievement={a}
+                  isFresh={fresh.includes(a.code)}
+                  revealIndex={fresh.indexOf(a.code)}
                   onOpen={() => openModal('achievement', { achievement: a })}
                 />
               ))}
@@ -109,7 +121,7 @@ export function ProfileModal({ level, isTop }) {
  * Полученное — в цвете и со сплошной рамкой, ещё нет — блёклое и
  * пунктиром: разница видна сразу, без единой цифры на плитке.
  */
-function AchievementCard({ achievement, onOpen }) {
+function AchievementCard({ achievement, onOpen, isFresh = false, revealIndex = 0 }) {
   const { icon, title, hint, earned } = achievement;
 
   return (
@@ -126,7 +138,11 @@ function AchievementCard({ achievement, onOpen }) {
       <span
         role="img"
         aria-hidden="true"
-        className={`text-[26px] leading-none ${earned ? '' : 'grayscale opacity-40'}`}
+        className={`text-[26px] leading-none ${earned ? '' : 'grayscale opacity-40'} ${
+          isFresh ? 'achievement-reveal' : ''
+        }`}
+        // Несколько новых значков зажигаются по очереди, а не разом.
+        style={isFresh ? { animationDelay: `${revealIndex * 220}ms` } : undefined}
       >
         {icon}
       </span>

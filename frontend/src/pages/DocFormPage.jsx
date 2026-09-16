@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { refreshAchievements } from '../achievements/tracker';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
@@ -695,6 +696,9 @@ export function DocFormPage() {
       // ниже упадёт, Приложение уже скачано и черновиком быть перестало.
       dirtyRef.current = false;
       clearDraft();
+      // Самый частый момент получения значка — только что сделанный
+      // документ. Не ждём ответа: всплывашка появится, когда придёт.
+      refreshAchievements();
       if (pairedAct && wantsPairedAct) {
         try {
           await download(pairedAct.id);

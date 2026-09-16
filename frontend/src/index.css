@@ -91,3 +91,50 @@ body {
 ::selection {
   background: rgba(245, 158, 11, 0.3);
 }
+
+/* Плитка достижения, полученного только что: проявляется из серой в
+   цветную при открытии профиля. Задержку задаёт инлайновый animation-delay
+   — чтобы несколько новых значков зажигались по очереди, а не разом. */
+@keyframes achievement-reveal {
+  from {
+    filter: grayscale(1);
+    opacity: 0.35;
+    transform: scale(0.92);
+  }
+  60% {
+    transform: scale(1.06);
+  }
+  to {
+    filter: none;
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.achievement-reveal {
+  animation: achievement-reveal 900ms ease-out both;
+}
+
+/* Всплывашка «получено достижение» — выезжает снизу. */
+@keyframes achievement-toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 14px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+.achievement-toast {
+  animation: achievement-toast-in 220ms ease-out both;
+}
+
+/* Кому анимации мешают — тем их нет, значок просто появляется цветным. */
+@media (prefers-reduced-motion: reduce) {
+  .achievement-reveal,
+  .achievement-toast {
+    animation: none;
+  }
+}

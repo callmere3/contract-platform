@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { ThemeProvider } from './theme/ThemeContext';
 import { AuthProvider, useAuth } from './auth/AuthContext';
@@ -13,6 +14,8 @@ import { ModalProvider } from './modals/ModalProvider';
 import { ModalRoot } from './modals/ModalRoot';
 import { DraftProvider } from './drafts/DraftContext';
 import { DraftDock } from './drafts/DraftDock';
+import { AchievementToast } from './achievements/AchievementToast';
+import { refreshAchievements } from './achievements/tracker';
 import { Header } from './layout/Header';
 import { LoginPage } from './pages/LoginPage';
 import { SearchPage } from './pages/SearchPage';
@@ -37,6 +40,13 @@ const BASENAME = import.meta.env.BASE_URL.replace(/\/$/, '');
 
 function AppShell() {
   const { user } = useAuth();
+
+  // Проверка достижений при входе в приложение: значок мог появиться не
+  // за документ, а по итогам месяца (кубок) — тогда узнать о нём больше
+  // неоткуда. Второй раз проверяем после генерации (см. DocFormPage).
+  useEffect(() => {
+    refreshAchievements();
+  }, []);
 
   return (
     <div className="min-h-screen bg-bg text-text font-sans">
@@ -106,6 +116,7 @@ function AppShell() {
         <Route path="*" element={<Navigate to="/search" replace />} />
       </Routes>
       <DraftDock />
+      <AchievementToast />
       <ModalRoot />
     </div>
   );
