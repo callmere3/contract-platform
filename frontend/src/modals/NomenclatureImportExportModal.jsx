@@ -121,12 +121,25 @@ export function NomenclatureImportExportModal({ level, isTop, filters = {}, onIm
                 фильтры в списке, чтобы выгрузить весь каталог.
               </>
             ) : (
-              'Выгрузить весь каталог в Excel — в том же формате, что и выгрузка из Dista.'
+              <>
+                Выгрузить весь каталог в Excel — в том же формате, что и выгрузка из Dista.{' '}
+                {/* Про полторы минуты сказано намеренно: 121 тысяча строк
+                    собирается в файл около 80 секунд, и без предупреждения
+                    человек решит, что кнопка не сработала, и нажмёт ещё раз. */}
+                <span className="text-text-muted">
+                  Это 121 тысяча строк — файл собирается около полутора минут.
+                </span>
+              </>
             )}
           </div>
           <Button variant="secondary" size="sm" onClick={handleExport} disabled={busy}>
             {busy ? 'Готовим файл…' : 'Скачать .xlsx'}
           </Button>
+          {busy && !filterParts.length && (
+            <div className="text-[12px] text-text-muted mt-2">
+              Собираем весь каталог, это займёт около полутора минут. Не закрывайте окно.
+            </div>
+          )}
         </div>
       )}
 
