@@ -36,6 +36,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Numeric,
+    SmallInteger,
     String,
     Text,
     UniqueConstraint,
@@ -611,6 +612,22 @@ class FinanceOperation(Base):
     category: Mapped[str] = mapped_column(String(32))
 
     occurred_on: Mapped[date] = mapped_column(Date, index=True)
+
+    # ПЕРИОД ПОСТУПЛЕНИЯ — за какие кварталы пришли деньги. Только у
+    # поступлений: квартальный отчёт относится к кварталу, а не к дате
+    # зачисления (за I квартал приходит в апреле), и одним платежом нередко
+    # закрывают несколько кварталов сразу — отсюда пара «с» и «по».
+    #
+    # Четыре числа, а не строка «2026-Q1» и не даты: строку пришлось бы
+    # разбирать везде, где нужно сравнение, а даты выглядели бы точнее, чем
+    # есть («с 01.01 по 31.03» — не то, что вводил человек). У ОДНОГО квартала
+    # начало и конец совпадают, чтобы читающий код не разбирал случай «пусто =
+    # один квартал». У расходов всё четыре пустые.
+    period_year_from: Mapped[int | None] = mapped_column(SmallInteger)
+    period_quarter_from: Mapped[int | None] = mapped_column(SmallInteger)
+    period_year_to: Mapped[int | None] = mapped_column(SmallInteger)
+    period_quarter_to: Mapped[int | None] = mapped_column(SmallInteger)
+
     document_number: Mapped[str | None] = mapped_column(String(64))
     comment: Mapped[str | None] = mapped_column(Text)
 

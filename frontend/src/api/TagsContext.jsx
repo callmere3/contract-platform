@@ -29,9 +29,13 @@ export function TagsProvider({ children }) {
     // Поля реквизитов карточки по типу: {тип: [{name, type, label, hint, choices?}]}.
     // Из них строится сворачиваемый блок реквизитов в карточке контрагента.
     requisite_fields_by_type: {},
-    // Категории операций ML Finance: [{value, label}] — аванс, роялти, услуги…
-    // Справочник живёт в app/finance.py, фронт его не хардкодит.
-    finance_categories: [],
+    // Категории операций ML Finance ПО ВИДУ: {income: [{value, label}],
+    // expense: [...]}. Списки разные — приходят квартальные отчёты, уходят
+    // выплаты. Справочник живёт в app/finance.py, фронт его не хардкодит.
+    finance_categories: { income: [], expense: [] },
+    // Номера кварталов для периода поступления — оттуда же, где их проверяет
+    // сервер.
+    finance_quarters: [1, 2, 3, 4],
   });
   const [error, setError] = useState('');
 

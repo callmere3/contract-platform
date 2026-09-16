@@ -32,8 +32,15 @@ export function fetchFinanceCard(contragentId) {
 /**
  * Внести операцию. kind — 'income' | 'expense'; amount строкой («10 000,50»
  * сервер разберёт сам); occurredOn — ISO-дата из <input type="date">.
+ *
+ * period — только для поступлений: {yearFrom, quarterFrom, yearTo?, quarterTo?}.
+ * Поступление это квартальный отчёт, и без квартала непонятно, за что пришли
+ * деньги: дата зачисления на это не отвечает — за I квартал платят в апреле.
  */
-export function addFinanceOperation(contragentId, { kind, amount, category, occurredOn, documentNumber, comment }) {
+export function addFinanceOperation(
+  contragentId,
+  { kind, amount, category, occurredOn, documentNumber, comment, period },
+) {
   const body = new FormData();
   body.append('kind', kind);
   body.append('amount', amount);
@@ -41,6 +48,14 @@ export function addFinanceOperation(contragentId, { kind, amount, category, occu
   body.append('occurred_on', occurredOn);
   if (documentNumber) body.append('document_number', documentNumber);
   if (comment) body.append('comment', comment);
+  // Период — только у поступлений (расход с периодом сервер отвергает).
+  // «По» не шлём, если период в один квартал: сервер сам продублирует начало.
+  if (period) {
+    body.append('period_year_from', String(period.yearFrom));
+    body.append('period_quarter_from', String(period.quarterFrom));
+    if (period.yearTo) body.append('period_year_to', String(period.yearTo));
+    if (period.quarterTo) body.append('period_quarter_to', String(period.quarterTo));
+  }
   // Form-data, а не JSON: эндпоинт принимает Form(...), как и создание
   // контрагента — в этом проекте так устроены все пишущие ручки, кроме
   // пользователей и уведомлений.

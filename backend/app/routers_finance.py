@@ -19,9 +19,15 @@ ML Finance — деньги по контрагентам (Admin и Director).
 Admin). Денежная строка, которую можно молча переписать, не история, а
 черновик; удалённая хотя бы исчезает целиком и на глазах.
 
-Что НЕ делает этот роутер: не считает роялти, не связывает операции с
-документами и не знает про периоды начислений. Здесь ручной учёт — то, что
-внесли, то и в балансе.
+КАТЕГОРИИ РАЗНЫЕ У ПОСТУПЛЕНИЙ И РАСХОДОВ (см. app/finance.py): приходят
+только квартальные отчёты, уходят выплаты роялти и аванса. У поступления,
+кроме того, ОБЯЗАТЕЛЕН период — за какой квартал (или за какие, если платёж
+закрывает сразу несколько) пришли деньги: дата зачисления на это не отвечает,
+за I квартал платят в апреле.
+
+Что НЕ делает этот роутер: не считает роялти сам, не связывает операции с
+документами и не сверяет период с отчётами площадок. Здесь ручной учёт — то,
+что внесли, то и в балансе.
 """
 import uuid
 from datetime import date
@@ -34,14 +40,17 @@ from app.audit import log_action
 from app.auth import get_current_user, require_role
 from app.db import get_session
 from app.finance import (
-    CATEGORY_CODES,
     CATEGORY_LABELS,
-    EXPENSE,
     INCOME,
     MAX_AMOUNT,
+    MAX_YEAR,
+    MIN_YEAR,
     OPERATION_KINDS,
+    QUARTERS,
     balances,
+    categories_for,
     money,
+    period_label,
     totals,
 )
 from app.models import Contragent, FinanceOperation, User
@@ -153,6 +162,13 @@ def add_operation(
     occurred_on: str = Form(...),
     document_number: str | None = Form(None),
     comment: str | None = Form(None),
+    # Период поступления — за какие кварталы деньги. Строками, а не int:
+    # пустое поле формы приходит как '', и объявленный int дал бы 422 с
+    # техническим текстом вместо понятного «укажите период».
+    period_year_from: str | None = Form(None),
+    period_quarter_from: str | None = Form(None),
+    period_year_to: str | None = Form(None),
+    period_quarter_to: str | None = Form(None),
     db: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> dict:
@@ -172,11 +188,19 @@ def add_operation(
 
     if kind not in OPERATION_KINDS:
         raise HTTPException(status_code=400, detail="Неизвестный вид операции")
-    if category not in CATEGORY_CODES:
-        raise HTTPException(status_code=400, detail="Неизвестная категория операции")
+    # Категория проверяется ПРОТИВ ВИДА операции, а не против общего списка:
+    # «Выплата аванса» у поступления — не редкая ошибка, а бессмыслица,
+    # которую потом ищут в отчёте.
+    if category not in [code for code, _label in categories_for(kind)]:
+        raise HTTPException(
+            status_code=400, detail="Эта категория не подходит для такого вида операции"
+        )
 
     value = _parse_amount(amount)
     when = _parse_date(occurred_on)
+    period = _parse_period(
+        kind, period_year_from, period_quarter_from, period_year_to, period_quarter_to
+    )
 
     operation = FinanceOperation(
         contragent_id=contragent_id,
@@ -184,6 +208,10 @@ def add_operation(
         amount=value,
         category=category,
         occurred_on=when,
+        period_year_from=period[0],
+        period_quarter_from=period[1],
+        period_year_to=period[2],
+        period_quarter_to=period[3],
         document_number=(document_number or "").strip() or None,
         comment=(comment or "").strip() or None,
         created_by=current_user.id,
@@ -262,6 +290,19 @@ def _operation(row: FinanceOperation) -> dict:
         "category": row.category,
         "category_label": CATEGORY_LABELS.get(row.category, row.category),
         "occurred_on": row.occurred_on.isoformat(),
+        # Период — и числами (для будущих отчётов по кварталам), и готовой
+        # подписью: формат периода собирает сервер, чтобы он не разъехался
+        # между экраном и выгрузкой.
+        "period_year_from": row.period_year_from,
+        "period_quarter_from": row.period_quarter_from,
+        "period_year_to": row.period_year_to,
+        "period_quarter_to": row.period_quarter_to,
+        "period_label": period_label(
+            row.period_year_from,
+            row.period_quarter_from,
+            row.period_year_to,
+            row.period_quarter_to,
+        ),
         "document_number": row.document_number,
         "comment": row.comment,
         "created_by": row.created_username,
@@ -292,6 +333,68 @@ def _parse_amount(raw: str) -> Decimal:
     if value > MAX_AMOUNT:
         raise HTTPException(status_code=400, detail="Сумма слишком велика — проверьте, нет ли лишнего нуля")
     return value.quantize(Decimal("0.01"))
+
+
+def _parse_period(kind, year_from, quarter_from, year_to, quarter_to):
+    """
+    Период поступления → (год_с, квартал_с, год_по, квартал_по).
+
+    У поступления период ОБЯЗАТЕЛЕН: поступление — это квартальный отчёт, и
+    без квартала непонятно, за что пришли деньги (дата зачисления не отвечает
+    на этот вопрос: за I квартал платят в апреле). У расхода периода нет
+    вовсе — выплата относится к дню, а не к кварталу; переданный период это
+    отвергает, а не проглатывает молча, иначе в базе завелись бы строки,
+    смысл которых никто не объяснит.
+
+    Конец не задан — значит, один квартал: пишем в «по» то же, что в «с», и
+    читающему коду не приходится разбирать случай «пусто = один квартал».
+    """
+    given = [year_from, quarter_from, year_to, quarter_to]
+    filled = [v for v in given if (v or "").strip()]
+
+    if kind != INCOME:
+        if filled:
+            raise HTTPException(
+                status_code=400, detail="Период указывается только у поступлений"
+            )
+        return (None, None, None, None)
+
+    if not (year_from or "").strip() or not (quarter_from or "").strip():
+        raise HTTPException(
+            status_code=400, detail="Укажите период: за какой квартал поступление"
+        )
+
+    y1 = _parse_year(year_from)
+    q1 = _parse_quarter(quarter_from)
+    # Конец диапазона необязателен — «за один квартал» это обычный случай.
+    y2 = _parse_year(year_to) if (year_to or "").strip() else y1
+    q2 = _parse_quarter(quarter_to) if (quarter_to or "").strip() else q1
+
+    if (y2, q2) < (y1, q1):
+        raise HTTPException(
+            status_code=400, detail="Конец периода раньше начала — проверьте кварталы"
+        )
+    return (y1, q1, y2, q2)
+
+
+def _parse_year(raw: str) -> int:
+    try:
+        year = int(str(raw).strip())
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Год периода должен быть числом")
+    if not MIN_YEAR <= year <= MAX_YEAR:
+        raise HTTPException(status_code=400, detail="Год периода выглядит опечаткой")
+    return year
+
+
+def _parse_quarter(raw: str) -> int:
+    try:
+        quarter = int(str(raw).strip())
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Квартал должен быть числом от 1 до 4")
+    if quarter not in QUARTERS:
+        raise HTTPException(status_code=400, detail="Квартал должен быть числом от 1 до 4")
+    return quarter
 
 
 def _parse_date(raw: str) -> date:

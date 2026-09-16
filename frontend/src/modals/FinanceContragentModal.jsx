@@ -211,6 +211,12 @@ function Operation({ operation, canDelete, busy, onDelete }) {
       <div className="min-w-0">
         <div className="text-[13.5px] text-text">
           {operation.category_label}
+          {/* Период — за какие кварталы деньги. Подпись собрал сервер: формат
+              периода такое же правило, как правило знака суммы, и разъезжаться
+              ему в двух местах незачем. У расходов периода нет. */}
+          {operation.period_label && (
+            <span className="text-text-secondary"> · за {operation.period_label}</span>
+          )}
           {operation.document_number && (
             <span className="text-text-muted"> · {operation.document_number}</span>
           )}
