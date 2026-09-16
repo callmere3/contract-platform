@@ -97,6 +97,14 @@
   .emo.taken .cap { color: var(--accent); font-weight: 600; }
   .emo .used { font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--accent); }
 
+  /* Полный каталог: плотная сетка без подписей — иначе страница
+     растянулась бы на десятки экранов. Название символа — в title. */
+  .grid.dense { grid-template-columns: repeat(auto-fill, minmax(46px, 1fr)); gap: 4px; }
+  .emo.tiny { padding: 7px 2px; border-radius: 8px; }
+  .emo.tiny .glyph { font-size: 22px; }
+  .blockname { font-size: 12.5px; font-weight: 700; color: var(--text-secondary);
+    margin: 26px 0 10px; display: flex; align-items: baseline; gap: 8px; }
+  .blockname span { font-family: var(--mono); font-size: 11px; color: var(--text-muted); font-weight: 400; }
   .note { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--warn); border-radius: 10px; padding: 15px 17px; margin: 16px 0 0; }
   .note b { font-size: 13.5px; }
   .note p { margin: 6px 0 0; font-size: 13px; color: var(--text-secondary); line-height: 1.5; }
@@ -142,16 +150,23 @@
   </header>
 
   <h2>Уже заняты</h2>
-  <p class="about">Эти восемь работают в профиле прямо сейчас.</p>
+  <p class="about">Двенадцать достижений плюс два служебных значка интерфейса.
+     Обновлено 16.09.2026.</p>
   <div class="grid">
     <button class="emo taken" data-e="🏆"><span class="glyph">🏆</span><span class="cap">Кубок месяца</span><span class="used">занят</span></button>
-    <button class="emo taken" data-e="📄"><span class="glyph">📄</span><span class="cap">Первый документ</span><span class="used">занят</span></button>
-    <button class="emo taken" data-e="📚"><span class="glyph">📚</span><span class="cap">10 документов</span><span class="used">занят</span></button>
-    <button class="emo taken" data-e="🗄️"><span class="glyph">🗄️</span><span class="cap">25 документов</span><span class="used">занят</span></button>
-    <button class="emo taken" data-e="⭐"><span class="glyph">⭐</span><span class="cap">50 документов</span><span class="used">занят</span></button>
-    <button class="emo taken" data-e="💯"><span class="glyph">💯</span><span class="cap">100 документов</span><span class="used">занят</span></button>
+    <button class="emo taken" data-e="👑"><span class="glyph">👑</span><span class="cap">Король квартала</span><span class="used">занят</span></button>
+    <button class="emo taken" data-e="📄"><span class="glyph">📄</span><span class="cap">Проба пера</span><span class="used">занят</span></button>
+    <button class="emo taken" data-e="📚"><span class="glyph">📚</span><span class="cap">Стопка бумаг</span><span class="used">занят</span></button>
+    <button class="emo taken" data-e="🗄️"><span class="glyph">🗄️</span><span class="cap">Небольшой архив</span><span class="used">занят</span></button>
+    <button class="emo taken" data-e="⭐"><span class="glyph">⭐</span><span class="cap">Звезда документооборота</span><span class="used">занят</span></button>
+    <button class="emo taken" data-e="💯"><span class="glyph">💯</span><span class="cap">Сотка!</span><span class="used">занят</span></button>
     <button class="emo taken" data-e="🚗"><span class="glyph">🚗</span><span class="cap">Машина</span><span class="used">занят</span></button>
-    <button class="emo taken" data-e="💎"><span class="glyph">💎</span><span class="cap">Алмаз (секретное)</span><span class="used">занят</span></button>
+    <button class="emo taken" data-e="🚀"><span class="glyph">🚀</span><span class="cap">Ракета</span><span class="used">занят</span></button>
+    <button class="emo taken" data-e="🌙"><span class="glyph">🌙</span><span class="cap">Ночная смена</span><span class="used">занят</span></button>
+    <button class="emo taken" data-e="🧠"><span class="glyph">🧠</span><span class="cap">Знает все шаблоны</span><span class="used">занят</span></button>
+    <button class="emo taken" data-e="👻"><span class="glyph">👻</span><span class="cap">Призрак (секретное)</span><span class="used">занят</span></button>
+    <button class="emo taken" data-e="🔒"><span class="glyph">🔒</span><span class="cap">Замок закрытого</span><span class="used">занят</span></button>
+    <button class="emo taken" data-e="🔔"><span class="glyph">🔔</span><span class="cap">Значок уведомлений</span><span class="used">занят</span></button>
   </div>
 
   <h2>Награды и статус</h2>
@@ -326,6 +341,1730 @@
       <div class="head"><span class="g">📈</span>Рост</div>
       <p>Месяц лучше предыдущего. Помесячные итоги уже собираются для кубка.</p>
     </div>
+  </div>
+
+  <h2>Полный каталог</h2>
+  <p class="about">
+    Всё, что вообще можно поставить значком — 1682 символов. Подписей нет
+    намеренно: наведите мышь, чтобы увидеть название, нажмите — скопируется.
+    Пустой прямоугольник означает, что этот символ не знает шрифт системы;
+    у менеджеров на другой версии Windows набор может отличаться.
+  </p>
+  <div class="note">
+    <b>Чего здесь нет</b>
+    <p>Флагов стран (они собираются из двух букв), символов с тоном кожи и
+    составных значков вроде 🧑‍💻 — такие склейки рисуются не везде. Для значка,
+    который видят все, надёжнее простые символы из списков выше.</p>
+  </div>
+
+  <h3 class="blockname">Смайлы и эмоции <span>80</span></h3>
+  <div class="grid dense">
+    <button class="emo tiny" data-e="😀" title="Grinning Face"><span class="glyph">😀</span></button>
+    <button class="emo tiny" data-e="😁" title="Grinning Face With Smiling Eyes"><span class="glyph">😁</span></button>
+    <button class="emo tiny" data-e="😂" title="Face With Tears Of Joy"><span class="glyph">😂</span></button>
+    <button class="emo tiny" data-e="😃" title="Smiling Face With Open Mouth"><span class="glyph">😃</span></button>
+    <button class="emo tiny" data-e="😄" title="Smiling Face With Open Mouth And Smiling Eyes"><span class="glyph">😄</span></button>
+    <button class="emo tiny" data-e="😅" title="Smiling Face With Open Mouth And Cold Sweat"><span class="glyph">😅</span></button>
+    <button class="emo tiny" data-e="😆" title="Smiling Face With Open Mouth And Tightly-Closed Eyes"><span class="glyph">😆</span></button>
+    <button class="emo tiny" data-e="😇" title="Smiling Face With Halo"><span class="glyph">😇</span></button>
+    <button class="emo tiny" data-e="😈" title="Smiling Face With Horns"><span class="glyph">😈</span></button>
+    <button class="emo tiny" data-e="😉" title="Winking Face"><span class="glyph">😉</span></button>
+    <button class="emo tiny" data-e="😊" title="Smiling Face With Smiling Eyes"><span class="glyph">😊</span></button>
+    <button class="emo tiny" data-e="😋" title="Face Savouring Delicious Food"><span class="glyph">😋</span></button>
+    <button class="emo tiny" data-e="😌" title="Relieved Face"><span class="glyph">😌</span></button>
+    <button class="emo tiny" data-e="😍" title="Smiling Face With Heart-Shaped Eyes"><span class="glyph">😍</span></button>
+    <button class="emo tiny" data-e="😎" title="Smiling Face With Sunglasses"><span class="glyph">😎</span></button>
+    <button class="emo tiny" data-e="😏" title="Smirking Face"><span class="glyph">😏</span></button>
+    <button class="emo tiny" data-e="😐" title="Neutral Face"><span class="glyph">😐</span></button>
+    <button class="emo tiny" data-e="😑" title="Expressionless Face"><span class="glyph">😑</span></button>
+    <button class="emo tiny" data-e="😒" title="Unamused Face"><span class="glyph">😒</span></button>
+    <button class="emo tiny" data-e="😓" title="Face With Cold Sweat"><span class="glyph">😓</span></button>
+    <button class="emo tiny" data-e="😔" title="Pensive Face"><span class="glyph">😔</span></button>
+    <button class="emo tiny" data-e="😕" title="Confused Face"><span class="glyph">😕</span></button>
+    <button class="emo tiny" data-e="😖" title="Confounded Face"><span class="glyph">😖</span></button>
+    <button class="emo tiny" data-e="😗" title="Kissing Face"><span class="glyph">😗</span></button>
+    <button class="emo tiny" data-e="😘" title="Face Throwing A Kiss"><span class="glyph">😘</span></button>
+    <button class="emo tiny" data-e="😙" title="Kissing Face With Smiling Eyes"><span class="glyph">😙</span></button>
+    <button class="emo tiny" data-e="😚" title="Kissing Face With Closed Eyes"><span class="glyph">😚</span></button>
+    <button class="emo tiny" data-e="😛" title="Face With Stuck-Out Tongue"><span class="glyph">😛</span></button>
+    <button class="emo tiny" data-e="😜" title="Face With Stuck-Out Tongue And Winking Eye"><span class="glyph">😜</span></button>
+    <button class="emo tiny" data-e="😝" title="Face With Stuck-Out Tongue And Tightly-Closed Eyes"><span class="glyph">😝</span></button>
+    <button class="emo tiny" data-e="😞" title="Disappointed Face"><span class="glyph">😞</span></button>
+    <button class="emo tiny" data-e="😟" title="Worried Face"><span class="glyph">😟</span></button>
+    <button class="emo tiny" data-e="😠" title="Angry Face"><span class="glyph">😠</span></button>
+    <button class="emo tiny" data-e="😡" title="Pouting Face"><span class="glyph">😡</span></button>
+    <button class="emo tiny" data-e="😢" title="Crying Face"><span class="glyph">😢</span></button>
+    <button class="emo tiny" data-e="😣" title="Persevering Face"><span class="glyph">😣</span></button>
+    <button class="emo tiny" data-e="😤" title="Face With Look Of Triumph"><span class="glyph">😤</span></button>
+    <button class="emo tiny" data-e="😥" title="Disappointed But Relieved Face"><span class="glyph">😥</span></button>
+    <button class="emo tiny" data-e="😦" title="Frowning Face With Open Mouth"><span class="glyph">😦</span></button>
+    <button class="emo tiny" data-e="😧" title="Anguished Face"><span class="glyph">😧</span></button>
+    <button class="emo tiny" data-e="😨" title="Fearful Face"><span class="glyph">😨</span></button>
+    <button class="emo tiny" data-e="😩" title="Weary Face"><span class="glyph">😩</span></button>
+    <button class="emo tiny" data-e="😪" title="Sleepy Face"><span class="glyph">😪</span></button>
+    <button class="emo tiny" data-e="😫" title="Tired Face"><span class="glyph">😫</span></button>
+    <button class="emo tiny" data-e="😬" title="Grimacing Face"><span class="glyph">😬</span></button>
+    <button class="emo tiny" data-e="😭" title="Loudly Crying Face"><span class="glyph">😭</span></button>
+    <button class="emo tiny" data-e="😮" title="Face With Open Mouth"><span class="glyph">😮</span></button>
+    <button class="emo tiny" data-e="😯" title="Hushed Face"><span class="glyph">😯</span></button>
+    <button class="emo tiny" data-e="😰" title="Face With Open Mouth And Cold Sweat"><span class="glyph">😰</span></button>
+    <button class="emo tiny" data-e="😱" title="Face Screaming In Fear"><span class="glyph">😱</span></button>
+    <button class="emo tiny" data-e="😲" title="Astonished Face"><span class="glyph">😲</span></button>
+    <button class="emo tiny" data-e="😳" title="Flushed Face"><span class="glyph">😳</span></button>
+    <button class="emo tiny" data-e="😴" title="Sleeping Face"><span class="glyph">😴</span></button>
+    <button class="emo tiny" data-e="😵" title="Dizzy Face"><span class="glyph">😵</span></button>
+    <button class="emo tiny" data-e="😶" title="Face Without Mouth"><span class="glyph">😶</span></button>
+    <button class="emo tiny" data-e="😷" title="Face With Medical Mask"><span class="glyph">😷</span></button>
+    <button class="emo tiny" data-e="😸" title="Grinning Cat Face With Smiling Eyes"><span class="glyph">😸</span></button>
+    <button class="emo tiny" data-e="😹" title="Cat Face With Tears Of Joy"><span class="glyph">😹</span></button>
+    <button class="emo tiny" data-e="😺" title="Smiling Cat Face With Open Mouth"><span class="glyph">😺</span></button>
+    <button class="emo tiny" data-e="😻" title="Smiling Cat Face With Heart-Shaped Eyes"><span class="glyph">😻</span></button>
+    <button class="emo tiny" data-e="😼" title="Cat Face With Wry Smile"><span class="glyph">😼</span></button>
+    <button class="emo tiny" data-e="😽" title="Kissing Cat Face With Closed Eyes"><span class="glyph">😽</span></button>
+    <button class="emo tiny" data-e="😾" title="Pouting Cat Face"><span class="glyph">😾</span></button>
+    <button class="emo tiny" data-e="😿" title="Crying Cat Face"><span class="glyph">😿</span></button>
+    <button class="emo tiny" data-e="🙀" title="Weary Cat Face"><span class="glyph">🙀</span></button>
+    <button class="emo tiny" data-e="🙁" title="Slightly Frowning Face"><span class="glyph">🙁</span></button>
+    <button class="emo tiny" data-e="🙂" title="Slightly Smiling Face"><span class="glyph">🙂</span></button>
+    <button class="emo tiny" data-e="🙃" title="Upside-Down Face"><span class="glyph">🙃</span></button>
+    <button class="emo tiny" data-e="🙄" title="Face With Rolling Eyes"><span class="glyph">🙄</span></button>
+    <button class="emo tiny" data-e="🙅" title="Face With No Good Gesture"><span class="glyph">🙅</span></button>
+    <button class="emo tiny" data-e="🙆" title="Face With Ok Gesture"><span class="glyph">🙆</span></button>
+    <button class="emo tiny" data-e="🙇" title="Person Bowing Deeply"><span class="glyph">🙇</span></button>
+    <button class="emo tiny" data-e="🙈" title="See-No-Evil Monkey"><span class="glyph">🙈</span></button>
+    <button class="emo tiny" data-e="🙉" title="Hear-No-Evil Monkey"><span class="glyph">🙉</span></button>
+    <button class="emo tiny" data-e="🙊" title="Speak-No-Evil Monkey"><span class="glyph">🙊</span></button>
+    <button class="emo tiny" data-e="🙋" title="Happy Person Raising One Hand"><span class="glyph">🙋</span></button>
+    <button class="emo tiny" data-e="🙌" title="Person Raising Both Hands In Celebration"><span class="glyph">🙌</span></button>
+    <button class="emo tiny" data-e="🙍" title="Person Frowning"><span class="glyph">🙍</span></button>
+    <button class="emo tiny" data-e="🙎" title="Person With Pouting Face"><span class="glyph">🙎</span></button>
+    <button class="emo tiny" data-e="🙏" title="Person With Folded Hands"><span class="glyph">🙏</span></button>
+  </div>
+  <h3 class="blockname">Жесты, люди, занятия <span>112</span></h3>
+  <div class="grid dense">
+    <button class="emo tiny" data-e="👀" title="Eyes"><span class="glyph">👀</span></button>
+    <button class="emo tiny" data-e="👁" title="Eye"><span class="glyph">👁</span></button>
+    <button class="emo tiny" data-e="👂" title="Ear"><span class="glyph">👂</span></button>
+    <button class="emo tiny" data-e="👃" title="Nose"><span class="glyph">👃</span></button>
+    <button class="emo tiny" data-e="👄" title="Mouth"><span class="glyph">👄</span></button>
+    <button class="emo tiny" data-e="👅" title="Tongue"><span class="glyph">👅</span></button>
+    <button class="emo tiny" data-e="👆" title="White Up Pointing Backhand Index"><span class="glyph">👆</span></button>
+    <button class="emo tiny" data-e="👇" title="White Down Pointing Backhand Index"><span class="glyph">👇</span></button>
+    <button class="emo tiny" data-e="👈" title="White Left Pointing Backhand Index"><span class="glyph">👈</span></button>
+    <button class="emo tiny" data-e="👉" title="White Right Pointing Backhand Index"><span class="glyph">👉</span></button>
+    <button class="emo tiny" data-e="👊" title="Fisted Hand Sign"><span class="glyph">👊</span></button>
+    <button class="emo tiny" data-e="👋" title="Waving Hand Sign"><span class="glyph">👋</span></button>
+    <button class="emo tiny" data-e="👌" title="Ok Hand Sign"><span class="glyph">👌</span></button>
+    <button class="emo tiny" data-e="👍" title="Thumbs Up Sign"><span class="glyph">👍</span></button>
+    <button class="emo tiny" data-e="👎" title="Thumbs Down Sign"><span class="glyph">👎</span></button>
+    <button class="emo tiny" data-e="👏" title="Clapping Hands Sign"><span class="glyph">👏</span></button>
+    <button class="emo tiny" data-e="👐" title="Open Hands Sign"><span class="glyph">👐</span></button>
+    <button class="emo tiny" data-e="👑" title="Crown"><span class="glyph">👑</span></button>
+    <button class="emo tiny" data-e="👒" title="Womans Hat"><span class="glyph">👒</span></button>
+    <button class="emo tiny" data-e="👓" title="Eyeglasses"><span class="glyph">👓</span></button>
+    <button class="emo tiny" data-e="👔" title="Necktie"><span class="glyph">👔</span></button>
+    <button class="emo tiny" data-e="👕" title="T-Shirt"><span class="glyph">👕</span></button>
+    <button class="emo tiny" data-e="👖" title="Jeans"><span class="glyph">👖</span></button>
+    <button class="emo tiny" data-e="👗" title="Dress"><span class="glyph">👗</span></button>
+    <button class="emo tiny" data-e="👘" title="Kimono"><span class="glyph">👘</span></button>
+    <button class="emo tiny" data-e="👙" title="Bikini"><span class="glyph">👙</span></button>
+    <button class="emo tiny" data-e="👚" title="Womans Clothes"><span class="glyph">👚</span></button>
+    <button class="emo tiny" data-e="👛" title="Purse"><span class="glyph">👛</span></button>
+    <button class="emo tiny" data-e="👜" title="Handbag"><span class="glyph">👜</span></button>
+    <button class="emo tiny" data-e="👝" title="Pouch"><span class="glyph">👝</span></button>
+    <button class="emo tiny" data-e="👞" title="Mans Shoe"><span class="glyph">👞</span></button>
+    <button class="emo tiny" data-e="👟" title="Athletic Shoe"><span class="glyph">👟</span></button>
+    <button class="emo tiny" data-e="👠" title="High-Heeled Shoe"><span class="glyph">👠</span></button>
+    <button class="emo tiny" data-e="👡" title="Womans Sandal"><span class="glyph">👡</span></button>
+    <button class="emo tiny" data-e="👢" title="Womans Boots"><span class="glyph">👢</span></button>
+    <button class="emo tiny" data-e="👣" title="Footprints"><span class="glyph">👣</span></button>
+    <button class="emo tiny" data-e="👤" title="Bust In Silhouette"><span class="glyph">👤</span></button>
+    <button class="emo tiny" data-e="👥" title="Busts In Silhouette"><span class="glyph">👥</span></button>
+    <button class="emo tiny" data-e="👦" title="Boy"><span class="glyph">👦</span></button>
+    <button class="emo tiny" data-e="👧" title="Girl"><span class="glyph">👧</span></button>
+    <button class="emo tiny" data-e="👨" title="Man"><span class="glyph">👨</span></button>
+    <button class="emo tiny" data-e="👩" title="Woman"><span class="glyph">👩</span></button>
+    <button class="emo tiny" data-e="👪" title="Family"><span class="glyph">👪</span></button>
+    <button class="emo tiny" data-e="👫" title="Man And Woman Holding Hands"><span class="glyph">👫</span></button>
+    <button class="emo tiny" data-e="👬" title="Two Men Holding Hands"><span class="glyph">👬</span></button>
+    <button class="emo tiny" data-e="👭" title="Two Women Holding Hands"><span class="glyph">👭</span></button>
+    <button class="emo tiny" data-e="👮" title="Police Officer"><span class="glyph">👮</span></button>
+    <button class="emo tiny" data-e="👯" title="Woman With Bunny Ears"><span class="glyph">👯</span></button>
+    <button class="emo tiny" data-e="👰" title="Bride With Veil"><span class="glyph">👰</span></button>
+    <button class="emo tiny" data-e="👱" title="Person With Blond Hair"><span class="glyph">👱</span></button>
+    <button class="emo tiny" data-e="👲" title="Man With Gua Pi Mao"><span class="glyph">👲</span></button>
+    <button class="emo tiny" data-e="👳" title="Man With Turban"><span class="glyph">👳</span></button>
+    <button class="emo tiny" data-e="👴" title="Older Man"><span class="glyph">👴</span></button>
+    <button class="emo tiny" data-e="👵" title="Older Woman"><span class="glyph">👵</span></button>
+    <button class="emo tiny" data-e="👶" title="Baby"><span class="glyph">👶</span></button>
+    <button class="emo tiny" data-e="👷" title="Construction Worker"><span class="glyph">👷</span></button>
+    <button class="emo tiny" data-e="👸" title="Princess"><span class="glyph">👸</span></button>
+    <button class="emo tiny" data-e="👹" title="Japanese Ogre"><span class="glyph">👹</span></button>
+    <button class="emo tiny" data-e="👺" title="Japanese Goblin"><span class="glyph">👺</span></button>
+    <button class="emo tiny" data-e="👻" title="Ghost"><span class="glyph">👻</span></button>
+    <button class="emo tiny" data-e="👼" title="Baby Angel"><span class="glyph">👼</span></button>
+    <button class="emo tiny" data-e="👽" title="Extraterrestrial Alien"><span class="glyph">👽</span></button>
+    <button class="emo tiny" data-e="👾" title="Alien Monster"><span class="glyph">👾</span></button>
+    <button class="emo tiny" data-e="👿" title="Imp"><span class="glyph">👿</span></button>
+    <button class="emo tiny" data-e="💀" title="Skull"><span class="glyph">💀</span></button>
+    <button class="emo tiny" data-e="💁" title="Information Desk Person"><span class="glyph">💁</span></button>
+    <button class="emo tiny" data-e="💂" title="Guardsman"><span class="glyph">💂</span></button>
+    <button class="emo tiny" data-e="💃" title="Dancer"><span class="glyph">💃</span></button>
+    <button class="emo tiny" data-e="💄" title="Lipstick"><span class="glyph">💄</span></button>
+    <button class="emo tiny" data-e="💅" title="Nail Polish"><span class="glyph">💅</span></button>
+    <button class="emo tiny" data-e="💆" title="Face Massage"><span class="glyph">💆</span></button>
+    <button class="emo tiny" data-e="💇" title="Haircut"><span class="glyph">💇</span></button>
+    <button class="emo tiny" data-e="💈" title="Barber Pole"><span class="glyph">💈</span></button>
+    <button class="emo tiny" data-e="💉" title="Syringe"><span class="glyph">💉</span></button>
+    <button class="emo tiny" data-e="💊" title="Pill"><span class="glyph">💊</span></button>
+    <button class="emo tiny" data-e="💋" title="Kiss Mark"><span class="glyph">💋</span></button>
+    <button class="emo tiny" data-e="💌" title="Love Letter"><span class="glyph">💌</span></button>
+    <button class="emo tiny" data-e="💍" title="Ring"><span class="glyph">💍</span></button>
+    <button class="emo tiny" data-e="💎" title="Gem Stone"><span class="glyph">💎</span></button>
+    <button class="emo tiny" data-e="💏" title="Kiss"><span class="glyph">💏</span></button>
+    <button class="emo tiny" data-e="💐" title="Bouquet"><span class="glyph">💐</span></button>
+    <button class="emo tiny" data-e="💑" title="Couple With Heart"><span class="glyph">💑</span></button>
+    <button class="emo tiny" data-e="💒" title="Wedding"><span class="glyph">💒</span></button>
+    <button class="emo tiny" data-e="💓" title="Beating Heart"><span class="glyph">💓</span></button>
+    <button class="emo tiny" data-e="💔" title="Broken Heart"><span class="glyph">💔</span></button>
+    <button class="emo tiny" data-e="💕" title="Two Hearts"><span class="glyph">💕</span></button>
+    <button class="emo tiny" data-e="💖" title="Sparkling Heart"><span class="glyph">💖</span></button>
+    <button class="emo tiny" data-e="💗" title="Growing Heart"><span class="glyph">💗</span></button>
+    <button class="emo tiny" data-e="💘" title="Heart With Arrow"><span class="glyph">💘</span></button>
+    <button class="emo tiny" data-e="💙" title="Blue Heart"><span class="glyph">💙</span></button>
+    <button class="emo tiny" data-e="💚" title="Green Heart"><span class="glyph">💚</span></button>
+    <button class="emo tiny" data-e="💛" title="Yellow Heart"><span class="glyph">💛</span></button>
+    <button class="emo tiny" data-e="💜" title="Purple Heart"><span class="glyph">💜</span></button>
+    <button class="emo tiny" data-e="💝" title="Heart With Ribbon"><span class="glyph">💝</span></button>
+    <button class="emo tiny" data-e="💞" title="Revolving Hearts"><span class="glyph">💞</span></button>
+    <button class="emo tiny" data-e="💟" title="Heart Decoration"><span class="glyph">💟</span></button>
+    <button class="emo tiny" data-e="💠" title="Diamond Shape With A Dot Inside"><span class="glyph">💠</span></button>
+    <button class="emo tiny" data-e="💡" title="Electric Light Bulb"><span class="glyph">💡</span></button>
+    <button class="emo tiny" data-e="💢" title="Anger Symbol"><span class="glyph">💢</span></button>
+    <button class="emo tiny" data-e="💣" title="Bomb"><span class="glyph">💣</span></button>
+    <button class="emo tiny" data-e="💤" title="Sleeping Symbol"><span class="glyph">💤</span></button>
+    <button class="emo tiny" data-e="💥" title="Collision Symbol"><span class="glyph">💥</span></button>
+    <button class="emo tiny" data-e="💦" title="Splashing Sweat Symbol"><span class="glyph">💦</span></button>
+    <button class="emo tiny" data-e="💧" title="Droplet"><span class="glyph">💧</span></button>
+    <button class="emo tiny" data-e="💨" title="Dash Symbol"><span class="glyph">💨</span></button>
+    <button class="emo tiny" data-e="💩" title="Pile Of Poo"><span class="glyph">💩</span></button>
+    <button class="emo tiny" data-e="💪" title="Flexed Biceps"><span class="glyph">💪</span></button>
+    <button class="emo tiny" data-e="💫" title="Dizzy Symbol"><span class="glyph">💫</span></button>
+    <button class="emo tiny" data-e="💬" title="Speech Balloon"><span class="glyph">💬</span></button>
+    <button class="emo tiny" data-e="💭" title="Thought Balloon"><span class="glyph">💭</span></button>
+    <button class="emo tiny" data-e="💮" title="White Flower"><span class="glyph">💮</span></button>
+    <button class="emo tiny" data-e="💯" title="Hundred Points Symbol"><span class="glyph">💯</span></button>
+  </div>
+  <h3 class="blockname">Предметы, символы, места <span>336</span></h3>
+  <div class="grid dense">
+    <button class="emo tiny" data-e="💰" title="Money Bag"><span class="glyph">💰</span></button>
+    <button class="emo tiny" data-e="💱" title="Currency Exchange"><span class="glyph">💱</span></button>
+    <button class="emo tiny" data-e="💲" title="Heavy Dollar Sign"><span class="glyph">💲</span></button>
+    <button class="emo tiny" data-e="💳" title="Credit Card"><span class="glyph">💳</span></button>
+    <button class="emo tiny" data-e="💴" title="Banknote With Yen Sign"><span class="glyph">💴</span></button>
+    <button class="emo tiny" data-e="💵" title="Banknote With Dollar Sign"><span class="glyph">💵</span></button>
+    <button class="emo tiny" data-e="💶" title="Banknote With Euro Sign"><span class="glyph">💶</span></button>
+    <button class="emo tiny" data-e="💷" title="Banknote With Pound Sign"><span class="glyph">💷</span></button>
+    <button class="emo tiny" data-e="💸" title="Money With Wings"><span class="glyph">💸</span></button>
+    <button class="emo tiny" data-e="💹" title="Chart With Upwards Trend And Yen Sign"><span class="glyph">💹</span></button>
+    <button class="emo tiny" data-e="💺" title="Seat"><span class="glyph">💺</span></button>
+    <button class="emo tiny" data-e="💻" title="Personal Computer"><span class="glyph">💻</span></button>
+    <button class="emo tiny" data-e="💼" title="Briefcase"><span class="glyph">💼</span></button>
+    <button class="emo tiny" data-e="💽" title="Minidisc"><span class="glyph">💽</span></button>
+    <button class="emo tiny" data-e="💾" title="Floppy Disk"><span class="glyph">💾</span></button>
+    <button class="emo tiny" data-e="💿" title="Optical Disc"><span class="glyph">💿</span></button>
+    <button class="emo tiny" data-e="📀" title="Dvd"><span class="glyph">📀</span></button>
+    <button class="emo tiny" data-e="📁" title="File Folder"><span class="glyph">📁</span></button>
+    <button class="emo tiny" data-e="📂" title="Open File Folder"><span class="glyph">📂</span></button>
+    <button class="emo tiny" data-e="📃" title="Page With Curl"><span class="glyph">📃</span></button>
+    <button class="emo tiny" data-e="📄" title="Page Facing Up"><span class="glyph">📄</span></button>
+    <button class="emo tiny" data-e="📅" title="Calendar"><span class="glyph">📅</span></button>
+    <button class="emo tiny" data-e="📆" title="Tear-Off Calendar"><span class="glyph">📆</span></button>
+    <button class="emo tiny" data-e="📇" title="Card Index"><span class="glyph">📇</span></button>
+    <button class="emo tiny" data-e="📈" title="Chart With Upwards Trend"><span class="glyph">📈</span></button>
+    <button class="emo tiny" data-e="📉" title="Chart With Downwards Trend"><span class="glyph">📉</span></button>
+    <button class="emo tiny" data-e="📊" title="Bar Chart"><span class="glyph">📊</span></button>
+    <button class="emo tiny" data-e="📋" title="Clipboard"><span class="glyph">📋</span></button>
+    <button class="emo tiny" data-e="📌" title="Pushpin"><span class="glyph">📌</span></button>
+    <button class="emo tiny" data-e="📍" title="Round Pushpin"><span class="glyph">📍</span></button>
+    <button class="emo tiny" data-e="📎" title="Paperclip"><span class="glyph">📎</span></button>
+    <button class="emo tiny" data-e="📏" title="Straight Ruler"><span class="glyph">📏</span></button>
+    <button class="emo tiny" data-e="📐" title="Triangular Ruler"><span class="glyph">📐</span></button>
+    <button class="emo tiny" data-e="📑" title="Bookmark Tabs"><span class="glyph">📑</span></button>
+    <button class="emo tiny" data-e="📒" title="Ledger"><span class="glyph">📒</span></button>
+    <button class="emo tiny" data-e="📓" title="Notebook"><span class="glyph">📓</span></button>
+    <button class="emo tiny" data-e="📔" title="Notebook With Decorative Cover"><span class="glyph">📔</span></button>
+    <button class="emo tiny" data-e="📕" title="Closed Book"><span class="glyph">📕</span></button>
+    <button class="emo tiny" data-e="📖" title="Open Book"><span class="glyph">📖</span></button>
+    <button class="emo tiny" data-e="📗" title="Green Book"><span class="glyph">📗</span></button>
+    <button class="emo tiny" data-e="📘" title="Blue Book"><span class="glyph">📘</span></button>
+    <button class="emo tiny" data-e="📙" title="Orange Book"><span class="glyph">📙</span></button>
+    <button class="emo tiny" data-e="📚" title="Books"><span class="glyph">📚</span></button>
+    <button class="emo tiny" data-e="📛" title="Name Badge"><span class="glyph">📛</span></button>
+    <button class="emo tiny" data-e="📜" title="Scroll"><span class="glyph">📜</span></button>
+    <button class="emo tiny" data-e="📝" title="Memo"><span class="glyph">📝</span></button>
+    <button class="emo tiny" data-e="📞" title="Telephone Receiver"><span class="glyph">📞</span></button>
+    <button class="emo tiny" data-e="📟" title="Pager"><span class="glyph">📟</span></button>
+    <button class="emo tiny" data-e="📠" title="Fax Machine"><span class="glyph">📠</span></button>
+    <button class="emo tiny" data-e="📡" title="Satellite Antenna"><span class="glyph">📡</span></button>
+    <button class="emo tiny" data-e="📢" title="Public Address Loudspeaker"><span class="glyph">📢</span></button>
+    <button class="emo tiny" data-e="📣" title="Cheering Megaphone"><span class="glyph">📣</span></button>
+    <button class="emo tiny" data-e="📤" title="Outbox Tray"><span class="glyph">📤</span></button>
+    <button class="emo tiny" data-e="📥" title="Inbox Tray"><span class="glyph">📥</span></button>
+    <button class="emo tiny" data-e="📦" title="Package"><span class="glyph">📦</span></button>
+    <button class="emo tiny" data-e="📧" title="E-Mail Symbol"><span class="glyph">📧</span></button>
+    <button class="emo tiny" data-e="📨" title="Incoming Envelope"><span class="glyph">📨</span></button>
+    <button class="emo tiny" data-e="📩" title="Envelope With Downwards Arrow Above"><span class="glyph">📩</span></button>
+    <button class="emo tiny" data-e="📪" title="Closed Mailbox With Lowered Flag"><span class="glyph">📪</span></button>
+    <button class="emo tiny" data-e="📫" title="Closed Mailbox With Raised Flag"><span class="glyph">📫</span></button>
+    <button class="emo tiny" data-e="📬" title="Open Mailbox With Raised Flag"><span class="glyph">📬</span></button>
+    <button class="emo tiny" data-e="📭" title="Open Mailbox With Lowered Flag"><span class="glyph">📭</span></button>
+    <button class="emo tiny" data-e="📮" title="Postbox"><span class="glyph">📮</span></button>
+    <button class="emo tiny" data-e="📯" title="Postal Horn"><span class="glyph">📯</span></button>
+    <button class="emo tiny" data-e="📰" title="Newspaper"><span class="glyph">📰</span></button>
+    <button class="emo tiny" data-e="📱" title="Mobile Phone"><span class="glyph">📱</span></button>
+    <button class="emo tiny" data-e="📲" title="Mobile Phone With Rightwards Arrow At Left"><span class="glyph">📲</span></button>
+    <button class="emo tiny" data-e="📳" title="Vibration Mode"><span class="glyph">📳</span></button>
+    <button class="emo tiny" data-e="📴" title="Mobile Phone Off"><span class="glyph">📴</span></button>
+    <button class="emo tiny" data-e="📵" title="No Mobile Phones"><span class="glyph">📵</span></button>
+    <button class="emo tiny" data-e="📶" title="Antenna With Bars"><span class="glyph">📶</span></button>
+    <button class="emo tiny" data-e="📷" title="Camera"><span class="glyph">📷</span></button>
+    <button class="emo tiny" data-e="📸" title="Camera With Flash"><span class="glyph">📸</span></button>
+    <button class="emo tiny" data-e="📹" title="Video Camera"><span class="glyph">📹</span></button>
+    <button class="emo tiny" data-e="📺" title="Television"><span class="glyph">📺</span></button>
+    <button class="emo tiny" data-e="📻" title="Radio"><span class="glyph">📻</span></button>
+    <button class="emo tiny" data-e="📼" title="Videocassette"><span class="glyph">📼</span></button>
+    <button class="emo tiny" data-e="📽" title="Film Projector"><span class="glyph">📽</span></button>
+    <button class="emo tiny" data-e="📾" title="Portable Stereo"><span class="glyph">📾</span></button>
+    <button class="emo tiny" data-e="📿" title="Prayer Beads"><span class="glyph">📿</span></button>
+    <button class="emo tiny" data-e="🔀" title="Twisted Rightwards Arrows"><span class="glyph">🔀</span></button>
+    <button class="emo tiny" data-e="🔁" title="Clockwise Rightwards And Leftwards Open Circle Arrows"><span class="glyph">🔁</span></button>
+    <button class="emo tiny" data-e="🔂" title="Clockwise Rightwards And Leftwards Open Circle Arrows With Circled One Overlay"><span class="glyph">🔂</span></button>
+    <button class="emo tiny" data-e="🔃" title="Clockwise Downwards And Upwards Open Circle Arrows"><span class="glyph">🔃</span></button>
+    <button class="emo tiny" data-e="🔄" title="Anticlockwise Downwards And Upwards Open Circle Arrows"><span class="glyph">🔄</span></button>
+    <button class="emo tiny" data-e="🔅" title="Low Brightness Symbol"><span class="glyph">🔅</span></button>
+    <button class="emo tiny" data-e="🔆" title="High Brightness Symbol"><span class="glyph">🔆</span></button>
+    <button class="emo tiny" data-e="🔇" title="Speaker With Cancellation Stroke"><span class="glyph">🔇</span></button>
+    <button class="emo tiny" data-e="🔈" title="Speaker"><span class="glyph">🔈</span></button>
+    <button class="emo tiny" data-e="🔉" title="Speaker With One Sound Wave"><span class="glyph">🔉</span></button>
+    <button class="emo tiny" data-e="🔊" title="Speaker With Three Sound Waves"><span class="glyph">🔊</span></button>
+    <button class="emo tiny" data-e="🔋" title="Battery"><span class="glyph">🔋</span></button>
+    <button class="emo tiny" data-e="🔌" title="Electric Plug"><span class="glyph">🔌</span></button>
+    <button class="emo tiny" data-e="🔍" title="Left-Pointing Magnifying Glass"><span class="glyph">🔍</span></button>
+    <button class="emo tiny" data-e="🔎" title="Right-Pointing Magnifying Glass"><span class="glyph">🔎</span></button>
+    <button class="emo tiny" data-e="🔏" title="Lock With Ink Pen"><span class="glyph">🔏</span></button>
+    <button class="emo tiny" data-e="🔐" title="Closed Lock With Key"><span class="glyph">🔐</span></button>
+    <button class="emo tiny" data-e="🔑" title="Key"><span class="glyph">🔑</span></button>
+    <button class="emo tiny" data-e="🔒" title="Lock"><span class="glyph">🔒</span></button>
+    <button class="emo tiny" data-e="🔓" title="Open Lock"><span class="glyph">🔓</span></button>
+    <button class="emo tiny" data-e="🔔" title="Bell"><span class="glyph">🔔</span></button>
+    <button class="emo tiny" data-e="🔕" title="Bell With Cancellation Stroke"><span class="glyph">🔕</span></button>
+    <button class="emo tiny" data-e="🔖" title="Bookmark"><span class="glyph">🔖</span></button>
+    <button class="emo tiny" data-e="🔗" title="Link Symbol"><span class="glyph">🔗</span></button>
+    <button class="emo tiny" data-e="🔘" title="Radio Button"><span class="glyph">🔘</span></button>
+    <button class="emo tiny" data-e="🔙" title="Back With Leftwards Arrow Above"><span class="glyph">🔙</span></button>
+    <button class="emo tiny" data-e="🔚" title="End With Leftwards Arrow Above"><span class="glyph">🔚</span></button>
+    <button class="emo tiny" data-e="🔛" title="On With Exclamation Mark With Left Right Arrow Above"><span class="glyph">🔛</span></button>
+    <button class="emo tiny" data-e="🔜" title="Soon With Rightwards Arrow Above"><span class="glyph">🔜</span></button>
+    <button class="emo tiny" data-e="🔝" title="Top With Upwards Arrow Above"><span class="glyph">🔝</span></button>
+    <button class="emo tiny" data-e="🔞" title="No One Under Eighteen Symbol"><span class="glyph">🔞</span></button>
+    <button class="emo tiny" data-e="🔟" title="Keycap Ten"><span class="glyph">🔟</span></button>
+    <button class="emo tiny" data-e="🔠" title="Input Symbol For Latin Capital Letters"><span class="glyph">🔠</span></button>
+    <button class="emo tiny" data-e="🔡" title="Input Symbol For Latin Small Letters"><span class="glyph">🔡</span></button>
+    <button class="emo tiny" data-e="🔢" title="Input Symbol For Numbers"><span class="glyph">🔢</span></button>
+    <button class="emo tiny" data-e="🔣" title="Input Symbol For Symbols"><span class="glyph">🔣</span></button>
+    <button class="emo tiny" data-e="🔤" title="Input Symbol For Latin Letters"><span class="glyph">🔤</span></button>
+    <button class="emo tiny" data-e="🔥" title="Fire"><span class="glyph">🔥</span></button>
+    <button class="emo tiny" data-e="🔦" title="Electric Torch"><span class="glyph">🔦</span></button>
+    <button class="emo tiny" data-e="🔧" title="Wrench"><span class="glyph">🔧</span></button>
+    <button class="emo tiny" data-e="🔨" title="Hammer"><span class="glyph">🔨</span></button>
+    <button class="emo tiny" data-e="🔩" title="Nut And Bolt"><span class="glyph">🔩</span></button>
+    <button class="emo tiny" data-e="🔪" title="Hocho"><span class="glyph">🔪</span></button>
+    <button class="emo tiny" data-e="🔫" title="Pistol"><span class="glyph">🔫</span></button>
+    <button class="emo tiny" data-e="🔬" title="Microscope"><span class="glyph">🔬</span></button>
+    <button class="emo tiny" data-e="🔭" title="Telescope"><span class="glyph">🔭</span></button>
+    <button class="emo tiny" data-e="🔮" title="Crystal Ball"><span class="glyph">🔮</span></button>
+    <button class="emo tiny" data-e="🔯" title="Six Pointed Star With Middle Dot"><span class="glyph">🔯</span></button>
+    <button class="emo tiny" data-e="🔰" title="Japanese Symbol For Beginner"><span class="glyph">🔰</span></button>
+    <button class="emo tiny" data-e="🔱" title="Trident Emblem"><span class="glyph">🔱</span></button>
+    <button class="emo tiny" data-e="🔲" title="Black Square Button"><span class="glyph">🔲</span></button>
+    <button class="emo tiny" data-e="🔳" title="White Square Button"><span class="glyph">🔳</span></button>
+    <button class="emo tiny" data-e="🔴" title="Large Red Circle"><span class="glyph">🔴</span></button>
+    <button class="emo tiny" data-e="🔵" title="Large Blue Circle"><span class="glyph">🔵</span></button>
+    <button class="emo tiny" data-e="🔶" title="Large Orange Diamond"><span class="glyph">🔶</span></button>
+    <button class="emo tiny" data-e="🔷" title="Large Blue Diamond"><span class="glyph">🔷</span></button>
+    <button class="emo tiny" data-e="🔸" title="Small Orange Diamond"><span class="glyph">🔸</span></button>
+    <button class="emo tiny" data-e="🔹" title="Small Blue Diamond"><span class="glyph">🔹</span></button>
+    <button class="emo tiny" data-e="🔺" title="Up-Pointing Red Triangle"><span class="glyph">🔺</span></button>
+    <button class="emo tiny" data-e="🔻" title="Down-Pointing Red Triangle"><span class="glyph">🔻</span></button>
+    <button class="emo tiny" data-e="🔼" title="Up-Pointing Small Red Triangle"><span class="glyph">🔼</span></button>
+    <button class="emo tiny" data-e="🔽" title="Down-Pointing Small Red Triangle"><span class="glyph">🔽</span></button>
+    <button class="emo tiny" data-e="🔾" title="Lower Right Shadowed White Circle"><span class="glyph">🔾</span></button>
+    <button class="emo tiny" data-e="🔿" title="Upper Right Shadowed White Circle"><span class="glyph">🔿</span></button>
+    <button class="emo tiny" data-e="🕀" title="Circled Cross Pommee"><span class="glyph">🕀</span></button>
+    <button class="emo tiny" data-e="🕁" title="Cross Pommee With Half-Circle Below"><span class="glyph">🕁</span></button>
+    <button class="emo tiny" data-e="🕂" title="Cross Pommee"><span class="glyph">🕂</span></button>
+    <button class="emo tiny" data-e="🕃" title="Notched Left Semicircle With Three Dots"><span class="glyph">🕃</span></button>
+    <button class="emo tiny" data-e="🕄" title="Notched Right Semicircle With Three Dots"><span class="glyph">🕄</span></button>
+    <button class="emo tiny" data-e="🕅" title="Symbol For Marks Chapter"><span class="glyph">🕅</span></button>
+    <button class="emo tiny" data-e="🕆" title="White Latin Cross"><span class="glyph">🕆</span></button>
+    <button class="emo tiny" data-e="🕇" title="Heavy Latin Cross"><span class="glyph">🕇</span></button>
+    <button class="emo tiny" data-e="🕈" title="Celtic Cross"><span class="glyph">🕈</span></button>
+    <button class="emo tiny" data-e="🕉" title="Om Symbol"><span class="glyph">🕉</span></button>
+    <button class="emo tiny" data-e="🕊" title="Dove Of Peace"><span class="glyph">🕊</span></button>
+    <button class="emo tiny" data-e="🕋" title="Kaaba"><span class="glyph">🕋</span></button>
+    <button class="emo tiny" data-e="🕌" title="Mosque"><span class="glyph">🕌</span></button>
+    <button class="emo tiny" data-e="🕍" title="Synagogue"><span class="glyph">🕍</span></button>
+    <button class="emo tiny" data-e="🕎" title="Menorah With Nine Branches"><span class="glyph">🕎</span></button>
+    <button class="emo tiny" data-e="🕏" title="Bowl Of Hygieia"><span class="glyph">🕏</span></button>
+    <button class="emo tiny" data-e="🕐" title="Clock Face One Oclock"><span class="glyph">🕐</span></button>
+    <button class="emo tiny" data-e="🕑" title="Clock Face Two Oclock"><span class="glyph">🕑</span></button>
+    <button class="emo tiny" data-e="🕒" title="Clock Face Three Oclock"><span class="glyph">🕒</span></button>
+    <button class="emo tiny" data-e="🕓" title="Clock Face Four Oclock"><span class="glyph">🕓</span></button>
+    <button class="emo tiny" data-e="🕔" title="Clock Face Five Oclock"><span class="glyph">🕔</span></button>
+    <button class="emo tiny" data-e="🕕" title="Clock Face Six Oclock"><span class="glyph">🕕</span></button>
+    <button class="emo tiny" data-e="🕖" title="Clock Face Seven Oclock"><span class="glyph">🕖</span></button>
+    <button class="emo tiny" data-e="🕗" title="Clock Face Eight Oclock"><span class="glyph">🕗</span></button>
+    <button class="emo tiny" data-e="🕘" title="Clock Face Nine Oclock"><span class="glyph">🕘</span></button>
+    <button class="emo tiny" data-e="🕙" title="Clock Face Ten Oclock"><span class="glyph">🕙</span></button>
+    <button class="emo tiny" data-e="🕚" title="Clock Face Eleven Oclock"><span class="glyph">🕚</span></button>
+    <button class="emo tiny" data-e="🕛" title="Clock Face Twelve Oclock"><span class="glyph">🕛</span></button>
+    <button class="emo tiny" data-e="🕜" title="Clock Face One-Thirty"><span class="glyph">🕜</span></button>
+    <button class="emo tiny" data-e="🕝" title="Clock Face Two-Thirty"><span class="glyph">🕝</span></button>
+    <button class="emo tiny" data-e="🕞" title="Clock Face Three-Thirty"><span class="glyph">🕞</span></button>
+    <button class="emo tiny" data-e="🕟" title="Clock Face Four-Thirty"><span class="glyph">🕟</span></button>
+    <button class="emo tiny" data-e="🕠" title="Clock Face Five-Thirty"><span class="glyph">🕠</span></button>
+    <button class="emo tiny" data-e="🕡" title="Clock Face Six-Thirty"><span class="glyph">🕡</span></button>
+    <button class="emo tiny" data-e="🕢" title="Clock Face Seven-Thirty"><span class="glyph">🕢</span></button>
+    <button class="emo tiny" data-e="🕣" title="Clock Face Eight-Thirty"><span class="glyph">🕣</span></button>
+    <button class="emo tiny" data-e="🕤" title="Clock Face Nine-Thirty"><span class="glyph">🕤</span></button>
+    <button class="emo tiny" data-e="🕥" title="Clock Face Ten-Thirty"><span class="glyph">🕥</span></button>
+    <button class="emo tiny" data-e="🕦" title="Clock Face Eleven-Thirty"><span class="glyph">🕦</span></button>
+    <button class="emo tiny" data-e="🕧" title="Clock Face Twelve-Thirty"><span class="glyph">🕧</span></button>
+    <button class="emo tiny" data-e="🕨" title="Right Speaker"><span class="glyph">🕨</span></button>
+    <button class="emo tiny" data-e="🕩" title="Right Speaker With One Sound Wave"><span class="glyph">🕩</span></button>
+    <button class="emo tiny" data-e="🕪" title="Right Speaker With Three Sound Waves"><span class="glyph">🕪</span></button>
+    <button class="emo tiny" data-e="🕫" title="Bullhorn"><span class="glyph">🕫</span></button>
+    <button class="emo tiny" data-e="🕬" title="Bullhorn With Sound Waves"><span class="glyph">🕬</span></button>
+    <button class="emo tiny" data-e="🕭" title="Ringing Bell"><span class="glyph">🕭</span></button>
+    <button class="emo tiny" data-e="🕮" title="Book"><span class="glyph">🕮</span></button>
+    <button class="emo tiny" data-e="🕯" title="Candle"><span class="glyph">🕯</span></button>
+    <button class="emo tiny" data-e="🕰" title="Mantelpiece Clock"><span class="glyph">🕰</span></button>
+    <button class="emo tiny" data-e="🕱" title="Black Skull And Crossbones"><span class="glyph">🕱</span></button>
+    <button class="emo tiny" data-e="🕲" title="No Piracy"><span class="glyph">🕲</span></button>
+    <button class="emo tiny" data-e="🕳" title="Hole"><span class="glyph">🕳</span></button>
+    <button class="emo tiny" data-e="🕴" title="Man In Business Suit Levitating"><span class="glyph">🕴</span></button>
+    <button class="emo tiny" data-e="🕵" title="Sleuth Or Spy"><span class="glyph">🕵</span></button>
+    <button class="emo tiny" data-e="🕶" title="Dark Sunglasses"><span class="glyph">🕶</span></button>
+    <button class="emo tiny" data-e="🕷" title="Spider"><span class="glyph">🕷</span></button>
+    <button class="emo tiny" data-e="🕸" title="Spider Web"><span class="glyph">🕸</span></button>
+    <button class="emo tiny" data-e="🕹" title="Joystick"><span class="glyph">🕹</span></button>
+    <button class="emo tiny" data-e="🕺" title="Man Dancing"><span class="glyph">🕺</span></button>
+    <button class="emo tiny" data-e="🕻" title="Left Hand Telephone Receiver"><span class="glyph">🕻</span></button>
+    <button class="emo tiny" data-e="🕼" title="Telephone Receiver With Page"><span class="glyph">🕼</span></button>
+    <button class="emo tiny" data-e="🕽" title="Right Hand Telephone Receiver"><span class="glyph">🕽</span></button>
+    <button class="emo tiny" data-e="🕾" title="White Touchtone Telephone"><span class="glyph">🕾</span></button>
+    <button class="emo tiny" data-e="🕿" title="Black Touchtone Telephone"><span class="glyph">🕿</span></button>
+    <button class="emo tiny" data-e="🖀" title="Telephone On Top Of Modem"><span class="glyph">🖀</span></button>
+    <button class="emo tiny" data-e="🖁" title="Clamshell Mobile Phone"><span class="glyph">🖁</span></button>
+    <button class="emo tiny" data-e="🖂" title="Back Of Envelope"><span class="glyph">🖂</span></button>
+    <button class="emo tiny" data-e="🖃" title="Stamped Envelope"><span class="glyph">🖃</span></button>
+    <button class="emo tiny" data-e="🖄" title="Envelope With Lightning"><span class="glyph">🖄</span></button>
+    <button class="emo tiny" data-e="🖅" title="Flying Envelope"><span class="glyph">🖅</span></button>
+    <button class="emo tiny" data-e="🖆" title="Pen Over Stamped Envelope"><span class="glyph">🖆</span></button>
+    <button class="emo tiny" data-e="🖇" title="Linked Paperclips"><span class="glyph">🖇</span></button>
+    <button class="emo tiny" data-e="🖈" title="Black Pushpin"><span class="glyph">🖈</span></button>
+    <button class="emo tiny" data-e="🖉" title="Lower Left Pencil"><span class="glyph">🖉</span></button>
+    <button class="emo tiny" data-e="🖊" title="Lower Left Ballpoint Pen"><span class="glyph">🖊</span></button>
+    <button class="emo tiny" data-e="🖋" title="Lower Left Fountain Pen"><span class="glyph">🖋</span></button>
+    <button class="emo tiny" data-e="🖌" title="Lower Left Paintbrush"><span class="glyph">🖌</span></button>
+    <button class="emo tiny" data-e="🖍" title="Lower Left Crayon"><span class="glyph">🖍</span></button>
+    <button class="emo tiny" data-e="🖎" title="Left Writing Hand"><span class="glyph">🖎</span></button>
+    <button class="emo tiny" data-e="🖏" title="Turned Ok Hand Sign"><span class="glyph">🖏</span></button>
+    <button class="emo tiny" data-e="🖐" title="Raised Hand With Fingers Splayed"><span class="glyph">🖐</span></button>
+    <button class="emo tiny" data-e="🖑" title="Reversed Raised Hand With Fingers Splayed"><span class="glyph">🖑</span></button>
+    <button class="emo tiny" data-e="🖒" title="Reversed Thumbs Up Sign"><span class="glyph">🖒</span></button>
+    <button class="emo tiny" data-e="🖓" title="Reversed Thumbs Down Sign"><span class="glyph">🖓</span></button>
+    <button class="emo tiny" data-e="🖔" title="Reversed Victory Hand"><span class="glyph">🖔</span></button>
+    <button class="emo tiny" data-e="🖕" title="Reversed Hand With Middle Finger Extended"><span class="glyph">🖕</span></button>
+    <button class="emo tiny" data-e="🖖" title="Raised Hand With Part Between Middle And Ring Fingers"><span class="glyph">🖖</span></button>
+    <button class="emo tiny" data-e="🖗" title="White Down Pointing Left Hand Index"><span class="glyph">🖗</span></button>
+    <button class="emo tiny" data-e="🖘" title="Sideways White Left Pointing Index"><span class="glyph">🖘</span></button>
+    <button class="emo tiny" data-e="🖙" title="Sideways White Right Pointing Index"><span class="glyph">🖙</span></button>
+    <button class="emo tiny" data-e="🖚" title="Sideways Black Left Pointing Index"><span class="glyph">🖚</span></button>
+    <button class="emo tiny" data-e="🖛" title="Sideways Black Right Pointing Index"><span class="glyph">🖛</span></button>
+    <button class="emo tiny" data-e="🖜" title="Black Left Pointing Backhand Index"><span class="glyph">🖜</span></button>
+    <button class="emo tiny" data-e="🖝" title="Black Right Pointing Backhand Index"><span class="glyph">🖝</span></button>
+    <button class="emo tiny" data-e="🖞" title="Sideways White Up Pointing Index"><span class="glyph">🖞</span></button>
+    <button class="emo tiny" data-e="🖟" title="Sideways White Down Pointing Index"><span class="glyph">🖟</span></button>
+    <button class="emo tiny" data-e="🖠" title="Sideways Black Up Pointing Index"><span class="glyph">🖠</span></button>
+    <button class="emo tiny" data-e="🖡" title="Sideways Black Down Pointing Index"><span class="glyph">🖡</span></button>
+    <button class="emo tiny" data-e="🖢" title="Black Up Pointing Backhand Index"><span class="glyph">🖢</span></button>
+    <button class="emo tiny" data-e="🖣" title="Black Down Pointing Backhand Index"><span class="glyph">🖣</span></button>
+    <button class="emo tiny" data-e="🖤" title="Black Heart"><span class="glyph">🖤</span></button>
+    <button class="emo tiny" data-e="🖥" title="Desktop Computer"><span class="glyph">🖥</span></button>
+    <button class="emo tiny" data-e="🖦" title="Keyboard And Mouse"><span class="glyph">🖦</span></button>
+    <button class="emo tiny" data-e="🖧" title="Three Networked Computers"><span class="glyph">🖧</span></button>
+    <button class="emo tiny" data-e="🖨" title="Printer"><span class="glyph">🖨</span></button>
+    <button class="emo tiny" data-e="🖩" title="Pocket Calculator"><span class="glyph">🖩</span></button>
+    <button class="emo tiny" data-e="🖪" title="Black Hard Shell Floppy Disk"><span class="glyph">🖪</span></button>
+    <button class="emo tiny" data-e="🖫" title="White Hard Shell Floppy Disk"><span class="glyph">🖫</span></button>
+    <button class="emo tiny" data-e="🖬" title="Soft Shell Floppy Disk"><span class="glyph">🖬</span></button>
+    <button class="emo tiny" data-e="🖭" title="Tape Cartridge"><span class="glyph">🖭</span></button>
+    <button class="emo tiny" data-e="🖮" title="Wired Keyboard"><span class="glyph">🖮</span></button>
+    <button class="emo tiny" data-e="🖯" title="One Button Mouse"><span class="glyph">🖯</span></button>
+    <button class="emo tiny" data-e="🖰" title="Two Button Mouse"><span class="glyph">🖰</span></button>
+    <button class="emo tiny" data-e="🖱" title="Three Button Mouse"><span class="glyph">🖱</span></button>
+    <button class="emo tiny" data-e="🖲" title="Trackball"><span class="glyph">🖲</span></button>
+    <button class="emo tiny" data-e="🖳" title="Old Personal Computer"><span class="glyph">🖳</span></button>
+    <button class="emo tiny" data-e="🖴" title="Hard Disk"><span class="glyph">🖴</span></button>
+    <button class="emo tiny" data-e="🖵" title="Screen"><span class="glyph">🖵</span></button>
+    <button class="emo tiny" data-e="🖶" title="Printer Icon"><span class="glyph">🖶</span></button>
+    <button class="emo tiny" data-e="🖷" title="Fax Icon"><span class="glyph">🖷</span></button>
+    <button class="emo tiny" data-e="🖸" title="Optical Disc Icon"><span class="glyph">🖸</span></button>
+    <button class="emo tiny" data-e="🖹" title="Document With Text"><span class="glyph">🖹</span></button>
+    <button class="emo tiny" data-e="🖺" title="Document With Text And Picture"><span class="glyph">🖺</span></button>
+    <button class="emo tiny" data-e="🖻" title="Document With Picture"><span class="glyph">🖻</span></button>
+    <button class="emo tiny" data-e="🖼" title="Frame With Picture"><span class="glyph">🖼</span></button>
+    <button class="emo tiny" data-e="🖽" title="Frame With Tiles"><span class="glyph">🖽</span></button>
+    <button class="emo tiny" data-e="🖾" title="Frame With An X"><span class="glyph">🖾</span></button>
+    <button class="emo tiny" data-e="🖿" title="Black Folder"><span class="glyph">🖿</span></button>
+    <button class="emo tiny" data-e="🗀" title="Folder"><span class="glyph">🗀</span></button>
+    <button class="emo tiny" data-e="🗁" title="Open Folder"><span class="glyph">🗁</span></button>
+    <button class="emo tiny" data-e="🗂" title="Card Index Dividers"><span class="glyph">🗂</span></button>
+    <button class="emo tiny" data-e="🗃" title="Card File Box"><span class="glyph">🗃</span></button>
+    <button class="emo tiny" data-e="🗄" title="File Cabinet"><span class="glyph">🗄</span></button>
+    <button class="emo tiny" data-e="🗅" title="Empty Note"><span class="glyph">🗅</span></button>
+    <button class="emo tiny" data-e="🗆" title="Empty Note Page"><span class="glyph">🗆</span></button>
+    <button class="emo tiny" data-e="🗇" title="Empty Note Pad"><span class="glyph">🗇</span></button>
+    <button class="emo tiny" data-e="🗈" title="Note"><span class="glyph">🗈</span></button>
+    <button class="emo tiny" data-e="🗉" title="Note Page"><span class="glyph">🗉</span></button>
+    <button class="emo tiny" data-e="🗊" title="Note Pad"><span class="glyph">🗊</span></button>
+    <button class="emo tiny" data-e="🗋" title="Empty Document"><span class="glyph">🗋</span></button>
+    <button class="emo tiny" data-e="🗌" title="Empty Page"><span class="glyph">🗌</span></button>
+    <button class="emo tiny" data-e="🗍" title="Empty Pages"><span class="glyph">🗍</span></button>
+    <button class="emo tiny" data-e="🗎" title="Document"><span class="glyph">🗎</span></button>
+    <button class="emo tiny" data-e="🗏" title="Page"><span class="glyph">🗏</span></button>
+    <button class="emo tiny" data-e="🗐" title="Pages"><span class="glyph">🗐</span></button>
+    <button class="emo tiny" data-e="🗑" title="Wastebasket"><span class="glyph">🗑</span></button>
+    <button class="emo tiny" data-e="🗒" title="Spiral Note Pad"><span class="glyph">🗒</span></button>
+    <button class="emo tiny" data-e="🗓" title="Spiral Calendar Pad"><span class="glyph">🗓</span></button>
+    <button class="emo tiny" data-e="🗔" title="Desktop Window"><span class="glyph">🗔</span></button>
+    <button class="emo tiny" data-e="🗕" title="Minimize"><span class="glyph">🗕</span></button>
+    <button class="emo tiny" data-e="🗖" title="Maximize"><span class="glyph">🗖</span></button>
+    <button class="emo tiny" data-e="🗗" title="Overlap"><span class="glyph">🗗</span></button>
+    <button class="emo tiny" data-e="🗘" title="Clockwise Right And Left Semicircle Arrows"><span class="glyph">🗘</span></button>
+    <button class="emo tiny" data-e="🗙" title="Cancellation X"><span class="glyph">🗙</span></button>
+    <button class="emo tiny" data-e="🗚" title="Increase Font Size Symbol"><span class="glyph">🗚</span></button>
+    <button class="emo tiny" data-e="🗛" title="Decrease Font Size Symbol"><span class="glyph">🗛</span></button>
+    <button class="emo tiny" data-e="🗜" title="Compression"><span class="glyph">🗜</span></button>
+    <button class="emo tiny" data-e="🗝" title="Old Key"><span class="glyph">🗝</span></button>
+    <button class="emo tiny" data-e="🗞" title="Rolled-Up Newspaper"><span class="glyph">🗞</span></button>
+    <button class="emo tiny" data-e="🗟" title="Page With Circled Text"><span class="glyph">🗟</span></button>
+    <button class="emo tiny" data-e="🗠" title="Stock Chart"><span class="glyph">🗠</span></button>
+    <button class="emo tiny" data-e="🗡" title="Dagger Knife"><span class="glyph">🗡</span></button>
+    <button class="emo tiny" data-e="🗢" title="Lips"><span class="glyph">🗢</span></button>
+    <button class="emo tiny" data-e="🗣" title="Speaking Head In Silhouette"><span class="glyph">🗣</span></button>
+    <button class="emo tiny" data-e="🗤" title="Three Rays Above"><span class="glyph">🗤</span></button>
+    <button class="emo tiny" data-e="🗥" title="Three Rays Below"><span class="glyph">🗥</span></button>
+    <button class="emo tiny" data-e="🗦" title="Three Rays Left"><span class="glyph">🗦</span></button>
+    <button class="emo tiny" data-e="🗧" title="Three Rays Right"><span class="glyph">🗧</span></button>
+    <button class="emo tiny" data-e="🗨" title="Left Speech Bubble"><span class="glyph">🗨</span></button>
+    <button class="emo tiny" data-e="🗩" title="Right Speech Bubble"><span class="glyph">🗩</span></button>
+    <button class="emo tiny" data-e="🗪" title="Two Speech Bubbles"><span class="glyph">🗪</span></button>
+    <button class="emo tiny" data-e="🗫" title="Three Speech Bubbles"><span class="glyph">🗫</span></button>
+    <button class="emo tiny" data-e="🗬" title="Left Thought Bubble"><span class="glyph">🗬</span></button>
+    <button class="emo tiny" data-e="🗭" title="Right Thought Bubble"><span class="glyph">🗭</span></button>
+    <button class="emo tiny" data-e="🗮" title="Left Anger Bubble"><span class="glyph">🗮</span></button>
+    <button class="emo tiny" data-e="🗯" title="Right Anger Bubble"><span class="glyph">🗯</span></button>
+    <button class="emo tiny" data-e="🗰" title="Mood Bubble"><span class="glyph">🗰</span></button>
+    <button class="emo tiny" data-e="🗱" title="Lightning Mood Bubble"><span class="glyph">🗱</span></button>
+    <button class="emo tiny" data-e="🗲" title="Lightning Mood"><span class="glyph">🗲</span></button>
+    <button class="emo tiny" data-e="🗳" title="Ballot Box With Ballot"><span class="glyph">🗳</span></button>
+    <button class="emo tiny" data-e="🗴" title="Ballot Script X"><span class="glyph">🗴</span></button>
+    <button class="emo tiny" data-e="🗵" title="Ballot Box With Script X"><span class="glyph">🗵</span></button>
+    <button class="emo tiny" data-e="🗶" title="Ballot Bold Script X"><span class="glyph">🗶</span></button>
+    <button class="emo tiny" data-e="🗷" title="Ballot Box With Bold Script X"><span class="glyph">🗷</span></button>
+    <button class="emo tiny" data-e="🗸" title="Light Check Mark"><span class="glyph">🗸</span></button>
+    <button class="emo tiny" data-e="🗹" title="Ballot Box With Bold Check"><span class="glyph">🗹</span></button>
+    <button class="emo tiny" data-e="🗺" title="World Map"><span class="glyph">🗺</span></button>
+    <button class="emo tiny" data-e="🗻" title="Mount Fuji"><span class="glyph">🗻</span></button>
+    <button class="emo tiny" data-e="🗼" title="Tokyo Tower"><span class="glyph">🗼</span></button>
+    <button class="emo tiny" data-e="🗽" title="Statue Of Liberty"><span class="glyph">🗽</span></button>
+    <button class="emo tiny" data-e="🗾" title="Silhouette Of Japan"><span class="glyph">🗾</span></button>
+    <button class="emo tiny" data-e="🗿" title="Moyai"><span class="glyph">🗿</span></button>
+  </div>
+  <h3 class="blockname">Транспорт и карты <span>118</span></h3>
+  <div class="grid dense">
+    <button class="emo tiny" data-e="🚀" title="Rocket"><span class="glyph">🚀</span></button>
+    <button class="emo tiny" data-e="🚁" title="Helicopter"><span class="glyph">🚁</span></button>
+    <button class="emo tiny" data-e="🚂" title="Steam Locomotive"><span class="glyph">🚂</span></button>
+    <button class="emo tiny" data-e="🚃" title="Railway Car"><span class="glyph">🚃</span></button>
+    <button class="emo tiny" data-e="🚄" title="High-Speed Train"><span class="glyph">🚄</span></button>
+    <button class="emo tiny" data-e="🚅" title="High-Speed Train With Bullet Nose"><span class="glyph">🚅</span></button>
+    <button class="emo tiny" data-e="🚆" title="Train"><span class="glyph">🚆</span></button>
+    <button class="emo tiny" data-e="🚇" title="Metro"><span class="glyph">🚇</span></button>
+    <button class="emo tiny" data-e="🚈" title="Light Rail"><span class="glyph">🚈</span></button>
+    <button class="emo tiny" data-e="🚉" title="Station"><span class="glyph">🚉</span></button>
+    <button class="emo tiny" data-e="🚊" title="Tram"><span class="glyph">🚊</span></button>
+    <button class="emo tiny" data-e="🚋" title="Tram Car"><span class="glyph">🚋</span></button>
+    <button class="emo tiny" data-e="🚌" title="Bus"><span class="glyph">🚌</span></button>
+    <button class="emo tiny" data-e="🚍" title="Oncoming Bus"><span class="glyph">🚍</span></button>
+    <button class="emo tiny" data-e="🚎" title="Trolleybus"><span class="glyph">🚎</span></button>
+    <button class="emo tiny" data-e="🚏" title="Bus Stop"><span class="glyph">🚏</span></button>
+    <button class="emo tiny" data-e="🚐" title="Minibus"><span class="glyph">🚐</span></button>
+    <button class="emo tiny" data-e="🚑" title="Ambulance"><span class="glyph">🚑</span></button>
+    <button class="emo tiny" data-e="🚒" title="Fire Engine"><span class="glyph">🚒</span></button>
+    <button class="emo tiny" data-e="🚓" title="Police Car"><span class="glyph">🚓</span></button>
+    <button class="emo tiny" data-e="🚔" title="Oncoming Police Car"><span class="glyph">🚔</span></button>
+    <button class="emo tiny" data-e="🚕" title="Taxi"><span class="glyph">🚕</span></button>
+    <button class="emo tiny" data-e="🚖" title="Oncoming Taxi"><span class="glyph">🚖</span></button>
+    <button class="emo tiny" data-e="🚗" title="Automobile"><span class="glyph">🚗</span></button>
+    <button class="emo tiny" data-e="🚘" title="Oncoming Automobile"><span class="glyph">🚘</span></button>
+    <button class="emo tiny" data-e="🚙" title="Recreational Vehicle"><span class="glyph">🚙</span></button>
+    <button class="emo tiny" data-e="🚚" title="Delivery Truck"><span class="glyph">🚚</span></button>
+    <button class="emo tiny" data-e="🚛" title="Articulated Lorry"><span class="glyph">🚛</span></button>
+    <button class="emo tiny" data-e="🚜" title="Tractor"><span class="glyph">🚜</span></button>
+    <button class="emo tiny" data-e="🚝" title="Monorail"><span class="glyph">🚝</span></button>
+    <button class="emo tiny" data-e="🚞" title="Mountain Railway"><span class="glyph">🚞</span></button>
+    <button class="emo tiny" data-e="🚟" title="Suspension Railway"><span class="glyph">🚟</span></button>
+    <button class="emo tiny" data-e="🚠" title="Mountain Cableway"><span class="glyph">🚠</span></button>
+    <button class="emo tiny" data-e="🚡" title="Aerial Tramway"><span class="glyph">🚡</span></button>
+    <button class="emo tiny" data-e="🚢" title="Ship"><span class="glyph">🚢</span></button>
+    <button class="emo tiny" data-e="🚣" title="Rowboat"><span class="glyph">🚣</span></button>
+    <button class="emo tiny" data-e="🚤" title="Speedboat"><span class="glyph">🚤</span></button>
+    <button class="emo tiny" data-e="🚥" title="Horizontal Traffic Light"><span class="glyph">🚥</span></button>
+    <button class="emo tiny" data-e="🚦" title="Vertical Traffic Light"><span class="glyph">🚦</span></button>
+    <button class="emo tiny" data-e="🚧" title="Construction Sign"><span class="glyph">🚧</span></button>
+    <button class="emo tiny" data-e="🚨" title="Police Cars Revolving Light"><span class="glyph">🚨</span></button>
+    <button class="emo tiny" data-e="🚩" title="Triangular Flag On Post"><span class="glyph">🚩</span></button>
+    <button class="emo tiny" data-e="🚪" title="Door"><span class="glyph">🚪</span></button>
+    <button class="emo tiny" data-e="🚫" title="No Entry Sign"><span class="glyph">🚫</span></button>
+    <button class="emo tiny" data-e="🚬" title="Smoking Symbol"><span class="glyph">🚬</span></button>
+    <button class="emo tiny" data-e="🚭" title="No Smoking Symbol"><span class="glyph">🚭</span></button>
+    <button class="emo tiny" data-e="🚮" title="Put Litter In Its Place Symbol"><span class="glyph">🚮</span></button>
+    <button class="emo tiny" data-e="🚯" title="Do Not Litter Symbol"><span class="glyph">🚯</span></button>
+    <button class="emo tiny" data-e="🚰" title="Potable Water Symbol"><span class="glyph">🚰</span></button>
+    <button class="emo tiny" data-e="🚱" title="Non-Potable Water Symbol"><span class="glyph">🚱</span></button>
+    <button class="emo tiny" data-e="🚲" title="Bicycle"><span class="glyph">🚲</span></button>
+    <button class="emo tiny" data-e="🚳" title="No Bicycles"><span class="glyph">🚳</span></button>
+    <button class="emo tiny" data-e="🚴" title="Bicyclist"><span class="glyph">🚴</span></button>
+    <button class="emo tiny" data-e="🚵" title="Mountain Bicyclist"><span class="glyph">🚵</span></button>
+    <button class="emo tiny" data-e="🚶" title="Pedestrian"><span class="glyph">🚶</span></button>
+    <button class="emo tiny" data-e="🚷" title="No Pedestrians"><span class="glyph">🚷</span></button>
+    <button class="emo tiny" data-e="🚸" title="Children Crossing"><span class="glyph">🚸</span></button>
+    <button class="emo tiny" data-e="🚹" title="Mens Symbol"><span class="glyph">🚹</span></button>
+    <button class="emo tiny" data-e="🚺" title="Womens Symbol"><span class="glyph">🚺</span></button>
+    <button class="emo tiny" data-e="🚻" title="Restroom"><span class="glyph">🚻</span></button>
+    <button class="emo tiny" data-e="🚼" title="Baby Symbol"><span class="glyph">🚼</span></button>
+    <button class="emo tiny" data-e="🚽" title="Toilet"><span class="glyph">🚽</span></button>
+    <button class="emo tiny" data-e="🚾" title="Water Closet"><span class="glyph">🚾</span></button>
+    <button class="emo tiny" data-e="🚿" title="Shower"><span class="glyph">🚿</span></button>
+    <button class="emo tiny" data-e="🛀" title="Bath"><span class="glyph">🛀</span></button>
+    <button class="emo tiny" data-e="🛁" title="Bathtub"><span class="glyph">🛁</span></button>
+    <button class="emo tiny" data-e="🛂" title="Passport Control"><span class="glyph">🛂</span></button>
+    <button class="emo tiny" data-e="🛃" title="Customs"><span class="glyph">🛃</span></button>
+    <button class="emo tiny" data-e="🛄" title="Baggage Claim"><span class="glyph">🛄</span></button>
+    <button class="emo tiny" data-e="🛅" title="Left Luggage"><span class="glyph">🛅</span></button>
+    <button class="emo tiny" data-e="🛆" title="Triangle With Rounded Corners"><span class="glyph">🛆</span></button>
+    <button class="emo tiny" data-e="🛇" title="Prohibited Sign"><span class="glyph">🛇</span></button>
+    <button class="emo tiny" data-e="🛈" title="Circled Information Source"><span class="glyph">🛈</span></button>
+    <button class="emo tiny" data-e="🛉" title="Boys Symbol"><span class="glyph">🛉</span></button>
+    <button class="emo tiny" data-e="🛊" title="Girls Symbol"><span class="glyph">🛊</span></button>
+    <button class="emo tiny" data-e="🛋" title="Couch And Lamp"><span class="glyph">🛋</span></button>
+    <button class="emo tiny" data-e="🛌" title="Sleeping Accommodation"><span class="glyph">🛌</span></button>
+    <button class="emo tiny" data-e="🛍" title="Shopping Bags"><span class="glyph">🛍</span></button>
+    <button class="emo tiny" data-e="🛎" title="Bellhop Bell"><span class="glyph">🛎</span></button>
+    <button class="emo tiny" data-e="🛏" title="Bed"><span class="glyph">🛏</span></button>
+    <button class="emo tiny" data-e="🛐" title="Place Of Worship"><span class="glyph">🛐</span></button>
+    <button class="emo tiny" data-e="🛑" title="Octagonal Sign"><span class="glyph">🛑</span></button>
+    <button class="emo tiny" data-e="🛒" title="Shopping Trolley"><span class="glyph">🛒</span></button>
+    <button class="emo tiny" data-e="🛓" title="Stupa"><span class="glyph">🛓</span></button>
+    <button class="emo tiny" data-e="🛔" title="Pagoda"><span class="glyph">🛔</span></button>
+    <button class="emo tiny" data-e="🛕" title="Hindu Temple"><span class="glyph">🛕</span></button>
+    <button class="emo tiny" data-e="🛖" title="Hut"><span class="glyph">🛖</span></button>
+    <button class="emo tiny" data-e="🛗" title="Elevator"><span class="glyph">🛗</span></button>
+    <button class="emo tiny" data-e="🛜" title="Wireless"><span class="glyph">🛜</span></button>
+    <button class="emo tiny" data-e="🛝" title="Playground Slide"><span class="glyph">🛝</span></button>
+    <button class="emo tiny" data-e="🛞" title="Wheel"><span class="glyph">🛞</span></button>
+    <button class="emo tiny" data-e="🛟" title="Ring Buoy"><span class="glyph">🛟</span></button>
+    <button class="emo tiny" data-e="🛠" title="Hammer And Wrench"><span class="glyph">🛠</span></button>
+    <button class="emo tiny" data-e="🛡" title="Shield"><span class="glyph">🛡</span></button>
+    <button class="emo tiny" data-e="🛢" title="Oil Drum"><span class="glyph">🛢</span></button>
+    <button class="emo tiny" data-e="🛣" title="Motorway"><span class="glyph">🛣</span></button>
+    <button class="emo tiny" data-e="🛤" title="Railway Track"><span class="glyph">🛤</span></button>
+    <button class="emo tiny" data-e="🛥" title="Motor Boat"><span class="glyph">🛥</span></button>
+    <button class="emo tiny" data-e="🛦" title="Up-Pointing Military Airplane"><span class="glyph">🛦</span></button>
+    <button class="emo tiny" data-e="🛧" title="Up-Pointing Airplane"><span class="glyph">🛧</span></button>
+    <button class="emo tiny" data-e="🛨" title="Up-Pointing Small Airplane"><span class="glyph">🛨</span></button>
+    <button class="emo tiny" data-e="🛩" title="Small Airplane"><span class="glyph">🛩</span></button>
+    <button class="emo tiny" data-e="🛪" title="Northeast-Pointing Airplane"><span class="glyph">🛪</span></button>
+    <button class="emo tiny" data-e="🛫" title="Airplane Departure"><span class="glyph">🛫</span></button>
+    <button class="emo tiny" data-e="🛬" title="Airplane Arriving"><span class="glyph">🛬</span></button>
+    <button class="emo tiny" data-e="🛰" title="Satellite"><span class="glyph">🛰</span></button>
+    <button class="emo tiny" data-e="🛱" title="Oncoming Fire Engine"><span class="glyph">🛱</span></button>
+    <button class="emo tiny" data-e="🛲" title="Diesel Locomotive"><span class="glyph">🛲</span></button>
+    <button class="emo tiny" data-e="🛳" title="Passenger Ship"><span class="glyph">🛳</span></button>
+    <button class="emo tiny" data-e="🛴" title="Scooter"><span class="glyph">🛴</span></button>
+    <button class="emo tiny" data-e="🛵" title="Motor Scooter"><span class="glyph">🛵</span></button>
+    <button class="emo tiny" data-e="🛶" title="Canoe"><span class="glyph">🛶</span></button>
+    <button class="emo tiny" data-e="🛷" title="Sled"><span class="glyph">🛷</span></button>
+    <button class="emo tiny" data-e="🛸" title="Flying Saucer"><span class="glyph">🛸</span></button>
+    <button class="emo tiny" data-e="🛹" title="Skateboard"><span class="glyph">🛹</span></button>
+    <button class="emo tiny" data-e="🛺" title="Auto Rickshaw"><span class="glyph">🛺</span></button>
+    <button class="emo tiny" data-e="🛻" title="Pickup Truck"><span class="glyph">🛻</span></button>
+    <button class="emo tiny" data-e="🛼" title="Roller Skate"><span class="glyph">🛼</span></button>
+  </div>
+  <h3 class="blockname">Дополнительные символы <span>256</span></h3>
+  <div class="grid dense">
+    <button class="emo tiny" data-e="🤀" title="Circled Cross Formee With Four Dots"><span class="glyph">🤀</span></button>
+    <button class="emo tiny" data-e="🤁" title="Circled Cross Formee With Two Dots"><span class="glyph">🤁</span></button>
+    <button class="emo tiny" data-e="🤂" title="Circled Cross Formee"><span class="glyph">🤂</span></button>
+    <button class="emo tiny" data-e="🤃" title="Left Half Circle With Four Dots"><span class="glyph">🤃</span></button>
+    <button class="emo tiny" data-e="🤄" title="Left Half Circle With Three Dots"><span class="glyph">🤄</span></button>
+    <button class="emo tiny" data-e="🤅" title="Left Half Circle With Two Dots"><span class="glyph">🤅</span></button>
+    <button class="emo tiny" data-e="🤆" title="Left Half Circle With Dot"><span class="glyph">🤆</span></button>
+    <button class="emo tiny" data-e="🤇" title="Left Half Circle"><span class="glyph">🤇</span></button>
+    <button class="emo tiny" data-e="🤈" title="Downward Facing Hook"><span class="glyph">🤈</span></button>
+    <button class="emo tiny" data-e="🤉" title="Downward Facing Notched Hook"><span class="glyph">🤉</span></button>
+    <button class="emo tiny" data-e="🤊" title="Downward Facing Hook With Dot"><span class="glyph">🤊</span></button>
+    <button class="emo tiny" data-e="🤋" title="Downward Facing Notched Hook With Dot"><span class="glyph">🤋</span></button>
+    <button class="emo tiny" data-e="🤌" title="Pinched Fingers"><span class="glyph">🤌</span></button>
+    <button class="emo tiny" data-e="🤍" title="White Heart"><span class="glyph">🤍</span></button>
+    <button class="emo tiny" data-e="🤎" title="Brown Heart"><span class="glyph">🤎</span></button>
+    <button class="emo tiny" data-e="🤏" title="Pinching Hand"><span class="glyph">🤏</span></button>
+    <button class="emo tiny" data-e="🤐" title="Zipper-Mouth Face"><span class="glyph">🤐</span></button>
+    <button class="emo tiny" data-e="🤑" title="Money-Mouth Face"><span class="glyph">🤑</span></button>
+    <button class="emo tiny" data-e="🤒" title="Face With Thermometer"><span class="glyph">🤒</span></button>
+    <button class="emo tiny" data-e="🤓" title="Nerd Face"><span class="glyph">🤓</span></button>
+    <button class="emo tiny" data-e="🤔" title="Thinking Face"><span class="glyph">🤔</span></button>
+    <button class="emo tiny" data-e="🤕" title="Face With Head-Bandage"><span class="glyph">🤕</span></button>
+    <button class="emo tiny" data-e="🤖" title="Robot Face"><span class="glyph">🤖</span></button>
+    <button class="emo tiny" data-e="🤗" title="Hugging Face"><span class="glyph">🤗</span></button>
+    <button class="emo tiny" data-e="🤘" title="Sign Of The Horns"><span class="glyph">🤘</span></button>
+    <button class="emo tiny" data-e="🤙" title="Call Me Hand"><span class="glyph">🤙</span></button>
+    <button class="emo tiny" data-e="🤚" title="Raised Back Of Hand"><span class="glyph">🤚</span></button>
+    <button class="emo tiny" data-e="🤛" title="Left-Facing Fist"><span class="glyph">🤛</span></button>
+    <button class="emo tiny" data-e="🤜" title="Right-Facing Fist"><span class="glyph">🤜</span></button>
+    <button class="emo tiny" data-e="🤝" title="Handshake"><span class="glyph">🤝</span></button>
+    <button class="emo tiny" data-e="🤞" title="Hand With Index And Middle Fingers Crossed"><span class="glyph">🤞</span></button>
+    <button class="emo tiny" data-e="🤟" title="I Love You Hand Sign"><span class="glyph">🤟</span></button>
+    <button class="emo tiny" data-e="🤠" title="Face With Cowboy Hat"><span class="glyph">🤠</span></button>
+    <button class="emo tiny" data-e="🤡" title="Clown Face"><span class="glyph">🤡</span></button>
+    <button class="emo tiny" data-e="🤢" title="Nauseated Face"><span class="glyph">🤢</span></button>
+    <button class="emo tiny" data-e="🤣" title="Rolling On The Floor Laughing"><span class="glyph">🤣</span></button>
+    <button class="emo tiny" data-e="🤤" title="Drooling Face"><span class="glyph">🤤</span></button>
+    <button class="emo tiny" data-e="🤥" title="Lying Face"><span class="glyph">🤥</span></button>
+    <button class="emo tiny" data-e="🤦" title="Face Palm"><span class="glyph">🤦</span></button>
+    <button class="emo tiny" data-e="🤧" title="Sneezing Face"><span class="glyph">🤧</span></button>
+    <button class="emo tiny" data-e="🤨" title="Face With One Eyebrow Raised"><span class="glyph">🤨</span></button>
+    <button class="emo tiny" data-e="🤩" title="Grinning Face With Star Eyes"><span class="glyph">🤩</span></button>
+    <button class="emo tiny" data-e="🤪" title="Grinning Face With One Large And One Small Eye"><span class="glyph">🤪</span></button>
+    <button class="emo tiny" data-e="🤫" title="Face With Finger Covering Closed Lips"><span class="glyph">🤫</span></button>
+    <button class="emo tiny" data-e="🤬" title="Serious Face With Symbols Covering Mouth"><span class="glyph">🤬</span></button>
+    <button class="emo tiny" data-e="🤭" title="Smiling Face With Smiling Eyes And Hand Covering Mouth"><span class="glyph">🤭</span></button>
+    <button class="emo tiny" data-e="🤮" title="Face With Open Mouth Vomiting"><span class="glyph">🤮</span></button>
+    <button class="emo tiny" data-e="🤯" title="Shocked Face With Exploding Head"><span class="glyph">🤯</span></button>
+    <button class="emo tiny" data-e="🤰" title="Pregnant Woman"><span class="glyph">🤰</span></button>
+    <button class="emo tiny" data-e="🤱" title="Breast-Feeding"><span class="glyph">🤱</span></button>
+    <button class="emo tiny" data-e="🤲" title="Palms Up Together"><span class="glyph">🤲</span></button>
+    <button class="emo tiny" data-e="🤳" title="Selfie"><span class="glyph">🤳</span></button>
+    <button class="emo tiny" data-e="🤴" title="Prince"><span class="glyph">🤴</span></button>
+    <button class="emo tiny" data-e="🤵" title="Man In Tuxedo"><span class="glyph">🤵</span></button>
+    <button class="emo tiny" data-e="🤶" title="Mother Christmas"><span class="glyph">🤶</span></button>
+    <button class="emo tiny" data-e="🤷" title="Shrug"><span class="glyph">🤷</span></button>
+    <button class="emo tiny" data-e="🤸" title="Person Doing Cartwheel"><span class="glyph">🤸</span></button>
+    <button class="emo tiny" data-e="🤹" title="Juggling"><span class="glyph">🤹</span></button>
+    <button class="emo tiny" data-e="🤺" title="Fencer"><span class="glyph">🤺</span></button>
+    <button class="emo tiny" data-e="🤻" title="Modern Pentathlon"><span class="glyph">🤻</span></button>
+    <button class="emo tiny" data-e="🤼" title="Wrestlers"><span class="glyph">🤼</span></button>
+    <button class="emo tiny" data-e="🤽" title="Water Polo"><span class="glyph">🤽</span></button>
+    <button class="emo tiny" data-e="🤾" title="Handball"><span class="glyph">🤾</span></button>
+    <button class="emo tiny" data-e="🤿" title="Diving Mask"><span class="glyph">🤿</span></button>
+    <button class="emo tiny" data-e="🥀" title="Wilted Flower"><span class="glyph">🥀</span></button>
+    <button class="emo tiny" data-e="🥁" title="Drum With Drumsticks"><span class="glyph">🥁</span></button>
+    <button class="emo tiny" data-e="🥂" title="Clinking Glasses"><span class="glyph">🥂</span></button>
+    <button class="emo tiny" data-e="🥃" title="Tumbler Glass"><span class="glyph">🥃</span></button>
+    <button class="emo tiny" data-e="🥄" title="Spoon"><span class="glyph">🥄</span></button>
+    <button class="emo tiny" data-e="🥅" title="Goal Net"><span class="glyph">🥅</span></button>
+    <button class="emo tiny" data-e="🥆" title="Rifle"><span class="glyph">🥆</span></button>
+    <button class="emo tiny" data-e="🥇" title="First Place Medal"><span class="glyph">🥇</span></button>
+    <button class="emo tiny" data-e="🥈" title="Second Place Medal"><span class="glyph">🥈</span></button>
+    <button class="emo tiny" data-e="🥉" title="Third Place Medal"><span class="glyph">🥉</span></button>
+    <button class="emo tiny" data-e="🥊" title="Boxing Glove"><span class="glyph">🥊</span></button>
+    <button class="emo tiny" data-e="🥋" title="Martial Arts Uniform"><span class="glyph">🥋</span></button>
+    <button class="emo tiny" data-e="🥌" title="Curling Stone"><span class="glyph">🥌</span></button>
+    <button class="emo tiny" data-e="🥍" title="Lacrosse Stick And Ball"><span class="glyph">🥍</span></button>
+    <button class="emo tiny" data-e="🥎" title="Softball"><span class="glyph">🥎</span></button>
+    <button class="emo tiny" data-e="🥏" title="Flying Disc"><span class="glyph">🥏</span></button>
+    <button class="emo tiny" data-e="🥐" title="Croissant"><span class="glyph">🥐</span></button>
+    <button class="emo tiny" data-e="🥑" title="Avocado"><span class="glyph">🥑</span></button>
+    <button class="emo tiny" data-e="🥒" title="Cucumber"><span class="glyph">🥒</span></button>
+    <button class="emo tiny" data-e="🥓" title="Bacon"><span class="glyph">🥓</span></button>
+    <button class="emo tiny" data-e="🥔" title="Potato"><span class="glyph">🥔</span></button>
+    <button class="emo tiny" data-e="🥕" title="Carrot"><span class="glyph">🥕</span></button>
+    <button class="emo tiny" data-e="🥖" title="Baguette Bread"><span class="glyph">🥖</span></button>
+    <button class="emo tiny" data-e="🥗" title="Green Salad"><span class="glyph">🥗</span></button>
+    <button class="emo tiny" data-e="🥘" title="Shallow Pan Of Food"><span class="glyph">🥘</span></button>
+    <button class="emo tiny" data-e="🥙" title="Stuffed Flatbread"><span class="glyph">🥙</span></button>
+    <button class="emo tiny" data-e="🥚" title="Egg"><span class="glyph">🥚</span></button>
+    <button class="emo tiny" data-e="🥛" title="Glass Of Milk"><span class="glyph">🥛</span></button>
+    <button class="emo tiny" data-e="🥜" title="Peanuts"><span class="glyph">🥜</span></button>
+    <button class="emo tiny" data-e="🥝" title="Kiwifruit"><span class="glyph">🥝</span></button>
+    <button class="emo tiny" data-e="🥞" title="Pancakes"><span class="glyph">🥞</span></button>
+    <button class="emo tiny" data-e="🥟" title="Dumpling"><span class="glyph">🥟</span></button>
+    <button class="emo tiny" data-e="🥠" title="Fortune Cookie"><span class="glyph">🥠</span></button>
+    <button class="emo tiny" data-e="🥡" title="Takeout Box"><span class="glyph">🥡</span></button>
+    <button class="emo tiny" data-e="🥢" title="Chopsticks"><span class="glyph">🥢</span></button>
+    <button class="emo tiny" data-e="🥣" title="Bowl With Spoon"><span class="glyph">🥣</span></button>
+    <button class="emo tiny" data-e="🥤" title="Cup With Straw"><span class="glyph">🥤</span></button>
+    <button class="emo tiny" data-e="🥥" title="Coconut"><span class="glyph">🥥</span></button>
+    <button class="emo tiny" data-e="🥦" title="Broccoli"><span class="glyph">🥦</span></button>
+    <button class="emo tiny" data-e="🥧" title="Pie"><span class="glyph">🥧</span></button>
+    <button class="emo tiny" data-e="🥨" title="Pretzel"><span class="glyph">🥨</span></button>
+    <button class="emo tiny" data-e="🥩" title="Cut Of Meat"><span class="glyph">🥩</span></button>
+    <button class="emo tiny" data-e="🥪" title="Sandwich"><span class="glyph">🥪</span></button>
+    <button class="emo tiny" data-e="🥫" title="Canned Food"><span class="glyph">🥫</span></button>
+    <button class="emo tiny" data-e="🥬" title="Leafy Green"><span class="glyph">🥬</span></button>
+    <button class="emo tiny" data-e="🥭" title="Mango"><span class="glyph">🥭</span></button>
+    <button class="emo tiny" data-e="🥮" title="Moon Cake"><span class="glyph">🥮</span></button>
+    <button class="emo tiny" data-e="🥯" title="Bagel"><span class="glyph">🥯</span></button>
+    <button class="emo tiny" data-e="🥰" title="Smiling Face With Smiling Eyes And Three Hearts"><span class="glyph">🥰</span></button>
+    <button class="emo tiny" data-e="🥱" title="Yawning Face"><span class="glyph">🥱</span></button>
+    <button class="emo tiny" data-e="🥲" title="Smiling Face With Tear"><span class="glyph">🥲</span></button>
+    <button class="emo tiny" data-e="🥳" title="Face With Party Horn And Party Hat"><span class="glyph">🥳</span></button>
+    <button class="emo tiny" data-e="🥴" title="Face With Uneven Eyes And Wavy Mouth"><span class="glyph">🥴</span></button>
+    <button class="emo tiny" data-e="🥵" title="Overheated Face"><span class="glyph">🥵</span></button>
+    <button class="emo tiny" data-e="🥶" title="Freezing Face"><span class="glyph">🥶</span></button>
+    <button class="emo tiny" data-e="🥷" title="Ninja"><span class="glyph">🥷</span></button>
+    <button class="emo tiny" data-e="🥸" title="Disguised Face"><span class="glyph">🥸</span></button>
+    <button class="emo tiny" data-e="🥹" title="Face Holding Back Tears"><span class="glyph">🥹</span></button>
+    <button class="emo tiny" data-e="🥺" title="Face With Pleading Eyes"><span class="glyph">🥺</span></button>
+    <button class="emo tiny" data-e="🥻" title="Sari"><span class="glyph">🥻</span></button>
+    <button class="emo tiny" data-e="🥼" title="Lab Coat"><span class="glyph">🥼</span></button>
+    <button class="emo tiny" data-e="🥽" title="Goggles"><span class="glyph">🥽</span></button>
+    <button class="emo tiny" data-e="🥾" title="Hiking Boot"><span class="glyph">🥾</span></button>
+    <button class="emo tiny" data-e="🥿" title="Flat Shoe"><span class="glyph">🥿</span></button>
+    <button class="emo tiny" data-e="🦀" title="Crab"><span class="glyph">🦀</span></button>
+    <button class="emo tiny" data-e="🦁" title="Lion Face"><span class="glyph">🦁</span></button>
+    <button class="emo tiny" data-e="🦂" title="Scorpion"><span class="glyph">🦂</span></button>
+    <button class="emo tiny" data-e="🦃" title="Turkey"><span class="glyph">🦃</span></button>
+    <button class="emo tiny" data-e="🦄" title="Unicorn Face"><span class="glyph">🦄</span></button>
+    <button class="emo tiny" data-e="🦅" title="Eagle"><span class="glyph">🦅</span></button>
+    <button class="emo tiny" data-e="🦆" title="Duck"><span class="glyph">🦆</span></button>
+    <button class="emo tiny" data-e="🦇" title="Bat"><span class="glyph">🦇</span></button>
+    <button class="emo tiny" data-e="🦈" title="Shark"><span class="glyph">🦈</span></button>
+    <button class="emo tiny" data-e="🦉" title="Owl"><span class="glyph">🦉</span></button>
+    <button class="emo tiny" data-e="🦊" title="Fox Face"><span class="glyph">🦊</span></button>
+    <button class="emo tiny" data-e="🦋" title="Butterfly"><span class="glyph">🦋</span></button>
+    <button class="emo tiny" data-e="🦌" title="Deer"><span class="glyph">🦌</span></button>
+    <button class="emo tiny" data-e="🦍" title="Gorilla"><span class="glyph">🦍</span></button>
+    <button class="emo tiny" data-e="🦎" title="Lizard"><span class="glyph">🦎</span></button>
+    <button class="emo tiny" data-e="🦏" title="Rhinoceros"><span class="glyph">🦏</span></button>
+    <button class="emo tiny" data-e="🦐" title="Shrimp"><span class="glyph">🦐</span></button>
+    <button class="emo tiny" data-e="🦑" title="Squid"><span class="glyph">🦑</span></button>
+    <button class="emo tiny" data-e="🦒" title="Giraffe Face"><span class="glyph">🦒</span></button>
+    <button class="emo tiny" data-e="🦓" title="Zebra Face"><span class="glyph">🦓</span></button>
+    <button class="emo tiny" data-e="🦔" title="Hedgehog"><span class="glyph">🦔</span></button>
+    <button class="emo tiny" data-e="🦕" title="Sauropod"><span class="glyph">🦕</span></button>
+    <button class="emo tiny" data-e="🦖" title="T-Rex"><span class="glyph">🦖</span></button>
+    <button class="emo tiny" data-e="🦗" title="Cricket"><span class="glyph">🦗</span></button>
+    <button class="emo tiny" data-e="🦘" title="Kangaroo"><span class="glyph">🦘</span></button>
+    <button class="emo tiny" data-e="🦙" title="Llama"><span class="glyph">🦙</span></button>
+    <button class="emo tiny" data-e="🦚" title="Peacock"><span class="glyph">🦚</span></button>
+    <button class="emo tiny" data-e="🦛" title="Hippopotamus"><span class="glyph">🦛</span></button>
+    <button class="emo tiny" data-e="🦜" title="Parrot"><span class="glyph">🦜</span></button>
+    <button class="emo tiny" data-e="🦝" title="Raccoon"><span class="glyph">🦝</span></button>
+    <button class="emo tiny" data-e="🦞" title="Lobster"><span class="glyph">🦞</span></button>
+    <button class="emo tiny" data-e="🦟" title="Mosquito"><span class="glyph">🦟</span></button>
+    <button class="emo tiny" data-e="🦠" title="Microbe"><span class="glyph">🦠</span></button>
+    <button class="emo tiny" data-e="🦡" title="Badger"><span class="glyph">🦡</span></button>
+    <button class="emo tiny" data-e="🦢" title="Swan"><span class="glyph">🦢</span></button>
+    <button class="emo tiny" data-e="🦣" title="Mammoth"><span class="glyph">🦣</span></button>
+    <button class="emo tiny" data-e="🦤" title="Dodo"><span class="glyph">🦤</span></button>
+    <button class="emo tiny" data-e="🦥" title="Sloth"><span class="glyph">🦥</span></button>
+    <button class="emo tiny" data-e="🦦" title="Otter"><span class="glyph">🦦</span></button>
+    <button class="emo tiny" data-e="🦧" title="Orangutan"><span class="glyph">🦧</span></button>
+    <button class="emo tiny" data-e="🦨" title="Skunk"><span class="glyph">🦨</span></button>
+    <button class="emo tiny" data-e="🦩" title="Flamingo"><span class="glyph">🦩</span></button>
+    <button class="emo tiny" data-e="🦪" title="Oyster"><span class="glyph">🦪</span></button>
+    <button class="emo tiny" data-e="🦫" title="Beaver"><span class="glyph">🦫</span></button>
+    <button class="emo tiny" data-e="🦬" title="Bison"><span class="glyph">🦬</span></button>
+    <button class="emo tiny" data-e="🦭" title="Seal"><span class="glyph">🦭</span></button>
+    <button class="emo tiny" data-e="🦮" title="Guide Dog"><span class="glyph">🦮</span></button>
+    <button class="emo tiny" data-e="🦯" title="Probing Cane"><span class="glyph">🦯</span></button>
+    <button class="emo tiny" data-e="🦰" title="Emoji Component Red Hair"><span class="glyph">🦰</span></button>
+    <button class="emo tiny" data-e="🦱" title="Emoji Component Curly Hair"><span class="glyph">🦱</span></button>
+    <button class="emo tiny" data-e="🦲" title="Emoji Component Bald"><span class="glyph">🦲</span></button>
+    <button class="emo tiny" data-e="🦳" title="Emoji Component White Hair"><span class="glyph">🦳</span></button>
+    <button class="emo tiny" data-e="🦴" title="Bone"><span class="glyph">🦴</span></button>
+    <button class="emo tiny" data-e="🦵" title="Leg"><span class="glyph">🦵</span></button>
+    <button class="emo tiny" data-e="🦶" title="Foot"><span class="glyph">🦶</span></button>
+    <button class="emo tiny" data-e="🦷" title="Tooth"><span class="glyph">🦷</span></button>
+    <button class="emo tiny" data-e="🦸" title="Superhero"><span class="glyph">🦸</span></button>
+    <button class="emo tiny" data-e="🦹" title="Supervillain"><span class="glyph">🦹</span></button>
+    <button class="emo tiny" data-e="🦺" title="Safety Vest"><span class="glyph">🦺</span></button>
+    <button class="emo tiny" data-e="🦻" title="Ear With Hearing Aid"><span class="glyph">🦻</span></button>
+    <button class="emo tiny" data-e="🦼" title="Motorized Wheelchair"><span class="glyph">🦼</span></button>
+    <button class="emo tiny" data-e="🦽" title="Manual Wheelchair"><span class="glyph">🦽</span></button>
+    <button class="emo tiny" data-e="🦾" title="Mechanical Arm"><span class="glyph">🦾</span></button>
+    <button class="emo tiny" data-e="🦿" title="Mechanical Leg"><span class="glyph">🦿</span></button>
+    <button class="emo tiny" data-e="🧀" title="Cheese Wedge"><span class="glyph">🧀</span></button>
+    <button class="emo tiny" data-e="🧁" title="Cupcake"><span class="glyph">🧁</span></button>
+    <button class="emo tiny" data-e="🧂" title="Salt Shaker"><span class="glyph">🧂</span></button>
+    <button class="emo tiny" data-e="🧃" title="Beverage Box"><span class="glyph">🧃</span></button>
+    <button class="emo tiny" data-e="🧄" title="Garlic"><span class="glyph">🧄</span></button>
+    <button class="emo tiny" data-e="🧅" title="Onion"><span class="glyph">🧅</span></button>
+    <button class="emo tiny" data-e="🧆" title="Falafel"><span class="glyph">🧆</span></button>
+    <button class="emo tiny" data-e="🧇" title="Waffle"><span class="glyph">🧇</span></button>
+    <button class="emo tiny" data-e="🧈" title="Butter"><span class="glyph">🧈</span></button>
+    <button class="emo tiny" data-e="🧉" title="Mate Drink"><span class="glyph">🧉</span></button>
+    <button class="emo tiny" data-e="🧊" title="Ice Cube"><span class="glyph">🧊</span></button>
+    <button class="emo tiny" data-e="🧋" title="Bubble Tea"><span class="glyph">🧋</span></button>
+    <button class="emo tiny" data-e="🧌" title="Troll"><span class="glyph">🧌</span></button>
+    <button class="emo tiny" data-e="🧍" title="Standing Person"><span class="glyph">🧍</span></button>
+    <button class="emo tiny" data-e="🧎" title="Kneeling Person"><span class="glyph">🧎</span></button>
+    <button class="emo tiny" data-e="🧏" title="Deaf Person"><span class="glyph">🧏</span></button>
+    <button class="emo tiny" data-e="🧐" title="Face With Monocle"><span class="glyph">🧐</span></button>
+    <button class="emo tiny" data-e="🧑" title="Adult"><span class="glyph">🧑</span></button>
+    <button class="emo tiny" data-e="🧒" title="Child"><span class="glyph">🧒</span></button>
+    <button class="emo tiny" data-e="🧓" title="Older Adult"><span class="glyph">🧓</span></button>
+    <button class="emo tiny" data-e="🧔" title="Bearded Person"><span class="glyph">🧔</span></button>
+    <button class="emo tiny" data-e="🧕" title="Person With Headscarf"><span class="glyph">🧕</span></button>
+    <button class="emo tiny" data-e="🧖" title="Person In Steamy Room"><span class="glyph">🧖</span></button>
+    <button class="emo tiny" data-e="🧗" title="Person Climbing"><span class="glyph">🧗</span></button>
+    <button class="emo tiny" data-e="🧘" title="Person In Lotus Position"><span class="glyph">🧘</span></button>
+    <button class="emo tiny" data-e="🧙" title="Mage"><span class="glyph">🧙</span></button>
+    <button class="emo tiny" data-e="🧚" title="Fairy"><span class="glyph">🧚</span></button>
+    <button class="emo tiny" data-e="🧛" title="Vampire"><span class="glyph">🧛</span></button>
+    <button class="emo tiny" data-e="🧜" title="Merperson"><span class="glyph">🧜</span></button>
+    <button class="emo tiny" data-e="🧝" title="Elf"><span class="glyph">🧝</span></button>
+    <button class="emo tiny" data-e="🧞" title="Genie"><span class="glyph">🧞</span></button>
+    <button class="emo tiny" data-e="🧟" title="Zombie"><span class="glyph">🧟</span></button>
+    <button class="emo tiny" data-e="🧠" title="Brain"><span class="glyph">🧠</span></button>
+    <button class="emo tiny" data-e="🧡" title="Orange Heart"><span class="glyph">🧡</span></button>
+    <button class="emo tiny" data-e="🧢" title="Billed Cap"><span class="glyph">🧢</span></button>
+    <button class="emo tiny" data-e="🧣" title="Scarf"><span class="glyph">🧣</span></button>
+    <button class="emo tiny" data-e="🧤" title="Gloves"><span class="glyph">🧤</span></button>
+    <button class="emo tiny" data-e="🧥" title="Coat"><span class="glyph">🧥</span></button>
+    <button class="emo tiny" data-e="🧦" title="Socks"><span class="glyph">🧦</span></button>
+    <button class="emo tiny" data-e="🧧" title="Red Gift Envelope"><span class="glyph">🧧</span></button>
+    <button class="emo tiny" data-e="🧨" title="Firecracker"><span class="glyph">🧨</span></button>
+    <button class="emo tiny" data-e="🧩" title="Jigsaw Puzzle Piece"><span class="glyph">🧩</span></button>
+    <button class="emo tiny" data-e="🧪" title="Test Tube"><span class="glyph">🧪</span></button>
+    <button class="emo tiny" data-e="🧫" title="Petri Dish"><span class="glyph">🧫</span></button>
+    <button class="emo tiny" data-e="🧬" title="Dna Double Helix"><span class="glyph">🧬</span></button>
+    <button class="emo tiny" data-e="🧭" title="Compass"><span class="glyph">🧭</span></button>
+    <button class="emo tiny" data-e="🧮" title="Abacus"><span class="glyph">🧮</span></button>
+    <button class="emo tiny" data-e="🧯" title="Fire Extinguisher"><span class="glyph">🧯</span></button>
+    <button class="emo tiny" data-e="🧰" title="Toolbox"><span class="glyph">🧰</span></button>
+    <button class="emo tiny" data-e="🧱" title="Brick"><span class="glyph">🧱</span></button>
+    <button class="emo tiny" data-e="🧲" title="Magnet"><span class="glyph">🧲</span></button>
+    <button class="emo tiny" data-e="🧳" title="Luggage"><span class="glyph">🧳</span></button>
+    <button class="emo tiny" data-e="🧴" title="Lotion Bottle"><span class="glyph">🧴</span></button>
+    <button class="emo tiny" data-e="🧵" title="Spool Of Thread"><span class="glyph">🧵</span></button>
+    <button class="emo tiny" data-e="🧶" title="Ball Of Yarn"><span class="glyph">🧶</span></button>
+    <button class="emo tiny" data-e="🧷" title="Safety Pin"><span class="glyph">🧷</span></button>
+    <button class="emo tiny" data-e="🧸" title="Teddy Bear"><span class="glyph">🧸</span></button>
+    <button class="emo tiny" data-e="🧹" title="Broom"><span class="glyph">🧹</span></button>
+    <button class="emo tiny" data-e="🧺" title="Basket"><span class="glyph">🧺</span></button>
+    <button class="emo tiny" data-e="🧻" title="Roll Of Paper"><span class="glyph">🧻</span></button>
+    <button class="emo tiny" data-e="🧼" title="Bar Of Soap"><span class="glyph">🧼</span></button>
+    <button class="emo tiny" data-e="🧽" title="Sponge"><span class="glyph">🧽</span></button>
+    <button class="emo tiny" data-e="🧾" title="Receipt"><span class="glyph">🧾</span></button>
+    <button class="emo tiny" data-e="🧿" title="Nazar Amulet"><span class="glyph">🧿</span></button>
+  </div>
+  <h3 class="blockname">Новые символы (могут не отрисоваться) <span>107</span></h3>
+  <div class="grid dense">
+    <button class="emo tiny" data-e="🩰" title="Ballet Shoes"><span class="glyph">🩰</span></button>
+    <button class="emo tiny" data-e="🩱" title="One-Piece Swimsuit"><span class="glyph">🩱</span></button>
+    <button class="emo tiny" data-e="🩲" title="Briefs"><span class="glyph">🩲</span></button>
+    <button class="emo tiny" data-e="🩳" title="Shorts"><span class="glyph">🩳</span></button>
+    <button class="emo tiny" data-e="🩴" title="Thong Sandal"><span class="glyph">🩴</span></button>
+    <button class="emo tiny" data-e="🩵" title="Light Blue Heart"><span class="glyph">🩵</span></button>
+    <button class="emo tiny" data-e="🩶" title="Grey Heart"><span class="glyph">🩶</span></button>
+    <button class="emo tiny" data-e="🩷" title="Pink Heart"><span class="glyph">🩷</span></button>
+    <button class="emo tiny" data-e="🩸" title="Drop Of Blood"><span class="glyph">🩸</span></button>
+    <button class="emo tiny" data-e="🩹" title="Adhesive Bandage"><span class="glyph">🩹</span></button>
+    <button class="emo tiny" data-e="🩺" title="Stethoscope"><span class="glyph">🩺</span></button>
+    <button class="emo tiny" data-e="🩻" title="X-Ray"><span class="glyph">🩻</span></button>
+    <button class="emo tiny" data-e="🩼" title="Crutch"><span class="glyph">🩼</span></button>
+    <button class="emo tiny" data-e="🪀" title="Yo-Yo"><span class="glyph">🪀</span></button>
+    <button class="emo tiny" data-e="🪁" title="Kite"><span class="glyph">🪁</span></button>
+    <button class="emo tiny" data-e="🪂" title="Parachute"><span class="glyph">🪂</span></button>
+    <button class="emo tiny" data-e="🪃" title="Boomerang"><span class="glyph">🪃</span></button>
+    <button class="emo tiny" data-e="🪄" title="Magic Wand"><span class="glyph">🪄</span></button>
+    <button class="emo tiny" data-e="🪅" title="Pinata"><span class="glyph">🪅</span></button>
+    <button class="emo tiny" data-e="🪆" title="Nesting Dolls"><span class="glyph">🪆</span></button>
+    <button class="emo tiny" data-e="🪇" title="Maracas"><span class="glyph">🪇</span></button>
+    <button class="emo tiny" data-e="🪈" title="Flute"><span class="glyph">🪈</span></button>
+    <button class="emo tiny" data-e="🪐" title="Ringed Planet"><span class="glyph">🪐</span></button>
+    <button class="emo tiny" data-e="🪑" title="Chair"><span class="glyph">🪑</span></button>
+    <button class="emo tiny" data-e="🪒" title="Razor"><span class="glyph">🪒</span></button>
+    <button class="emo tiny" data-e="🪓" title="Axe"><span class="glyph">🪓</span></button>
+    <button class="emo tiny" data-e="🪔" title="Diya Lamp"><span class="glyph">🪔</span></button>
+    <button class="emo tiny" data-e="🪕" title="Banjo"><span class="glyph">🪕</span></button>
+    <button class="emo tiny" data-e="🪖" title="Military Helmet"><span class="glyph">🪖</span></button>
+    <button class="emo tiny" data-e="🪗" title="Accordion"><span class="glyph">🪗</span></button>
+    <button class="emo tiny" data-e="🪘" title="Long Drum"><span class="glyph">🪘</span></button>
+    <button class="emo tiny" data-e="🪙" title="Coin"><span class="glyph">🪙</span></button>
+    <button class="emo tiny" data-e="🪚" title="Carpentry Saw"><span class="glyph">🪚</span></button>
+    <button class="emo tiny" data-e="🪛" title="Screwdriver"><span class="glyph">🪛</span></button>
+    <button class="emo tiny" data-e="🪜" title="Ladder"><span class="glyph">🪜</span></button>
+    <button class="emo tiny" data-e="🪝" title="Hook"><span class="glyph">🪝</span></button>
+    <button class="emo tiny" data-e="🪞" title="Mirror"><span class="glyph">🪞</span></button>
+    <button class="emo tiny" data-e="🪟" title="Window"><span class="glyph">🪟</span></button>
+    <button class="emo tiny" data-e="🪠" title="Plunger"><span class="glyph">🪠</span></button>
+    <button class="emo tiny" data-e="🪡" title="Sewing Needle"><span class="glyph">🪡</span></button>
+    <button class="emo tiny" data-e="🪢" title="Knot"><span class="glyph">🪢</span></button>
+    <button class="emo tiny" data-e="🪣" title="Bucket"><span class="glyph">🪣</span></button>
+    <button class="emo tiny" data-e="🪤" title="Mouse Trap"><span class="glyph">🪤</span></button>
+    <button class="emo tiny" data-e="🪥" title="Toothbrush"><span class="glyph">🪥</span></button>
+    <button class="emo tiny" data-e="🪦" title="Headstone"><span class="glyph">🪦</span></button>
+    <button class="emo tiny" data-e="🪧" title="Placard"><span class="glyph">🪧</span></button>
+    <button class="emo tiny" data-e="🪨" title="Rock"><span class="glyph">🪨</span></button>
+    <button class="emo tiny" data-e="🪩" title="Mirror Ball"><span class="glyph">🪩</span></button>
+    <button class="emo tiny" data-e="🪪" title="Identification Card"><span class="glyph">🪪</span></button>
+    <button class="emo tiny" data-e="🪫" title="Low Battery"><span class="glyph">🪫</span></button>
+    <button class="emo tiny" data-e="🪬" title="Hamsa"><span class="glyph">🪬</span></button>
+    <button class="emo tiny" data-e="🪭" title="Folding Hand Fan"><span class="glyph">🪭</span></button>
+    <button class="emo tiny" data-e="🪮" title="Hair Pick"><span class="glyph">🪮</span></button>
+    <button class="emo tiny" data-e="🪯" title="Khanda"><span class="glyph">🪯</span></button>
+    <button class="emo tiny" data-e="🪰" title="Fly"><span class="glyph">🪰</span></button>
+    <button class="emo tiny" data-e="🪱" title="Worm"><span class="glyph">🪱</span></button>
+    <button class="emo tiny" data-e="🪲" title="Beetle"><span class="glyph">🪲</span></button>
+    <button class="emo tiny" data-e="🪳" title="Cockroach"><span class="glyph">🪳</span></button>
+    <button class="emo tiny" data-e="🪴" title="Potted Plant"><span class="glyph">🪴</span></button>
+    <button class="emo tiny" data-e="🪵" title="Wood"><span class="glyph">🪵</span></button>
+    <button class="emo tiny" data-e="🪶" title="Feather"><span class="glyph">🪶</span></button>
+    <button class="emo tiny" data-e="🪷" title="Lotus"><span class="glyph">🪷</span></button>
+    <button class="emo tiny" data-e="🪸" title="Coral"><span class="glyph">🪸</span></button>
+    <button class="emo tiny" data-e="🪹" title="Empty Nest"><span class="glyph">🪹</span></button>
+    <button class="emo tiny" data-e="🪺" title="Nest With Eggs"><span class="glyph">🪺</span></button>
+    <button class="emo tiny" data-e="🪻" title="Hyacinth"><span class="glyph">🪻</span></button>
+    <button class="emo tiny" data-e="🪼" title="Jellyfish"><span class="glyph">🪼</span></button>
+    <button class="emo tiny" data-e="🪽" title="Wing"><span class="glyph">🪽</span></button>
+    <button class="emo tiny" data-e="🪿" title="Goose"><span class="glyph">🪿</span></button>
+    <button class="emo tiny" data-e="🫀" title="Anatomical Heart"><span class="glyph">🫀</span></button>
+    <button class="emo tiny" data-e="🫁" title="Lungs"><span class="glyph">🫁</span></button>
+    <button class="emo tiny" data-e="🫂" title="People Hugging"><span class="glyph">🫂</span></button>
+    <button class="emo tiny" data-e="🫃" title="Pregnant Man"><span class="glyph">🫃</span></button>
+    <button class="emo tiny" data-e="🫄" title="Pregnant Person"><span class="glyph">🫄</span></button>
+    <button class="emo tiny" data-e="🫅" title="Person With Crown"><span class="glyph">🫅</span></button>
+    <button class="emo tiny" data-e="🫎" title="Moose"><span class="glyph">🫎</span></button>
+    <button class="emo tiny" data-e="🫏" title="Donkey"><span class="glyph">🫏</span></button>
+    <button class="emo tiny" data-e="🫐" title="Blueberries"><span class="glyph">🫐</span></button>
+    <button class="emo tiny" data-e="🫑" title="Bell Pepper"><span class="glyph">🫑</span></button>
+    <button class="emo tiny" data-e="🫒" title="Olive"><span class="glyph">🫒</span></button>
+    <button class="emo tiny" data-e="🫓" title="Flatbread"><span class="glyph">🫓</span></button>
+    <button class="emo tiny" data-e="🫔" title="Tamale"><span class="glyph">🫔</span></button>
+    <button class="emo tiny" data-e="🫕" title="Fondue"><span class="glyph">🫕</span></button>
+    <button class="emo tiny" data-e="🫖" title="Teapot"><span class="glyph">🫖</span></button>
+    <button class="emo tiny" data-e="🫗" title="Pouring Liquid"><span class="glyph">🫗</span></button>
+    <button class="emo tiny" data-e="🫘" title="Beans"><span class="glyph">🫘</span></button>
+    <button class="emo tiny" data-e="🫙" title="Jar"><span class="glyph">🫙</span></button>
+    <button class="emo tiny" data-e="🫚" title="Ginger Root"><span class="glyph">🫚</span></button>
+    <button class="emo tiny" data-e="🫛" title="Pea Pod"><span class="glyph">🫛</span></button>
+    <button class="emo tiny" data-e="🫠" title="Melting Face"><span class="glyph">🫠</span></button>
+    <button class="emo tiny" data-e="🫡" title="Saluting Face"><span class="glyph">🫡</span></button>
+    <button class="emo tiny" data-e="🫢" title="Face With Open Eyes And Hand Over Mouth"><span class="glyph">🫢</span></button>
+    <button class="emo tiny" data-e="🫣" title="Face With Peeking Eye"><span class="glyph">🫣</span></button>
+    <button class="emo tiny" data-e="🫤" title="Face With Diagonal Mouth"><span class="glyph">🫤</span></button>
+    <button class="emo tiny" data-e="🫥" title="Dotted Line Face"><span class="glyph">🫥</span></button>
+    <button class="emo tiny" data-e="🫦" title="Biting Lip"><span class="glyph">🫦</span></button>
+    <button class="emo tiny" data-e="🫧" title="Bubbles"><span class="glyph">🫧</span></button>
+    <button class="emo tiny" data-e="🫨" title="Shaking Face"><span class="glyph">🫨</span></button>
+    <button class="emo tiny" data-e="🫰" title="Hand With Index Finger And Thumb Crossed"><span class="glyph">🫰</span></button>
+    <button class="emo tiny" data-e="🫱" title="Rightwards Hand"><span class="glyph">🫱</span></button>
+    <button class="emo tiny" data-e="🫲" title="Leftwards Hand"><span class="glyph">🫲</span></button>
+    <button class="emo tiny" data-e="🫳" title="Palm Down Hand"><span class="glyph">🫳</span></button>
+    <button class="emo tiny" data-e="🫴" title="Palm Up Hand"><span class="glyph">🫴</span></button>
+    <button class="emo tiny" data-e="🫵" title="Index Pointing At The Viewer"><span class="glyph">🫵</span></button>
+    <button class="emo tiny" data-e="🫶" title="Heart Hands"><span class="glyph">🫶</span></button>
+    <button class="emo tiny" data-e="🫷" title="Leftwards Pushing Hand"><span class="glyph">🫷</span></button>
+    <button class="emo tiny" data-e="🫸" title="Rightwards Pushing Hand"><span class="glyph">🫸</span></button>
+  </div>
+  <h3 class="blockname">Природа, погода, знаки <span>256</span></h3>
+  <div class="grid dense">
+    <button class="emo tiny" data-e="☀" title="Black Sun With Rays"><span class="glyph">☀</span></button>
+    <button class="emo tiny" data-e="☁" title="Cloud"><span class="glyph">☁</span></button>
+    <button class="emo tiny" data-e="☂" title="Umbrella"><span class="glyph">☂</span></button>
+    <button class="emo tiny" data-e="☃" title="Snowman"><span class="glyph">☃</span></button>
+    <button class="emo tiny" data-e="☄" title="Comet"><span class="glyph">☄</span></button>
+    <button class="emo tiny" data-e="★" title="Black Star"><span class="glyph">★</span></button>
+    <button class="emo tiny" data-e="☆" title="White Star"><span class="glyph">☆</span></button>
+    <button class="emo tiny" data-e="☇" title="Lightning"><span class="glyph">☇</span></button>
+    <button class="emo tiny" data-e="☈" title="Thunderstorm"><span class="glyph">☈</span></button>
+    <button class="emo tiny" data-e="☉" title="Sun"><span class="glyph">☉</span></button>
+    <button class="emo tiny" data-e="☊" title="Ascending Node"><span class="glyph">☊</span></button>
+    <button class="emo tiny" data-e="☋" title="Descending Node"><span class="glyph">☋</span></button>
+    <button class="emo tiny" data-e="☌" title="Conjunction"><span class="glyph">☌</span></button>
+    <button class="emo tiny" data-e="☍" title="Opposition"><span class="glyph">☍</span></button>
+    <button class="emo tiny" data-e="☎" title="Black Telephone"><span class="glyph">☎</span></button>
+    <button class="emo tiny" data-e="☏" title="White Telephone"><span class="glyph">☏</span></button>
+    <button class="emo tiny" data-e="☐" title="Ballot Box"><span class="glyph">☐</span></button>
+    <button class="emo tiny" data-e="☑" title="Ballot Box With Check"><span class="glyph">☑</span></button>
+    <button class="emo tiny" data-e="☒" title="Ballot Box With X"><span class="glyph">☒</span></button>
+    <button class="emo tiny" data-e="☓" title="Saltire"><span class="glyph">☓</span></button>
+    <button class="emo tiny" data-e="☔" title="Umbrella With Rain Drops"><span class="glyph">☔</span></button>
+    <button class="emo tiny" data-e="☕" title="Hot Beverage"><span class="glyph">☕</span></button>
+    <button class="emo tiny" data-e="☖" title="White Shogi Piece"><span class="glyph">☖</span></button>
+    <button class="emo tiny" data-e="☗" title="Black Shogi Piece"><span class="glyph">☗</span></button>
+    <button class="emo tiny" data-e="☘" title="Shamrock"><span class="glyph">☘</span></button>
+    <button class="emo tiny" data-e="☙" title="Reversed Rotated Floral Heart Bullet"><span class="glyph">☙</span></button>
+    <button class="emo tiny" data-e="☚" title="Black Left Pointing Index"><span class="glyph">☚</span></button>
+    <button class="emo tiny" data-e="☛" title="Black Right Pointing Index"><span class="glyph">☛</span></button>
+    <button class="emo tiny" data-e="☜" title="White Left Pointing Index"><span class="glyph">☜</span></button>
+    <button class="emo tiny" data-e="☝" title="White Up Pointing Index"><span class="glyph">☝</span></button>
+    <button class="emo tiny" data-e="☞" title="White Right Pointing Index"><span class="glyph">☞</span></button>
+    <button class="emo tiny" data-e="☟" title="White Down Pointing Index"><span class="glyph">☟</span></button>
+    <button class="emo tiny" data-e="☠" title="Skull And Crossbones"><span class="glyph">☠</span></button>
+    <button class="emo tiny" data-e="☡" title="Caution Sign"><span class="glyph">☡</span></button>
+    <button class="emo tiny" data-e="☢" title="Radioactive Sign"><span class="glyph">☢</span></button>
+    <button class="emo tiny" data-e="☣" title="Biohazard Sign"><span class="glyph">☣</span></button>
+    <button class="emo tiny" data-e="☤" title="Caduceus"><span class="glyph">☤</span></button>
+    <button class="emo tiny" data-e="☥" title="Ankh"><span class="glyph">☥</span></button>
+    <button class="emo tiny" data-e="☦" title="Orthodox Cross"><span class="glyph">☦</span></button>
+    <button class="emo tiny" data-e="☧" title="Chi Rho"><span class="glyph">☧</span></button>
+    <button class="emo tiny" data-e="☨" title="Cross Of Lorraine"><span class="glyph">☨</span></button>
+    <button class="emo tiny" data-e="☩" title="Cross Of Jerusalem"><span class="glyph">☩</span></button>
+    <button class="emo tiny" data-e="☪" title="Star And Crescent"><span class="glyph">☪</span></button>
+    <button class="emo tiny" data-e="☫" title="Farsi Symbol"><span class="glyph">☫</span></button>
+    <button class="emo tiny" data-e="☬" title="Adi Shakti"><span class="glyph">☬</span></button>
+    <button class="emo tiny" data-e="☭" title="Hammer And Sickle"><span class="glyph">☭</span></button>
+    <button class="emo tiny" data-e="☮" title="Peace Symbol"><span class="glyph">☮</span></button>
+    <button class="emo tiny" data-e="☯" title="Yin Yang"><span class="glyph">☯</span></button>
+    <button class="emo tiny" data-e="☰" title="Trigram For Heaven"><span class="glyph">☰</span></button>
+    <button class="emo tiny" data-e="☱" title="Trigram For Lake"><span class="glyph">☱</span></button>
+    <button class="emo tiny" data-e="☲" title="Trigram For Fire"><span class="glyph">☲</span></button>
+    <button class="emo tiny" data-e="☳" title="Trigram For Thunder"><span class="glyph">☳</span></button>
+    <button class="emo tiny" data-e="☴" title="Trigram For Wind"><span class="glyph">☴</span></button>
+    <button class="emo tiny" data-e="☵" title="Trigram For Water"><span class="glyph">☵</span></button>
+    <button class="emo tiny" data-e="☶" title="Trigram For Mountain"><span class="glyph">☶</span></button>
+    <button class="emo tiny" data-e="☷" title="Trigram For Earth"><span class="glyph">☷</span></button>
+    <button class="emo tiny" data-e="☸" title="Wheel Of Dharma"><span class="glyph">☸</span></button>
+    <button class="emo tiny" data-e="☹" title="White Frowning Face"><span class="glyph">☹</span></button>
+    <button class="emo tiny" data-e="☺" title="White Smiling Face"><span class="glyph">☺</span></button>
+    <button class="emo tiny" data-e="☻" title="Black Smiling Face"><span class="glyph">☻</span></button>
+    <button class="emo tiny" data-e="☼" title="White Sun With Rays"><span class="glyph">☼</span></button>
+    <button class="emo tiny" data-e="☽" title="First Quarter Moon"><span class="glyph">☽</span></button>
+    <button class="emo tiny" data-e="☾" title="Last Quarter Moon"><span class="glyph">☾</span></button>
+    <button class="emo tiny" data-e="☿" title="Mercury"><span class="glyph">☿</span></button>
+    <button class="emo tiny" data-e="♀" title="Female Sign"><span class="glyph">♀</span></button>
+    <button class="emo tiny" data-e="♁" title="Earth"><span class="glyph">♁</span></button>
+    <button class="emo tiny" data-e="♂" title="Male Sign"><span class="glyph">♂</span></button>
+    <button class="emo tiny" data-e="♃" title="Jupiter"><span class="glyph">♃</span></button>
+    <button class="emo tiny" data-e="♄" title="Saturn"><span class="glyph">♄</span></button>
+    <button class="emo tiny" data-e="♅" title="Uranus"><span class="glyph">♅</span></button>
+    <button class="emo tiny" data-e="♆" title="Neptune"><span class="glyph">♆</span></button>
+    <button class="emo tiny" data-e="♇" title="Pluto"><span class="glyph">♇</span></button>
+    <button class="emo tiny" data-e="♈" title="Aries"><span class="glyph">♈</span></button>
+    <button class="emo tiny" data-e="♉" title="Taurus"><span class="glyph">♉</span></button>
+    <button class="emo tiny" data-e="♊" title="Gemini"><span class="glyph">♊</span></button>
+    <button class="emo tiny" data-e="♋" title="Cancer"><span class="glyph">♋</span></button>
+    <button class="emo tiny" data-e="♌" title="Leo"><span class="glyph">♌</span></button>
+    <button class="emo tiny" data-e="♍" title="Virgo"><span class="glyph">♍</span></button>
+    <button class="emo tiny" data-e="♎" title="Libra"><span class="glyph">♎</span></button>
+    <button class="emo tiny" data-e="♏" title="Scorpius"><span class="glyph">♏</span></button>
+    <button class="emo tiny" data-e="♐" title="Sagittarius"><span class="glyph">♐</span></button>
+    <button class="emo tiny" data-e="♑" title="Capricorn"><span class="glyph">♑</span></button>
+    <button class="emo tiny" data-e="♒" title="Aquarius"><span class="glyph">♒</span></button>
+    <button class="emo tiny" data-e="♓" title="Pisces"><span class="glyph">♓</span></button>
+    <button class="emo tiny" data-e="♔" title="White Chess King"><span class="glyph">♔</span></button>
+    <button class="emo tiny" data-e="♕" title="White Chess Queen"><span class="glyph">♕</span></button>
+    <button class="emo tiny" data-e="♖" title="White Chess Rook"><span class="glyph">♖</span></button>
+    <button class="emo tiny" data-e="♗" title="White Chess Bishop"><span class="glyph">♗</span></button>
+    <button class="emo tiny" data-e="♘" title="White Chess Knight"><span class="glyph">♘</span></button>
+    <button class="emo tiny" data-e="♙" title="White Chess Pawn"><span class="glyph">♙</span></button>
+    <button class="emo tiny" data-e="♚" title="Black Chess King"><span class="glyph">♚</span></button>
+    <button class="emo tiny" data-e="♛" title="Black Chess Queen"><span class="glyph">♛</span></button>
+    <button class="emo tiny" data-e="♜" title="Black Chess Rook"><span class="glyph">♜</span></button>
+    <button class="emo tiny" data-e="♝" title="Black Chess Bishop"><span class="glyph">♝</span></button>
+    <button class="emo tiny" data-e="♞" title="Black Chess Knight"><span class="glyph">♞</span></button>
+    <button class="emo tiny" data-e="♟" title="Black Chess Pawn"><span class="glyph">♟</span></button>
+    <button class="emo tiny" data-e="♠" title="Black Spade Suit"><span class="glyph">♠</span></button>
+    <button class="emo tiny" data-e="♡" title="White Heart Suit"><span class="glyph">♡</span></button>
+    <button class="emo tiny" data-e="♢" title="White Diamond Suit"><span class="glyph">♢</span></button>
+    <button class="emo tiny" data-e="♣" title="Black Club Suit"><span class="glyph">♣</span></button>
+    <button class="emo tiny" data-e="♤" title="White Spade Suit"><span class="glyph">♤</span></button>
+    <button class="emo tiny" data-e="♥" title="Black Heart Suit"><span class="glyph">♥</span></button>
+    <button class="emo tiny" data-e="♦" title="Black Diamond Suit"><span class="glyph">♦</span></button>
+    <button class="emo tiny" data-e="♧" title="White Club Suit"><span class="glyph">♧</span></button>
+    <button class="emo tiny" data-e="♨" title="Hot Springs"><span class="glyph">♨</span></button>
+    <button class="emo tiny" data-e="♩" title="Quarter Note"><span class="glyph">♩</span></button>
+    <button class="emo tiny" data-e="♪" title="Eighth Note"><span class="glyph">♪</span></button>
+    <button class="emo tiny" data-e="♫" title="Beamed Eighth Notes"><span class="glyph">♫</span></button>
+    <button class="emo tiny" data-e="♬" title="Beamed Sixteenth Notes"><span class="glyph">♬</span></button>
+    <button class="emo tiny" data-e="♭" title="Music Flat Sign"><span class="glyph">♭</span></button>
+    <button class="emo tiny" data-e="♮" title="Music Natural Sign"><span class="glyph">♮</span></button>
+    <button class="emo tiny" data-e="♯" title="Music Sharp Sign"><span class="glyph">♯</span></button>
+    <button class="emo tiny" data-e="♰" title="West Syriac Cross"><span class="glyph">♰</span></button>
+    <button class="emo tiny" data-e="♱" title="East Syriac Cross"><span class="glyph">♱</span></button>
+    <button class="emo tiny" data-e="♲" title="Universal Recycling Symbol"><span class="glyph">♲</span></button>
+    <button class="emo tiny" data-e="♳" title="Recycling Symbol For Type-1 Plastics"><span class="glyph">♳</span></button>
+    <button class="emo tiny" data-e="♴" title="Recycling Symbol For Type-2 Plastics"><span class="glyph">♴</span></button>
+    <button class="emo tiny" data-e="♵" title="Recycling Symbol For Type-3 Plastics"><span class="glyph">♵</span></button>
+    <button class="emo tiny" data-e="♶" title="Recycling Symbol For Type-4 Plastics"><span class="glyph">♶</span></button>
+    <button class="emo tiny" data-e="♷" title="Recycling Symbol For Type-5 Plastics"><span class="glyph">♷</span></button>
+    <button class="emo tiny" data-e="♸" title="Recycling Symbol For Type-6 Plastics"><span class="glyph">♸</span></button>
+    <button class="emo tiny" data-e="♹" title="Recycling Symbol For Type-7 Plastics"><span class="glyph">♹</span></button>
+    <button class="emo tiny" data-e="♺" title="Recycling Symbol For Generic Materials"><span class="glyph">♺</span></button>
+    <button class="emo tiny" data-e="♻" title="Black Universal Recycling Symbol"><span class="glyph">♻</span></button>
+    <button class="emo tiny" data-e="♼" title="Recycled Paper Symbol"><span class="glyph">♼</span></button>
+    <button class="emo tiny" data-e="♽" title="Partially-Recycled Paper Symbol"><span class="glyph">♽</span></button>
+    <button class="emo tiny" data-e="♾" title="Permanent Paper Sign"><span class="glyph">♾</span></button>
+    <button class="emo tiny" data-e="♿" title="Wheelchair Symbol"><span class="glyph">♿</span></button>
+    <button class="emo tiny" data-e="⚀" title="Die Face-1"><span class="glyph">⚀</span></button>
+    <button class="emo tiny" data-e="⚁" title="Die Face-2"><span class="glyph">⚁</span></button>
+    <button class="emo tiny" data-e="⚂" title="Die Face-3"><span class="glyph">⚂</span></button>
+    <button class="emo tiny" data-e="⚃" title="Die Face-4"><span class="glyph">⚃</span></button>
+    <button class="emo tiny" data-e="⚄" title="Die Face-5"><span class="glyph">⚄</span></button>
+    <button class="emo tiny" data-e="⚅" title="Die Face-6"><span class="glyph">⚅</span></button>
+    <button class="emo tiny" data-e="⚆" title="White Circle With Dot Right"><span class="glyph">⚆</span></button>
+    <button class="emo tiny" data-e="⚇" title="White Circle With Two Dots"><span class="glyph">⚇</span></button>
+    <button class="emo tiny" data-e="⚈" title="Black Circle With White Dot Right"><span class="glyph">⚈</span></button>
+    <button class="emo tiny" data-e="⚉" title="Black Circle With Two White Dots"><span class="glyph">⚉</span></button>
+    <button class="emo tiny" data-e="⚊" title="Monogram For Yang"><span class="glyph">⚊</span></button>
+    <button class="emo tiny" data-e="⚋" title="Monogram For Yin"><span class="glyph">⚋</span></button>
+    <button class="emo tiny" data-e="⚌" title="Digram For Greater Yang"><span class="glyph">⚌</span></button>
+    <button class="emo tiny" data-e="⚍" title="Digram For Lesser Yin"><span class="glyph">⚍</span></button>
+    <button class="emo tiny" data-e="⚎" title="Digram For Lesser Yang"><span class="glyph">⚎</span></button>
+    <button class="emo tiny" data-e="⚏" title="Digram For Greater Yin"><span class="glyph">⚏</span></button>
+    <button class="emo tiny" data-e="⚐" title="White Flag"><span class="glyph">⚐</span></button>
+    <button class="emo tiny" data-e="⚑" title="Black Flag"><span class="glyph">⚑</span></button>
+    <button class="emo tiny" data-e="⚒" title="Hammer And Pick"><span class="glyph">⚒</span></button>
+    <button class="emo tiny" data-e="⚓" title="Anchor"><span class="glyph">⚓</span></button>
+    <button class="emo tiny" data-e="⚔" title="Crossed Swords"><span class="glyph">⚔</span></button>
+    <button class="emo tiny" data-e="⚕" title="Staff Of Aesculapius"><span class="glyph">⚕</span></button>
+    <button class="emo tiny" data-e="⚖" title="Scales"><span class="glyph">⚖</span></button>
+    <button class="emo tiny" data-e="⚗" title="Alembic"><span class="glyph">⚗</span></button>
+    <button class="emo tiny" data-e="⚘" title="Flower"><span class="glyph">⚘</span></button>
+    <button class="emo tiny" data-e="⚙" title="Gear"><span class="glyph">⚙</span></button>
+    <button class="emo tiny" data-e="⚚" title="Staff Of Hermes"><span class="glyph">⚚</span></button>
+    <button class="emo tiny" data-e="⚛" title="Atom Symbol"><span class="glyph">⚛</span></button>
+    <button class="emo tiny" data-e="⚜" title="Fleur-De-Lis"><span class="glyph">⚜</span></button>
+    <button class="emo tiny" data-e="⚝" title="Outlined White Star"><span class="glyph">⚝</span></button>
+    <button class="emo tiny" data-e="⚞" title="Three Lines Converging Right"><span class="glyph">⚞</span></button>
+    <button class="emo tiny" data-e="⚟" title="Three Lines Converging Left"><span class="glyph">⚟</span></button>
+    <button class="emo tiny" data-e="⚠" title="Warning Sign"><span class="glyph">⚠</span></button>
+    <button class="emo tiny" data-e="⚡" title="High Voltage Sign"><span class="glyph">⚡</span></button>
+    <button class="emo tiny" data-e="⚢" title="Doubled Female Sign"><span class="glyph">⚢</span></button>
+    <button class="emo tiny" data-e="⚣" title="Doubled Male Sign"><span class="glyph">⚣</span></button>
+    <button class="emo tiny" data-e="⚤" title="Interlocked Female And Male Sign"><span class="glyph">⚤</span></button>
+    <button class="emo tiny" data-e="⚥" title="Male And Female Sign"><span class="glyph">⚥</span></button>
+    <button class="emo tiny" data-e="⚦" title="Male With Stroke Sign"><span class="glyph">⚦</span></button>
+    <button class="emo tiny" data-e="⚧" title="Male With Stroke And Male And Female Sign"><span class="glyph">⚧</span></button>
+    <button class="emo tiny" data-e="⚨" title="Vertical Male With Stroke Sign"><span class="glyph">⚨</span></button>
+    <button class="emo tiny" data-e="⚩" title="Horizontal Male With Stroke Sign"><span class="glyph">⚩</span></button>
+    <button class="emo tiny" data-e="⚪" title="Medium White Circle"><span class="glyph">⚪</span></button>
+    <button class="emo tiny" data-e="⚫" title="Medium Black Circle"><span class="glyph">⚫</span></button>
+    <button class="emo tiny" data-e="⚬" title="Medium Small White Circle"><span class="glyph">⚬</span></button>
+    <button class="emo tiny" data-e="⚭" title="Marriage Symbol"><span class="glyph">⚭</span></button>
+    <button class="emo tiny" data-e="⚮" title="Divorce Symbol"><span class="glyph">⚮</span></button>
+    <button class="emo tiny" data-e="⚯" title="Unmarried Partnership Symbol"><span class="glyph">⚯</span></button>
+    <button class="emo tiny" data-e="⚰" title="Coffin"><span class="glyph">⚰</span></button>
+    <button class="emo tiny" data-e="⚱" title="Funeral Urn"><span class="glyph">⚱</span></button>
+    <button class="emo tiny" data-e="⚲" title="Neuter"><span class="glyph">⚲</span></button>
+    <button class="emo tiny" data-e="⚳" title="Ceres"><span class="glyph">⚳</span></button>
+    <button class="emo tiny" data-e="⚴" title="Pallas"><span class="glyph">⚴</span></button>
+    <button class="emo tiny" data-e="⚵" title="Juno"><span class="glyph">⚵</span></button>
+    <button class="emo tiny" data-e="⚶" title="Vesta"><span class="glyph">⚶</span></button>
+    <button class="emo tiny" data-e="⚷" title="Chiron"><span class="glyph">⚷</span></button>
+    <button class="emo tiny" data-e="⚸" title="Black Moon Lilith"><span class="glyph">⚸</span></button>
+    <button class="emo tiny" data-e="⚹" title="Sextile"><span class="glyph">⚹</span></button>
+    <button class="emo tiny" data-e="⚺" title="Semisextile"><span class="glyph">⚺</span></button>
+    <button class="emo tiny" data-e="⚻" title="Quincunx"><span class="glyph">⚻</span></button>
+    <button class="emo tiny" data-e="⚼" title="Sesquiquadrate"><span class="glyph">⚼</span></button>
+    <button class="emo tiny" data-e="⚽" title="Soccer Ball"><span class="glyph">⚽</span></button>
+    <button class="emo tiny" data-e="⚾" title="Baseball"><span class="glyph">⚾</span></button>
+    <button class="emo tiny" data-e="⚿" title="Squared Key"><span class="glyph">⚿</span></button>
+    <button class="emo tiny" data-e="⛀" title="White Draughts Man"><span class="glyph">⛀</span></button>
+    <button class="emo tiny" data-e="⛁" title="White Draughts King"><span class="glyph">⛁</span></button>
+    <button class="emo tiny" data-e="⛂" title="Black Draughts Man"><span class="glyph">⛂</span></button>
+    <button class="emo tiny" data-e="⛃" title="Black Draughts King"><span class="glyph">⛃</span></button>
+    <button class="emo tiny" data-e="⛄" title="Snowman Without Snow"><span class="glyph">⛄</span></button>
+    <button class="emo tiny" data-e="⛅" title="Sun Behind Cloud"><span class="glyph">⛅</span></button>
+    <button class="emo tiny" data-e="⛆" title="Rain"><span class="glyph">⛆</span></button>
+    <button class="emo tiny" data-e="⛇" title="Black Snowman"><span class="glyph">⛇</span></button>
+    <button class="emo tiny" data-e="⛈" title="Thunder Cloud And Rain"><span class="glyph">⛈</span></button>
+    <button class="emo tiny" data-e="⛉" title="Turned White Shogi Piece"><span class="glyph">⛉</span></button>
+    <button class="emo tiny" data-e="⛊" title="Turned Black Shogi Piece"><span class="glyph">⛊</span></button>
+    <button class="emo tiny" data-e="⛋" title="White Diamond In Square"><span class="glyph">⛋</span></button>
+    <button class="emo tiny" data-e="⛌" title="Crossing Lanes"><span class="glyph">⛌</span></button>
+    <button class="emo tiny" data-e="⛍" title="Disabled Car"><span class="glyph">⛍</span></button>
+    <button class="emo tiny" data-e="⛎" title="Ophiuchus"><span class="glyph">⛎</span></button>
+    <button class="emo tiny" data-e="⛏" title="Pick"><span class="glyph">⛏</span></button>
+    <button class="emo tiny" data-e="⛐" title="Car Sliding"><span class="glyph">⛐</span></button>
+    <button class="emo tiny" data-e="⛑" title="Helmet With White Cross"><span class="glyph">⛑</span></button>
+    <button class="emo tiny" data-e="⛒" title="Circled Crossing Lanes"><span class="glyph">⛒</span></button>
+    <button class="emo tiny" data-e="⛓" title="Chains"><span class="glyph">⛓</span></button>
+    <button class="emo tiny" data-e="⛔" title="No Entry"><span class="glyph">⛔</span></button>
+    <button class="emo tiny" data-e="⛕" title="Alternate One-Way Left Way Traffic"><span class="glyph">⛕</span></button>
+    <button class="emo tiny" data-e="⛖" title="Black Two-Way Left Way Traffic"><span class="glyph">⛖</span></button>
+    <button class="emo tiny" data-e="⛗" title="White Two-Way Left Way Traffic"><span class="glyph">⛗</span></button>
+    <button class="emo tiny" data-e="⛘" title="Black Left Lane Merge"><span class="glyph">⛘</span></button>
+    <button class="emo tiny" data-e="⛙" title="White Left Lane Merge"><span class="glyph">⛙</span></button>
+    <button class="emo tiny" data-e="⛚" title="Drive Slow Sign"><span class="glyph">⛚</span></button>
+    <button class="emo tiny" data-e="⛛" title="Heavy White Down-Pointing Triangle"><span class="glyph">⛛</span></button>
+    <button class="emo tiny" data-e="⛜" title="Left Closed Entry"><span class="glyph">⛜</span></button>
+    <button class="emo tiny" data-e="⛝" title="Squared Saltire"><span class="glyph">⛝</span></button>
+    <button class="emo tiny" data-e="⛞" title="Falling Diagonal In White Circle In Black Square"><span class="glyph">⛞</span></button>
+    <button class="emo tiny" data-e="⛟" title="Black Truck"><span class="glyph">⛟</span></button>
+    <button class="emo tiny" data-e="⛠" title="Restricted Left Entry-1"><span class="glyph">⛠</span></button>
+    <button class="emo tiny" data-e="⛡" title="Restricted Left Entry-2"><span class="glyph">⛡</span></button>
+    <button class="emo tiny" data-e="⛢" title="Astronomical Symbol For Uranus"><span class="glyph">⛢</span></button>
+    <button class="emo tiny" data-e="⛣" title="Heavy Circle With Stroke And Two Dots Above"><span class="glyph">⛣</span></button>
+    <button class="emo tiny" data-e="⛤" title="Pentagram"><span class="glyph">⛤</span></button>
+    <button class="emo tiny" data-e="⛥" title="Right-Handed Interlaced Pentagram"><span class="glyph">⛥</span></button>
+    <button class="emo tiny" data-e="⛦" title="Left-Handed Interlaced Pentagram"><span class="glyph">⛦</span></button>
+    <button class="emo tiny" data-e="⛧" title="Inverted Pentagram"><span class="glyph">⛧</span></button>
+    <button class="emo tiny" data-e="⛨" title="Black Cross On Shield"><span class="glyph">⛨</span></button>
+    <button class="emo tiny" data-e="⛩" title="Shinto Shrine"><span class="glyph">⛩</span></button>
+    <button class="emo tiny" data-e="⛪" title="Church"><span class="glyph">⛪</span></button>
+    <button class="emo tiny" data-e="⛫" title="Castle"><span class="glyph">⛫</span></button>
+    <button class="emo tiny" data-e="⛬" title="Historic Site"><span class="glyph">⛬</span></button>
+    <button class="emo tiny" data-e="⛭" title="Gear Without Hub"><span class="glyph">⛭</span></button>
+    <button class="emo tiny" data-e="⛮" title="Gear With Handles"><span class="glyph">⛮</span></button>
+    <button class="emo tiny" data-e="⛯" title="Map Symbol For Lighthouse"><span class="glyph">⛯</span></button>
+    <button class="emo tiny" data-e="⛰" title="Mountain"><span class="glyph">⛰</span></button>
+    <button class="emo tiny" data-e="⛱" title="Umbrella On Ground"><span class="glyph">⛱</span></button>
+    <button class="emo tiny" data-e="⛲" title="Fountain"><span class="glyph">⛲</span></button>
+    <button class="emo tiny" data-e="⛳" title="Flag In Hole"><span class="glyph">⛳</span></button>
+    <button class="emo tiny" data-e="⛴" title="Ferry"><span class="glyph">⛴</span></button>
+    <button class="emo tiny" data-e="⛵" title="Sailboat"><span class="glyph">⛵</span></button>
+    <button class="emo tiny" data-e="⛶" title="Square Four Corners"><span class="glyph">⛶</span></button>
+    <button class="emo tiny" data-e="⛷" title="Skier"><span class="glyph">⛷</span></button>
+    <button class="emo tiny" data-e="⛸" title="Ice Skate"><span class="glyph">⛸</span></button>
+    <button class="emo tiny" data-e="⛹" title="Person With Ball"><span class="glyph">⛹</span></button>
+    <button class="emo tiny" data-e="⛺" title="Tent"><span class="glyph">⛺</span></button>
+    <button class="emo tiny" data-e="⛻" title="Japanese Bank Symbol"><span class="glyph">⛻</span></button>
+    <button class="emo tiny" data-e="⛼" title="Headstone Graveyard Symbol"><span class="glyph">⛼</span></button>
+    <button class="emo tiny" data-e="⛽" title="Fuel Pump"><span class="glyph">⛽</span></button>
+    <button class="emo tiny" data-e="⛾" title="Cup On Black Square"><span class="glyph">⛾</span></button>
+    <button class="emo tiny" data-e="⛿" title="White Flag With Horizontal Middle Black Stripe"><span class="glyph">⛿</span></button>
+  </div>
+  <h3 class="blockname">Дингбаты <span>192</span></h3>
+  <div class="grid dense">
+    <button class="emo tiny" data-e="✀" title="Black Safety Scissors"><span class="glyph">✀</span></button>
+    <button class="emo tiny" data-e="✁" title="Upper Blade Scissors"><span class="glyph">✁</span></button>
+    <button class="emo tiny" data-e="✂" title="Black Scissors"><span class="glyph">✂</span></button>
+    <button class="emo tiny" data-e="✃" title="Lower Blade Scissors"><span class="glyph">✃</span></button>
+    <button class="emo tiny" data-e="✄" title="White Scissors"><span class="glyph">✄</span></button>
+    <button class="emo tiny" data-e="✅" title="White Heavy Check Mark"><span class="glyph">✅</span></button>
+    <button class="emo tiny" data-e="✆" title="Telephone Location Sign"><span class="glyph">✆</span></button>
+    <button class="emo tiny" data-e="✇" title="Tape Drive"><span class="glyph">✇</span></button>
+    <button class="emo tiny" data-e="✈" title="Airplane"><span class="glyph">✈</span></button>
+    <button class="emo tiny" data-e="✉" title="Envelope"><span class="glyph">✉</span></button>
+    <button class="emo tiny" data-e="✊" title="Raised Fist"><span class="glyph">✊</span></button>
+    <button class="emo tiny" data-e="✋" title="Raised Hand"><span class="glyph">✋</span></button>
+    <button class="emo tiny" data-e="✌" title="Victory Hand"><span class="glyph">✌</span></button>
+    <button class="emo tiny" data-e="✍" title="Writing Hand"><span class="glyph">✍</span></button>
+    <button class="emo tiny" data-e="✎" title="Lower Right Pencil"><span class="glyph">✎</span></button>
+    <button class="emo tiny" data-e="✏" title="Pencil"><span class="glyph">✏</span></button>
+    <button class="emo tiny" data-e="✐" title="Upper Right Pencil"><span class="glyph">✐</span></button>
+    <button class="emo tiny" data-e="✑" title="White Nib"><span class="glyph">✑</span></button>
+    <button class="emo tiny" data-e="✒" title="Black Nib"><span class="glyph">✒</span></button>
+    <button class="emo tiny" data-e="✓" title="Check Mark"><span class="glyph">✓</span></button>
+    <button class="emo tiny" data-e="✔" title="Heavy Check Mark"><span class="glyph">✔</span></button>
+    <button class="emo tiny" data-e="✕" title="Multiplication X"><span class="glyph">✕</span></button>
+    <button class="emo tiny" data-e="✖" title="Heavy Multiplication X"><span class="glyph">✖</span></button>
+    <button class="emo tiny" data-e="✗" title="Ballot X"><span class="glyph">✗</span></button>
+    <button class="emo tiny" data-e="✘" title="Heavy Ballot X"><span class="glyph">✘</span></button>
+    <button class="emo tiny" data-e="✙" title="Outlined Greek Cross"><span class="glyph">✙</span></button>
+    <button class="emo tiny" data-e="✚" title="Heavy Greek Cross"><span class="glyph">✚</span></button>
+    <button class="emo tiny" data-e="✛" title="Open Centre Cross"><span class="glyph">✛</span></button>
+    <button class="emo tiny" data-e="✜" title="Heavy Open Centre Cross"><span class="glyph">✜</span></button>
+    <button class="emo tiny" data-e="✝" title="Latin Cross"><span class="glyph">✝</span></button>
+    <button class="emo tiny" data-e="✞" title="Shadowed White Latin Cross"><span class="glyph">✞</span></button>
+    <button class="emo tiny" data-e="✟" title="Outlined Latin Cross"><span class="glyph">✟</span></button>
+    <button class="emo tiny" data-e="✠" title="Maltese Cross"><span class="glyph">✠</span></button>
+    <button class="emo tiny" data-e="✡" title="Star Of David"><span class="glyph">✡</span></button>
+    <button class="emo tiny" data-e="✢" title="Four Teardrop-Spoked Asterisk"><span class="glyph">✢</span></button>
+    <button class="emo tiny" data-e="✣" title="Four Balloon-Spoked Asterisk"><span class="glyph">✣</span></button>
+    <button class="emo tiny" data-e="✤" title="Heavy Four Balloon-Spoked Asterisk"><span class="glyph">✤</span></button>
+    <button class="emo tiny" data-e="✥" title="Four Club-Spoked Asterisk"><span class="glyph">✥</span></button>
+    <button class="emo tiny" data-e="✦" title="Black Four Pointed Star"><span class="glyph">✦</span></button>
+    <button class="emo tiny" data-e="✧" title="White Four Pointed Star"><span class="glyph">✧</span></button>
+    <button class="emo tiny" data-e="✨" title="Sparkles"><span class="glyph">✨</span></button>
+    <button class="emo tiny" data-e="✩" title="Stress Outlined White Star"><span class="glyph">✩</span></button>
+    <button class="emo tiny" data-e="✪" title="Circled White Star"><span class="glyph">✪</span></button>
+    <button class="emo tiny" data-e="✫" title="Open Centre Black Star"><span class="glyph">✫</span></button>
+    <button class="emo tiny" data-e="✬" title="Black Centre White Star"><span class="glyph">✬</span></button>
+    <button class="emo tiny" data-e="✭" title="Outlined Black Star"><span class="glyph">✭</span></button>
+    <button class="emo tiny" data-e="✮" title="Heavy Outlined Black Star"><span class="glyph">✮</span></button>
+    <button class="emo tiny" data-e="✯" title="Pinwheel Star"><span class="glyph">✯</span></button>
+    <button class="emo tiny" data-e="✰" title="Shadowed White Star"><span class="glyph">✰</span></button>
+    <button class="emo tiny" data-e="✱" title="Heavy Asterisk"><span class="glyph">✱</span></button>
+    <button class="emo tiny" data-e="✲" title="Open Centre Asterisk"><span class="glyph">✲</span></button>
+    <button class="emo tiny" data-e="✳" title="Eight Spoked Asterisk"><span class="glyph">✳</span></button>
+    <button class="emo tiny" data-e="✴" title="Eight Pointed Black Star"><span class="glyph">✴</span></button>
+    <button class="emo tiny" data-e="✵" title="Eight Pointed Pinwheel Star"><span class="glyph">✵</span></button>
+    <button class="emo tiny" data-e="✶" title="Six Pointed Black Star"><span class="glyph">✶</span></button>
+    <button class="emo tiny" data-e="✷" title="Eight Pointed Rectilinear Black Star"><span class="glyph">✷</span></button>
+    <button class="emo tiny" data-e="✸" title="Heavy Eight Pointed Rectilinear Black Star"><span class="glyph">✸</span></button>
+    <button class="emo tiny" data-e="✹" title="Twelve Pointed Black Star"><span class="glyph">✹</span></button>
+    <button class="emo tiny" data-e="✺" title="Sixteen Pointed Asterisk"><span class="glyph">✺</span></button>
+    <button class="emo tiny" data-e="✻" title="Teardrop-Spoked Asterisk"><span class="glyph">✻</span></button>
+    <button class="emo tiny" data-e="✼" title="Open Centre Teardrop-Spoked Asterisk"><span class="glyph">✼</span></button>
+    <button class="emo tiny" data-e="✽" title="Heavy Teardrop-Spoked Asterisk"><span class="glyph">✽</span></button>
+    <button class="emo tiny" data-e="✾" title="Six Petalled Black And White Florette"><span class="glyph">✾</span></button>
+    <button class="emo tiny" data-e="✿" title="Black Florette"><span class="glyph">✿</span></button>
+    <button class="emo tiny" data-e="❀" title="White Florette"><span class="glyph">❀</span></button>
+    <button class="emo tiny" data-e="❁" title="Eight Petalled Outlined Black Florette"><span class="glyph">❁</span></button>
+    <button class="emo tiny" data-e="❂" title="Circled Open Centre Eight Pointed Star"><span class="glyph">❂</span></button>
+    <button class="emo tiny" data-e="❃" title="Heavy Teardrop-Spoked Pinwheel Asterisk"><span class="glyph">❃</span></button>
+    <button class="emo tiny" data-e="❄" title="Snowflake"><span class="glyph">❄</span></button>
+    <button class="emo tiny" data-e="❅" title="Tight Trifoliate Snowflake"><span class="glyph">❅</span></button>
+    <button class="emo tiny" data-e="❆" title="Heavy Chevron Snowflake"><span class="glyph">❆</span></button>
+    <button class="emo tiny" data-e="❇" title="Sparkle"><span class="glyph">❇</span></button>
+    <button class="emo tiny" data-e="❈" title="Heavy Sparkle"><span class="glyph">❈</span></button>
+    <button class="emo tiny" data-e="❉" title="Balloon-Spoked Asterisk"><span class="glyph">❉</span></button>
+    <button class="emo tiny" data-e="❊" title="Eight Teardrop-Spoked Propeller Asterisk"><span class="glyph">❊</span></button>
+    <button class="emo tiny" data-e="❋" title="Heavy Eight Teardrop-Spoked Propeller Asterisk"><span class="glyph">❋</span></button>
+    <button class="emo tiny" data-e="❌" title="Cross Mark"><span class="glyph">❌</span></button>
+    <button class="emo tiny" data-e="❍" title="Shadowed White Circle"><span class="glyph">❍</span></button>
+    <button class="emo tiny" data-e="❎" title="Negative Squared Cross Mark"><span class="glyph">❎</span></button>
+    <button class="emo tiny" data-e="❏" title="Lower Right Drop-Shadowed White Square"><span class="glyph">❏</span></button>
+    <button class="emo tiny" data-e="❐" title="Upper Right Drop-Shadowed White Square"><span class="glyph">❐</span></button>
+    <button class="emo tiny" data-e="❑" title="Lower Right Shadowed White Square"><span class="glyph">❑</span></button>
+    <button class="emo tiny" data-e="❒" title="Upper Right Shadowed White Square"><span class="glyph">❒</span></button>
+    <button class="emo tiny" data-e="❓" title="Black Question Mark Ornament"><span class="glyph">❓</span></button>
+    <button class="emo tiny" data-e="❔" title="White Question Mark Ornament"><span class="glyph">❔</span></button>
+    <button class="emo tiny" data-e="❕" title="White Exclamation Mark Ornament"><span class="glyph">❕</span></button>
+    <button class="emo tiny" data-e="❖" title="Black Diamond Minus White X"><span class="glyph">❖</span></button>
+    <button class="emo tiny" data-e="❗" title="Heavy Exclamation Mark Symbol"><span class="glyph">❗</span></button>
+    <button class="emo tiny" data-e="❘" title="Light Vertical Bar"><span class="glyph">❘</span></button>
+    <button class="emo tiny" data-e="❙" title="Medium Vertical Bar"><span class="glyph">❙</span></button>
+    <button class="emo tiny" data-e="❚" title="Heavy Vertical Bar"><span class="glyph">❚</span></button>
+    <button class="emo tiny" data-e="❛" title="Heavy Single Turned Comma Quotation Mark Ornament"><span class="glyph">❛</span></button>
+    <button class="emo tiny" data-e="❜" title="Heavy Single Comma Quotation Mark Ornament"><span class="glyph">❜</span></button>
+    <button class="emo tiny" data-e="❝" title="Heavy Double Turned Comma Quotation Mark Ornament"><span class="glyph">❝</span></button>
+    <button class="emo tiny" data-e="❞" title="Heavy Double Comma Quotation Mark Ornament"><span class="glyph">❞</span></button>
+    <button class="emo tiny" data-e="❟" title="Heavy Low Single Comma Quotation Mark Ornament"><span class="glyph">❟</span></button>
+    <button class="emo tiny" data-e="❠" title="Heavy Low Double Comma Quotation Mark Ornament"><span class="glyph">❠</span></button>
+    <button class="emo tiny" data-e="❡" title="Curved Stem Paragraph Sign Ornament"><span class="glyph">❡</span></button>
+    <button class="emo tiny" data-e="❢" title="Heavy Exclamation Mark Ornament"><span class="glyph">❢</span></button>
+    <button class="emo tiny" data-e="❣" title="Heavy Heart Exclamation Mark Ornament"><span class="glyph">❣</span></button>
+    <button class="emo tiny" data-e="❤" title="Heavy Black Heart"><span class="glyph">❤</span></button>
+    <button class="emo tiny" data-e="❥" title="Rotated Heavy Black Heart Bullet"><span class="glyph">❥</span></button>
+    <button class="emo tiny" data-e="❦" title="Floral Heart"><span class="glyph">❦</span></button>
+    <button class="emo tiny" data-e="❧" title="Rotated Floral Heart Bullet"><span class="glyph">❧</span></button>
+    <button class="emo tiny" data-e="❨" title="Medium Left Parenthesis Ornament"><span class="glyph">❨</span></button>
+    <button class="emo tiny" data-e="❩" title="Medium Right Parenthesis Ornament"><span class="glyph">❩</span></button>
+    <button class="emo tiny" data-e="❪" title="Medium Flattened Left Parenthesis Ornament"><span class="glyph">❪</span></button>
+    <button class="emo tiny" data-e="❫" title="Medium Flattened Right Parenthesis Ornament"><span class="glyph">❫</span></button>
+    <button class="emo tiny" data-e="❬" title="Medium Left-Pointing Angle Bracket Ornament"><span class="glyph">❬</span></button>
+    <button class="emo tiny" data-e="❭" title="Medium Right-Pointing Angle Bracket Ornament"><span class="glyph">❭</span></button>
+    <button class="emo tiny" data-e="❮" title="Heavy Left-Pointing Angle Quotation Mark Ornament"><span class="glyph">❮</span></button>
+    <button class="emo tiny" data-e="❯" title="Heavy Right-Pointing Angle Quotation Mark Ornament"><span class="glyph">❯</span></button>
+    <button class="emo tiny" data-e="❰" title="Heavy Left-Pointing Angle Bracket Ornament"><span class="glyph">❰</span></button>
+    <button class="emo tiny" data-e="❱" title="Heavy Right-Pointing Angle Bracket Ornament"><span class="glyph">❱</span></button>
+    <button class="emo tiny" data-e="❲" title="Light Left Tortoise Shell Bracket Ornament"><span class="glyph">❲</span></button>
+    <button class="emo tiny" data-e="❳" title="Light Right Tortoise Shell Bracket Ornament"><span class="glyph">❳</span></button>
+    <button class="emo tiny" data-e="❴" title="Medium Left Curly Bracket Ornament"><span class="glyph">❴</span></button>
+    <button class="emo tiny" data-e="❵" title="Medium Right Curly Bracket Ornament"><span class="glyph">❵</span></button>
+    <button class="emo tiny" data-e="❶" title="Dingbat Negative Circled Digit One"><span class="glyph">❶</span></button>
+    <button class="emo tiny" data-e="❷" title="Dingbat Negative Circled Digit Two"><span class="glyph">❷</span></button>
+    <button class="emo tiny" data-e="❸" title="Dingbat Negative Circled Digit Three"><span class="glyph">❸</span></button>
+    <button class="emo tiny" data-e="❹" title="Dingbat Negative Circled Digit Four"><span class="glyph">❹</span></button>
+    <button class="emo tiny" data-e="❺" title="Dingbat Negative Circled Digit Five"><span class="glyph">❺</span></button>
+    <button class="emo tiny" data-e="❻" title="Dingbat Negative Circled Digit Six"><span class="glyph">❻</span></button>
+    <button class="emo tiny" data-e="❼" title="Dingbat Negative Circled Digit Seven"><span class="glyph">❼</span></button>
+    <button class="emo tiny" data-e="❽" title="Dingbat Negative Circled Digit Eight"><span class="glyph">❽</span></button>
+    <button class="emo tiny" data-e="❾" title="Dingbat Negative Circled Digit Nine"><span class="glyph">❾</span></button>
+    <button class="emo tiny" data-e="❿" title="Dingbat Negative Circled Number Ten"><span class="glyph">❿</span></button>
+    <button class="emo tiny" data-e="➀" title="Dingbat Circled Sans-Serif Digit One"><span class="glyph">➀</span></button>
+    <button class="emo tiny" data-e="➁" title="Dingbat Circled Sans-Serif Digit Two"><span class="glyph">➁</span></button>
+    <button class="emo tiny" data-e="➂" title="Dingbat Circled Sans-Serif Digit Three"><span class="glyph">➂</span></button>
+    <button class="emo tiny" data-e="➃" title="Dingbat Circled Sans-Serif Digit Four"><span class="glyph">➃</span></button>
+    <button class="emo tiny" data-e="➄" title="Dingbat Circled Sans-Serif Digit Five"><span class="glyph">➄</span></button>
+    <button class="emo tiny" data-e="➅" title="Dingbat Circled Sans-Serif Digit Six"><span class="glyph">➅</span></button>
+    <button class="emo tiny" data-e="➆" title="Dingbat Circled Sans-Serif Digit Seven"><span class="glyph">➆</span></button>
+    <button class="emo tiny" data-e="➇" title="Dingbat Circled Sans-Serif Digit Eight"><span class="glyph">➇</span></button>
+    <button class="emo tiny" data-e="➈" title="Dingbat Circled Sans-Serif Digit Nine"><span class="glyph">➈</span></button>
+    <button class="emo tiny" data-e="➉" title="Dingbat Circled Sans-Serif Number Ten"><span class="glyph">➉</span></button>
+    <button class="emo tiny" data-e="➊" title="Dingbat Negative Circled Sans-Serif Digit One"><span class="glyph">➊</span></button>
+    <button class="emo tiny" data-e="➋" title="Dingbat Negative Circled Sans-Serif Digit Two"><span class="glyph">➋</span></button>
+    <button class="emo tiny" data-e="➌" title="Dingbat Negative Circled Sans-Serif Digit Three"><span class="glyph">➌</span></button>
+    <button class="emo tiny" data-e="➍" title="Dingbat Negative Circled Sans-Serif Digit Four"><span class="glyph">➍</span></button>
+    <button class="emo tiny" data-e="➎" title="Dingbat Negative Circled Sans-Serif Digit Five"><span class="glyph">➎</span></button>
+    <button class="emo tiny" data-e="➏" title="Dingbat Negative Circled Sans-Serif Digit Six"><span class="glyph">➏</span></button>
+    <button class="emo tiny" data-e="➐" title="Dingbat Negative Circled Sans-Serif Digit Seven"><span class="glyph">➐</span></button>
+    <button class="emo tiny" data-e="➑" title="Dingbat Negative Circled Sans-Serif Digit Eight"><span class="glyph">➑</span></button>
+    <button class="emo tiny" data-e="➒" title="Dingbat Negative Circled Sans-Serif Digit Nine"><span class="glyph">➒</span></button>
+    <button class="emo tiny" data-e="➓" title="Dingbat Negative Circled Sans-Serif Number Ten"><span class="glyph">➓</span></button>
+    <button class="emo tiny" data-e="➔" title="Heavy Wide-Headed Rightwards Arrow"><span class="glyph">➔</span></button>
+    <button class="emo tiny" data-e="➕" title="Heavy Plus Sign"><span class="glyph">➕</span></button>
+    <button class="emo tiny" data-e="➖" title="Heavy Minus Sign"><span class="glyph">➖</span></button>
+    <button class="emo tiny" data-e="➗" title="Heavy Division Sign"><span class="glyph">➗</span></button>
+    <button class="emo tiny" data-e="➘" title="Heavy South East Arrow"><span class="glyph">➘</span></button>
+    <button class="emo tiny" data-e="➙" title="Heavy Rightwards Arrow"><span class="glyph">➙</span></button>
+    <button class="emo tiny" data-e="➚" title="Heavy North East Arrow"><span class="glyph">➚</span></button>
+    <button class="emo tiny" data-e="➛" title="Drafting Point Rightwards Arrow"><span class="glyph">➛</span></button>
+    <button class="emo tiny" data-e="➜" title="Heavy Round-Tipped Rightwards Arrow"><span class="glyph">➜</span></button>
+    <button class="emo tiny" data-e="➝" title="Triangle-Headed Rightwards Arrow"><span class="glyph">➝</span></button>
+    <button class="emo tiny" data-e="➞" title="Heavy Triangle-Headed Rightwards Arrow"><span class="glyph">➞</span></button>
+    <button class="emo tiny" data-e="➟" title="Dashed Triangle-Headed Rightwards Arrow"><span class="glyph">➟</span></button>
+    <button class="emo tiny" data-e="➠" title="Heavy Dashed Triangle-Headed Rightwards Arrow"><span class="glyph">➠</span></button>
+    <button class="emo tiny" data-e="➡" title="Black Rightwards Arrow"><span class="glyph">➡</span></button>
+    <button class="emo tiny" data-e="➢" title="Three-D Top-Lighted Rightwards Arrowhead"><span class="glyph">➢</span></button>
+    <button class="emo tiny" data-e="➣" title="Three-D Bottom-Lighted Rightwards Arrowhead"><span class="glyph">➣</span></button>
+    <button class="emo tiny" data-e="➤" title="Black Rightwards Arrowhead"><span class="glyph">➤</span></button>
+    <button class="emo tiny" data-e="➥" title="Heavy Black Curved Downwards And Rightwards Arrow"><span class="glyph">➥</span></button>
+    <button class="emo tiny" data-e="➦" title="Heavy Black Curved Upwards And Rightwards Arrow"><span class="glyph">➦</span></button>
+    <button class="emo tiny" data-e="➧" title="Squat Black Rightwards Arrow"><span class="glyph">➧</span></button>
+    <button class="emo tiny" data-e="➨" title="Heavy Concave-Pointed Black Rightwards Arrow"><span class="glyph">➨</span></button>
+    <button class="emo tiny" data-e="➩" title="Right-Shaded White Rightwards Arrow"><span class="glyph">➩</span></button>
+    <button class="emo tiny" data-e="➪" title="Left-Shaded White Rightwards Arrow"><span class="glyph">➪</span></button>
+    <button class="emo tiny" data-e="➫" title="Back-Tilted Shadowed White Rightwards Arrow"><span class="glyph">➫</span></button>
+    <button class="emo tiny" data-e="➬" title="Front-Tilted Shadowed White Rightwards Arrow"><span class="glyph">➬</span></button>
+    <button class="emo tiny" data-e="➭" title="Heavy Lower Right-Shadowed White Rightwards Arrow"><span class="glyph">➭</span></button>
+    <button class="emo tiny" data-e="➮" title="Heavy Upper Right-Shadowed White Rightwards Arrow"><span class="glyph">➮</span></button>
+    <button class="emo tiny" data-e="➯" title="Notched Lower Right-Shadowed White Rightwards Arrow"><span class="glyph">➯</span></button>
+    <button class="emo tiny" data-e="➰" title="Curly Loop"><span class="glyph">➰</span></button>
+    <button class="emo tiny" data-e="➱" title="Notched Upper Right-Shadowed White Rightwards Arrow"><span class="glyph">➱</span></button>
+    <button class="emo tiny" data-e="➲" title="Circled Heavy White Rightwards Arrow"><span class="glyph">➲</span></button>
+    <button class="emo tiny" data-e="➳" title="White-Feathered Rightwards Arrow"><span class="glyph">➳</span></button>
+    <button class="emo tiny" data-e="➴" title="Black-Feathered South East Arrow"><span class="glyph">➴</span></button>
+    <button class="emo tiny" data-e="➵" title="Black-Feathered Rightwards Arrow"><span class="glyph">➵</span></button>
+    <button class="emo tiny" data-e="➶" title="Black-Feathered North East Arrow"><span class="glyph">➶</span></button>
+    <button class="emo tiny" data-e="➷" title="Heavy Black-Feathered South East Arrow"><span class="glyph">➷</span></button>
+    <button class="emo tiny" data-e="➸" title="Heavy Black-Feathered Rightwards Arrow"><span class="glyph">➸</span></button>
+    <button class="emo tiny" data-e="➹" title="Heavy Black-Feathered North East Arrow"><span class="glyph">➹</span></button>
+    <button class="emo tiny" data-e="➺" title="Teardrop-Barbed Rightwards Arrow"><span class="glyph">➺</span></button>
+    <button class="emo tiny" data-e="➻" title="Heavy Teardrop-Shanked Rightwards Arrow"><span class="glyph">➻</span></button>
+    <button class="emo tiny" data-e="➼" title="Wedge-Tailed Rightwards Arrow"><span class="glyph">➼</span></button>
+    <button class="emo tiny" data-e="➽" title="Heavy Wedge-Tailed Rightwards Arrow"><span class="glyph">➽</span></button>
+    <button class="emo tiny" data-e="➾" title="Open-Outlined Rightwards Arrow"><span class="glyph">➾</span></button>
+    <button class="emo tiny" data-e="➿" title="Double Curly Loop"><span class="glyph">➿</span></button>
+  </div>
+  <h3 class="blockname">Часы, стрелки, прочее <span>225</span></h3>
+  <div class="grid dense">
+    <button class="emo tiny" data-e="⌚" title="Watch"><span class="glyph">⌚</span></button>
+    <button class="emo tiny" data-e="⌛" title="Hourglass"><span class="glyph">⌛</span></button>
+    <button class="emo tiny" data-e="⌜" title="Top Left Corner"><span class="glyph">⌜</span></button>
+    <button class="emo tiny" data-e="⌝" title="Top Right Corner"><span class="glyph">⌝</span></button>
+    <button class="emo tiny" data-e="⌞" title="Bottom Left Corner"><span class="glyph">⌞</span></button>
+    <button class="emo tiny" data-e="⌟" title="Bottom Right Corner"><span class="glyph">⌟</span></button>
+    <button class="emo tiny" data-e="⌠" title="Top Half Integral"><span class="glyph">⌠</span></button>
+    <button class="emo tiny" data-e="⌡" title="Bottom Half Integral"><span class="glyph">⌡</span></button>
+    <button class="emo tiny" data-e="⌢" title="Frown"><span class="glyph">⌢</span></button>
+    <button class="emo tiny" data-e="⌣" title="Smile"><span class="glyph">⌣</span></button>
+    <button class="emo tiny" data-e="⌤" title="Up Arrowhead Between Two Horizontal Bars"><span class="glyph">⌤</span></button>
+    <button class="emo tiny" data-e="⌥" title="Option Key"><span class="glyph">⌥</span></button>
+    <button class="emo tiny" data-e="⌦" title="Erase To The Right"><span class="glyph">⌦</span></button>
+    <button class="emo tiny" data-e="⌧" title="X In A Rectangle Box"><span class="glyph">⌧</span></button>
+    <button class="emo tiny" data-e="⌨" title="Keyboard"><span class="glyph">⌨</span></button>
+    <button class="emo tiny" data-e="〈" title="Left-Pointing Angle Bracket"><span class="glyph">〈</span></button>
+    <button class="emo tiny" data-e="〉" title="Right-Pointing Angle Bracket"><span class="glyph">〉</span></button>
+    <button class="emo tiny" data-e="⌫" title="Erase To The Left"><span class="glyph">⌫</span></button>
+    <button class="emo tiny" data-e="⌬" title="Benzene Ring"><span class="glyph">⌬</span></button>
+    <button class="emo tiny" data-e="⌭" title="Cylindricity"><span class="glyph">⌭</span></button>
+    <button class="emo tiny" data-e="⌮" title="All Around-Profile"><span class="glyph">⌮</span></button>
+    <button class="emo tiny" data-e="⌯" title="Symmetry"><span class="glyph">⌯</span></button>
+    <button class="emo tiny" data-e="⌰" title="Total Runout"><span class="glyph">⌰</span></button>
+    <button class="emo tiny" data-e="⌱" title="Dimension Origin"><span class="glyph">⌱</span></button>
+    <button class="emo tiny" data-e="⌲" title="Conical Taper"><span class="glyph">⌲</span></button>
+    <button class="emo tiny" data-e="⌳" title="Slope"><span class="glyph">⌳</span></button>
+    <button class="emo tiny" data-e="⌴" title="Counterbore"><span class="glyph">⌴</span></button>
+    <button class="emo tiny" data-e="⌵" title="Countersink"><span class="glyph">⌵</span></button>
+    <button class="emo tiny" data-e="⌶" title="Apl Functional Symbol I-Beam"><span class="glyph">⌶</span></button>
+    <button class="emo tiny" data-e="⌷" title="Apl Functional Symbol Squish Quad"><span class="glyph">⌷</span></button>
+    <button class="emo tiny" data-e="⌸" title="Apl Functional Symbol Quad Equal"><span class="glyph">⌸</span></button>
+    <button class="emo tiny" data-e="⌹" title="Apl Functional Symbol Quad Divide"><span class="glyph">⌹</span></button>
+    <button class="emo tiny" data-e="⌺" title="Apl Functional Symbol Quad Diamond"><span class="glyph">⌺</span></button>
+    <button class="emo tiny" data-e="⌻" title="Apl Functional Symbol Quad Jot"><span class="glyph">⌻</span></button>
+    <button class="emo tiny" data-e="⌼" title="Apl Functional Symbol Quad Circle"><span class="glyph">⌼</span></button>
+    <button class="emo tiny" data-e="⌽" title="Apl Functional Symbol Circle Stile"><span class="glyph">⌽</span></button>
+    <button class="emo tiny" data-e="⌾" title="Apl Functional Symbol Circle Jot"><span class="glyph">⌾</span></button>
+    <button class="emo tiny" data-e="⌿" title="Apl Functional Symbol Slash Bar"><span class="glyph">⌿</span></button>
+    <button class="emo tiny" data-e="⍀" title="Apl Functional Symbol Backslash Bar"><span class="glyph">⍀</span></button>
+    <button class="emo tiny" data-e="⍁" title="Apl Functional Symbol Quad Slash"><span class="glyph">⍁</span></button>
+    <button class="emo tiny" data-e="⍂" title="Apl Functional Symbol Quad Backslash"><span class="glyph">⍂</span></button>
+    <button class="emo tiny" data-e="⍃" title="Apl Functional Symbol Quad Less-Than"><span class="glyph">⍃</span></button>
+    <button class="emo tiny" data-e="⍄" title="Apl Functional Symbol Quad Greater-Than"><span class="glyph">⍄</span></button>
+    <button class="emo tiny" data-e="⍅" title="Apl Functional Symbol Leftwards Vane"><span class="glyph">⍅</span></button>
+    <button class="emo tiny" data-e="⍆" title="Apl Functional Symbol Rightwards Vane"><span class="glyph">⍆</span></button>
+    <button class="emo tiny" data-e="⍇" title="Apl Functional Symbol Quad Leftwards Arrow"><span class="glyph">⍇</span></button>
+    <button class="emo tiny" data-e="⍈" title="Apl Functional Symbol Quad Rightwards Arrow"><span class="glyph">⍈</span></button>
+    <button class="emo tiny" data-e="⍉" title="Apl Functional Symbol Circle Backslash"><span class="glyph">⍉</span></button>
+    <button class="emo tiny" data-e="⍊" title="Apl Functional Symbol Down Tack Underbar"><span class="glyph">⍊</span></button>
+    <button class="emo tiny" data-e="⍋" title="Apl Functional Symbol Delta Stile"><span class="glyph">⍋</span></button>
+    <button class="emo tiny" data-e="⍌" title="Apl Functional Symbol Quad Down Caret"><span class="glyph">⍌</span></button>
+    <button class="emo tiny" data-e="⍍" title="Apl Functional Symbol Quad Delta"><span class="glyph">⍍</span></button>
+    <button class="emo tiny" data-e="⍎" title="Apl Functional Symbol Down Tack Jot"><span class="glyph">⍎</span></button>
+    <button class="emo tiny" data-e="⍏" title="Apl Functional Symbol Upwards Vane"><span class="glyph">⍏</span></button>
+    <button class="emo tiny" data-e="⍐" title="Apl Functional Symbol Quad Upwards Arrow"><span class="glyph">⍐</span></button>
+    <button class="emo tiny" data-e="⍑" title="Apl Functional Symbol Up Tack Overbar"><span class="glyph">⍑</span></button>
+    <button class="emo tiny" data-e="⍒" title="Apl Functional Symbol Del Stile"><span class="glyph">⍒</span></button>
+    <button class="emo tiny" data-e="⍓" title="Apl Functional Symbol Quad Up Caret"><span class="glyph">⍓</span></button>
+    <button class="emo tiny" data-e="⍔" title="Apl Functional Symbol Quad Del"><span class="glyph">⍔</span></button>
+    <button class="emo tiny" data-e="⍕" title="Apl Functional Symbol Up Tack Jot"><span class="glyph">⍕</span></button>
+    <button class="emo tiny" data-e="⍖" title="Apl Functional Symbol Downwards Vane"><span class="glyph">⍖</span></button>
+    <button class="emo tiny" data-e="⍗" title="Apl Functional Symbol Quad Downwards Arrow"><span class="glyph">⍗</span></button>
+    <button class="emo tiny" data-e="⍘" title="Apl Functional Symbol Quote Underbar"><span class="glyph">⍘</span></button>
+    <button class="emo tiny" data-e="⍙" title="Apl Functional Symbol Delta Underbar"><span class="glyph">⍙</span></button>
+    <button class="emo tiny" data-e="⍚" title="Apl Functional Symbol Diamond Underbar"><span class="glyph">⍚</span></button>
+    <button class="emo tiny" data-e="⍛" title="Apl Functional Symbol Jot Underbar"><span class="glyph">⍛</span></button>
+    <button class="emo tiny" data-e="⍜" title="Apl Functional Symbol Circle Underbar"><span class="glyph">⍜</span></button>
+    <button class="emo tiny" data-e="⍝" title="Apl Functional Symbol Up Shoe Jot"><span class="glyph">⍝</span></button>
+    <button class="emo tiny" data-e="⍞" title="Apl Functional Symbol Quote Quad"><span class="glyph">⍞</span></button>
+    <button class="emo tiny" data-e="⍟" title="Apl Functional Symbol Circle Star"><span class="glyph">⍟</span></button>
+    <button class="emo tiny" data-e="⍠" title="Apl Functional Symbol Quad Colon"><span class="glyph">⍠</span></button>
+    <button class="emo tiny" data-e="⍡" title="Apl Functional Symbol Up Tack Diaeresis"><span class="glyph">⍡</span></button>
+    <button class="emo tiny" data-e="⍢" title="Apl Functional Symbol Del Diaeresis"><span class="glyph">⍢</span></button>
+    <button class="emo tiny" data-e="⍣" title="Apl Functional Symbol Star Diaeresis"><span class="glyph">⍣</span></button>
+    <button class="emo tiny" data-e="⍤" title="Apl Functional Symbol Jot Diaeresis"><span class="glyph">⍤</span></button>
+    <button class="emo tiny" data-e="⍥" title="Apl Functional Symbol Circle Diaeresis"><span class="glyph">⍥</span></button>
+    <button class="emo tiny" data-e="⍦" title="Apl Functional Symbol Down Shoe Stile"><span class="glyph">⍦</span></button>
+    <button class="emo tiny" data-e="⍧" title="Apl Functional Symbol Left Shoe Stile"><span class="glyph">⍧</span></button>
+    <button class="emo tiny" data-e="⍨" title="Apl Functional Symbol Tilde Diaeresis"><span class="glyph">⍨</span></button>
+    <button class="emo tiny" data-e="⍩" title="Apl Functional Symbol Greater-Than Diaeresis"><span class="glyph">⍩</span></button>
+    <button class="emo tiny" data-e="⍪" title="Apl Functional Symbol Comma Bar"><span class="glyph">⍪</span></button>
+    <button class="emo tiny" data-e="⍫" title="Apl Functional Symbol Del Tilde"><span class="glyph">⍫</span></button>
+    <button class="emo tiny" data-e="⍬" title="Apl Functional Symbol Zilde"><span class="glyph">⍬</span></button>
+    <button class="emo tiny" data-e="⍭" title="Apl Functional Symbol Stile Tilde"><span class="glyph">⍭</span></button>
+    <button class="emo tiny" data-e="⍮" title="Apl Functional Symbol Semicolon Underbar"><span class="glyph">⍮</span></button>
+    <button class="emo tiny" data-e="⍯" title="Apl Functional Symbol Quad Not Equal"><span class="glyph">⍯</span></button>
+    <button class="emo tiny" data-e="⍰" title="Apl Functional Symbol Quad Question"><span class="glyph">⍰</span></button>
+    <button class="emo tiny" data-e="⍱" title="Apl Functional Symbol Down Caret Tilde"><span class="glyph">⍱</span></button>
+    <button class="emo tiny" data-e="⍲" title="Apl Functional Symbol Up Caret Tilde"><span class="glyph">⍲</span></button>
+    <button class="emo tiny" data-e="⍳" title="Apl Functional Symbol Iota"><span class="glyph">⍳</span></button>
+    <button class="emo tiny" data-e="⍴" title="Apl Functional Symbol Rho"><span class="glyph">⍴</span></button>
+    <button class="emo tiny" data-e="⍵" title="Apl Functional Symbol Omega"><span class="glyph">⍵</span></button>
+    <button class="emo tiny" data-e="⍶" title="Apl Functional Symbol Alpha Underbar"><span class="glyph">⍶</span></button>
+    <button class="emo tiny" data-e="⍷" title="Apl Functional Symbol Epsilon Underbar"><span class="glyph">⍷</span></button>
+    <button class="emo tiny" data-e="⍸" title="Apl Functional Symbol Iota Underbar"><span class="glyph">⍸</span></button>
+    <button class="emo tiny" data-e="⍹" title="Apl Functional Symbol Omega Underbar"><span class="glyph">⍹</span></button>
+    <button class="emo tiny" data-e="⍺" title="Apl Functional Symbol Alpha"><span class="glyph">⍺</span></button>
+    <button class="emo tiny" data-e="⍻" title="Not Check Mark"><span class="glyph">⍻</span></button>
+    <button class="emo tiny" data-e="⍼" title="Right Angle With Downwards Zigzag Arrow"><span class="glyph">⍼</span></button>
+    <button class="emo tiny" data-e="⍽" title="Shouldered Open Box"><span class="glyph">⍽</span></button>
+    <button class="emo tiny" data-e="⍾" title="Bell Symbol"><span class="glyph">⍾</span></button>
+    <button class="emo tiny" data-e="⍿" title="Vertical Line With Middle Dot"><span class="glyph">⍿</span></button>
+    <button class="emo tiny" data-e="⎀" title="Insertion Symbol"><span class="glyph">⎀</span></button>
+    <button class="emo tiny" data-e="⎁" title="Continuous Underline Symbol"><span class="glyph">⎁</span></button>
+    <button class="emo tiny" data-e="⎂" title="Discontinuous Underline Symbol"><span class="glyph">⎂</span></button>
+    <button class="emo tiny" data-e="⎃" title="Emphasis Symbol"><span class="glyph">⎃</span></button>
+    <button class="emo tiny" data-e="⎄" title="Composition Symbol"><span class="glyph">⎄</span></button>
+    <button class="emo tiny" data-e="⎅" title="White Square With Centre Vertical Line"><span class="glyph">⎅</span></button>
+    <button class="emo tiny" data-e="⎆" title="Enter Symbol"><span class="glyph">⎆</span></button>
+    <button class="emo tiny" data-e="⎇" title="Alternative Key Symbol"><span class="glyph">⎇</span></button>
+    <button class="emo tiny" data-e="⎈" title="Helm Symbol"><span class="glyph">⎈</span></button>
+    <button class="emo tiny" data-e="⎉" title="Circled Horizontal Bar With Notch"><span class="glyph">⎉</span></button>
+    <button class="emo tiny" data-e="⎊" title="Circled Triangle Down"><span class="glyph">⎊</span></button>
+    <button class="emo tiny" data-e="⎋" title="Broken Circle With Northwest Arrow"><span class="glyph">⎋</span></button>
+    <button class="emo tiny" data-e="⎌" title="Undo Symbol"><span class="glyph">⎌</span></button>
+    <button class="emo tiny" data-e="⎍" title="Monostable Symbol"><span class="glyph">⎍</span></button>
+    <button class="emo tiny" data-e="⎎" title="Hysteresis Symbol"><span class="glyph">⎎</span></button>
+    <button class="emo tiny" data-e="⎏" title="Open-Circuit-Output H-Type Symbol"><span class="glyph">⎏</span></button>
+    <button class="emo tiny" data-e="⎐" title="Open-Circuit-Output L-Type Symbol"><span class="glyph">⎐</span></button>
+    <button class="emo tiny" data-e="⎑" title="Passive-Pull-Down-Output Symbol"><span class="glyph">⎑</span></button>
+    <button class="emo tiny" data-e="⎒" title="Passive-Pull-Up-Output Symbol"><span class="glyph">⎒</span></button>
+    <button class="emo tiny" data-e="⎓" title="Direct Current Symbol Form Two"><span class="glyph">⎓</span></button>
+    <button class="emo tiny" data-e="⎔" title="Software-Function Symbol"><span class="glyph">⎔</span></button>
+    <button class="emo tiny" data-e="⎕" title="Apl Functional Symbol Quad"><span class="glyph">⎕</span></button>
+    <button class="emo tiny" data-e="⎖" title="Decimal Separator Key Symbol"><span class="glyph">⎖</span></button>
+    <button class="emo tiny" data-e="⎗" title="Previous Page"><span class="glyph">⎗</span></button>
+    <button class="emo tiny" data-e="⎘" title="Next Page"><span class="glyph">⎘</span></button>
+    <button class="emo tiny" data-e="⎙" title="Print Screen Symbol"><span class="glyph">⎙</span></button>
+    <button class="emo tiny" data-e="⎚" title="Clear Screen Symbol"><span class="glyph">⎚</span></button>
+    <button class="emo tiny" data-e="⎛" title="Left Parenthesis Upper Hook"><span class="glyph">⎛</span></button>
+    <button class="emo tiny" data-e="⎜" title="Left Parenthesis Extension"><span class="glyph">⎜</span></button>
+    <button class="emo tiny" data-e="⎝" title="Left Parenthesis Lower Hook"><span class="glyph">⎝</span></button>
+    <button class="emo tiny" data-e="⎞" title="Right Parenthesis Upper Hook"><span class="glyph">⎞</span></button>
+    <button class="emo tiny" data-e="⎟" title="Right Parenthesis Extension"><span class="glyph">⎟</span></button>
+    <button class="emo tiny" data-e="⎠" title="Right Parenthesis Lower Hook"><span class="glyph">⎠</span></button>
+    <button class="emo tiny" data-e="⎡" title="Left Square Bracket Upper Corner"><span class="glyph">⎡</span></button>
+    <button class="emo tiny" data-e="⎢" title="Left Square Bracket Extension"><span class="glyph">⎢</span></button>
+    <button class="emo tiny" data-e="⎣" title="Left Square Bracket Lower Corner"><span class="glyph">⎣</span></button>
+    <button class="emo tiny" data-e="⎤" title="Right Square Bracket Upper Corner"><span class="glyph">⎤</span></button>
+    <button class="emo tiny" data-e="⎥" title="Right Square Bracket Extension"><span class="glyph">⎥</span></button>
+    <button class="emo tiny" data-e="⎦" title="Right Square Bracket Lower Corner"><span class="glyph">⎦</span></button>
+    <button class="emo tiny" data-e="⎧" title="Left Curly Bracket Upper Hook"><span class="glyph">⎧</span></button>
+    <button class="emo tiny" data-e="⎨" title="Left Curly Bracket Middle Piece"><span class="glyph">⎨</span></button>
+    <button class="emo tiny" data-e="⎩" title="Left Curly Bracket Lower Hook"><span class="glyph">⎩</span></button>
+    <button class="emo tiny" data-e="⎪" title="Curly Bracket Extension"><span class="glyph">⎪</span></button>
+    <button class="emo tiny" data-e="⎫" title="Right Curly Bracket Upper Hook"><span class="glyph">⎫</span></button>
+    <button class="emo tiny" data-e="⎬" title="Right Curly Bracket Middle Piece"><span class="glyph">⎬</span></button>
+    <button class="emo tiny" data-e="⎭" title="Right Curly Bracket Lower Hook"><span class="glyph">⎭</span></button>
+    <button class="emo tiny" data-e="⎮" title="Integral Extension"><span class="glyph">⎮</span></button>
+    <button class="emo tiny" data-e="⎯" title="Horizontal Line Extension"><span class="glyph">⎯</span></button>
+    <button class="emo tiny" data-e="⎰" title="Upper Left Or Lower Right Curly Bracket Section"><span class="glyph">⎰</span></button>
+    <button class="emo tiny" data-e="⎱" title="Upper Right Or Lower Left Curly Bracket Section"><span class="glyph">⎱</span></button>
+    <button class="emo tiny" data-e="⎲" title="Summation Top"><span class="glyph">⎲</span></button>
+    <button class="emo tiny" data-e="⎳" title="Summation Bottom"><span class="glyph">⎳</span></button>
+    <button class="emo tiny" data-e="⎴" title="Top Square Bracket"><span class="glyph">⎴</span></button>
+    <button class="emo tiny" data-e="⎵" title="Bottom Square Bracket"><span class="glyph">⎵</span></button>
+    <button class="emo tiny" data-e="⎶" title="Bottom Square Bracket Over Top Square Bracket"><span class="glyph">⎶</span></button>
+    <button class="emo tiny" data-e="⎷" title="Radical Symbol Bottom"><span class="glyph">⎷</span></button>
+    <button class="emo tiny" data-e="⎸" title="Left Vertical Box Line"><span class="glyph">⎸</span></button>
+    <button class="emo tiny" data-e="⎹" title="Right Vertical Box Line"><span class="glyph">⎹</span></button>
+    <button class="emo tiny" data-e="⎺" title="Horizontal Scan Line-1"><span class="glyph">⎺</span></button>
+    <button class="emo tiny" data-e="⎻" title="Horizontal Scan Line-3"><span class="glyph">⎻</span></button>
+    <button class="emo tiny" data-e="⎼" title="Horizontal Scan Line-7"><span class="glyph">⎼</span></button>
+    <button class="emo tiny" data-e="⎽" title="Horizontal Scan Line-9"><span class="glyph">⎽</span></button>
+    <button class="emo tiny" data-e="⎾" title="Dentistry Symbol Light Vertical And Top Right"><span class="glyph">⎾</span></button>
+    <button class="emo tiny" data-e="⎿" title="Dentistry Symbol Light Vertical And Bottom Right"><span class="glyph">⎿</span></button>
+    <button class="emo tiny" data-e="⏀" title="Dentistry Symbol Light Vertical With Circle"><span class="glyph">⏀</span></button>
+    <button class="emo tiny" data-e="⏁" title="Dentistry Symbol Light Down And Horizontal With Circle"><span class="glyph">⏁</span></button>
+    <button class="emo tiny" data-e="⏂" title="Dentistry Symbol Light Up And Horizontal With Circle"><span class="glyph">⏂</span></button>
+    <button class="emo tiny" data-e="⏃" title="Dentistry Symbol Light Vertical With Triangle"><span class="glyph">⏃</span></button>
+    <button class="emo tiny" data-e="⏄" title="Dentistry Symbol Light Down And Horizontal With Triangle"><span class="glyph">⏄</span></button>
+    <button class="emo tiny" data-e="⏅" title="Dentistry Symbol Light Up And Horizontal With Triangle"><span class="glyph">⏅</span></button>
+    <button class="emo tiny" data-e="⏆" title="Dentistry Symbol Light Vertical And Wave"><span class="glyph">⏆</span></button>
+    <button class="emo tiny" data-e="⏇" title="Dentistry Symbol Light Down And Horizontal With Wave"><span class="glyph">⏇</span></button>
+    <button class="emo tiny" data-e="⏈" title="Dentistry Symbol Light Up And Horizontal With Wave"><span class="glyph">⏈</span></button>
+    <button class="emo tiny" data-e="⏉" title="Dentistry Symbol Light Down And Horizontal"><span class="glyph">⏉</span></button>
+    <button class="emo tiny" data-e="⏊" title="Dentistry Symbol Light Up And Horizontal"><span class="glyph">⏊</span></button>
+    <button class="emo tiny" data-e="⏋" title="Dentistry Symbol Light Vertical And Top Left"><span class="glyph">⏋</span></button>
+    <button class="emo tiny" data-e="⏌" title="Dentistry Symbol Light Vertical And Bottom Left"><span class="glyph">⏌</span></button>
+    <button class="emo tiny" data-e="⏍" title="Square Foot"><span class="glyph">⏍</span></button>
+    <button class="emo tiny" data-e="⏎" title="Return Symbol"><span class="glyph">⏎</span></button>
+    <button class="emo tiny" data-e="⏏" title="Eject Symbol"><span class="glyph">⏏</span></button>
+    <button class="emo tiny" data-e="⏐" title="Vertical Line Extension"><span class="glyph">⏐</span></button>
+    <button class="emo tiny" data-e="⏑" title="Metrical Breve"><span class="glyph">⏑</span></button>
+    <button class="emo tiny" data-e="⏒" title="Metrical Long Over Short"><span class="glyph">⏒</span></button>
+    <button class="emo tiny" data-e="⏓" title="Metrical Short Over Long"><span class="glyph">⏓</span></button>
+    <button class="emo tiny" data-e="⏔" title="Metrical Long Over Two Shorts"><span class="glyph">⏔</span></button>
+    <button class="emo tiny" data-e="⏕" title="Metrical Two Shorts Over Long"><span class="glyph">⏕</span></button>
+    <button class="emo tiny" data-e="⏖" title="Metrical Two Shorts Joined"><span class="glyph">⏖</span></button>
+    <button class="emo tiny" data-e="⏗" title="Metrical Triseme"><span class="glyph">⏗</span></button>
+    <button class="emo tiny" data-e="⏘" title="Metrical Tetraseme"><span class="glyph">⏘</span></button>
+    <button class="emo tiny" data-e="⏙" title="Metrical Pentaseme"><span class="glyph">⏙</span></button>
+    <button class="emo tiny" data-e="⏚" title="Earth Ground"><span class="glyph">⏚</span></button>
+    <button class="emo tiny" data-e="⏛" title="Fuse"><span class="glyph">⏛</span></button>
+    <button class="emo tiny" data-e="⏜" title="Top Parenthesis"><span class="glyph">⏜</span></button>
+    <button class="emo tiny" data-e="⏝" title="Bottom Parenthesis"><span class="glyph">⏝</span></button>
+    <button class="emo tiny" data-e="⏞" title="Top Curly Bracket"><span class="glyph">⏞</span></button>
+    <button class="emo tiny" data-e="⏟" title="Bottom Curly Bracket"><span class="glyph">⏟</span></button>
+    <button class="emo tiny" data-e="⏠" title="Top Tortoise Shell Bracket"><span class="glyph">⏠</span></button>
+    <button class="emo tiny" data-e="⏡" title="Bottom Tortoise Shell Bracket"><span class="glyph">⏡</span></button>
+    <button class="emo tiny" data-e="⏢" title="White Trapezium"><span class="glyph">⏢</span></button>
+    <button class="emo tiny" data-e="⏣" title="Benzene Ring With Circle"><span class="glyph">⏣</span></button>
+    <button class="emo tiny" data-e="⏤" title="Straightness"><span class="glyph">⏤</span></button>
+    <button class="emo tiny" data-e="⏥" title="Flatness"><span class="glyph">⏥</span></button>
+    <button class="emo tiny" data-e="⏦" title="Ac Current"><span class="glyph">⏦</span></button>
+    <button class="emo tiny" data-e="⏧" title="Electrical Intersection"><span class="glyph">⏧</span></button>
+    <button class="emo tiny" data-e="⏨" title="Decimal Exponent Symbol"><span class="glyph">⏨</span></button>
+    <button class="emo tiny" data-e="⏩" title="Black Right-Pointing Double Triangle"><span class="glyph">⏩</span></button>
+    <button class="emo tiny" data-e="⏪" title="Black Left-Pointing Double Triangle"><span class="glyph">⏪</span></button>
+    <button class="emo tiny" data-e="⏫" title="Black Up-Pointing Double Triangle"><span class="glyph">⏫</span></button>
+    <button class="emo tiny" data-e="⏬" title="Black Down-Pointing Double Triangle"><span class="glyph">⏬</span></button>
+    <button class="emo tiny" data-e="⏭" title="Black Right-Pointing Double Triangle With Vertical Bar"><span class="glyph">⏭</span></button>
+    <button class="emo tiny" data-e="⏮" title="Black Left-Pointing Double Triangle With Vertical Bar"><span class="glyph">⏮</span></button>
+    <button class="emo tiny" data-e="⏯" title="Black Right-Pointing Triangle With Double Vertical Bar"><span class="glyph">⏯</span></button>
+    <button class="emo tiny" data-e="⏰" title="Alarm Clock"><span class="glyph">⏰</span></button>
+    <button class="emo tiny" data-e="⏱" title="Stopwatch"><span class="glyph">⏱</span></button>
+    <button class="emo tiny" data-e="⏲" title="Timer Clock"><span class="glyph">⏲</span></button>
+    <button class="emo tiny" data-e="⏳" title="Hourglass With Flowing Sand"><span class="glyph">⏳</span></button>
+    <button class="emo tiny" data-e="⏴" title="Black Medium Left-Pointing Triangle"><span class="glyph">⏴</span></button>
+    <button class="emo tiny" data-e="⏵" title="Black Medium Right-Pointing Triangle"><span class="glyph">⏵</span></button>
+    <button class="emo tiny" data-e="⏶" title="Black Medium Up-Pointing Triangle"><span class="glyph">⏶</span></button>
+    <button class="emo tiny" data-e="⏷" title="Black Medium Down-Pointing Triangle"><span class="glyph">⏷</span></button>
+    <button class="emo tiny" data-e="⏸" title="Double Vertical Bar"><span class="glyph">⏸</span></button>
+    <button class="emo tiny" data-e="⏹" title="Black Square For Stop"><span class="glyph">⏹</span></button>
+    <button class="emo tiny" data-e="⏺" title="Black Circle For Record"><span class="glyph">⏺</span></button>
   </div>
 
   <footer>
