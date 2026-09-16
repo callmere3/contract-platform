@@ -66,6 +66,19 @@ _MONTHS_RU_OF = (
 # Рейтинг ТЕКУЩЕГО месяца не кешируется: он меняется в течение дня.
 _CACHE_TTL_SECONDS = 600
 _cache: dict = {"period": None, "computed_at": None, "value": None}
+# Отдельный кеш под историю кубков за ВСЕ закрытые месяцы (достижения в
+# профиле). Ключ тот же — последний закрытый месяц: пока он не сменился,
+# история измениться не может.
+_history_cache: dict = {"period": None, "computed_at": None, "value": None}
+
+
+def as_utc(moment: datetime) -> datetime:
+    """
+    Дата из базы с гарантированной таймзоной. Postgres отдаёт timestamptz
+    уже с ней, а SQLite (локальный прогон без Docker) — наивную дату;
+    без этой нормализации astimezone() на ней падает.
+    """
+    return moment if moment.tzinfo is not None else moment.replace(tzinfo=timezone.utc)
 
 
 def _labels(moment: datetime) -> tuple[str, str]:
@@ -119,6 +132,55 @@ def days_left_in_month(now: datetime | None = None) -> int:
     first_next = (now_msk.replace(day=28) + timedelta(days=4)).replace(day=1)
     last_day = (first_next - timedelta(days=1)).day
     return last_day - now_msk.day
+
+
+def champion_history(db: Session, now: datetime | None = None) -> dict:
+    """
+    {user_id: [«август 2026», …]} — в каких ЗАКРЫТЫХ месяцах человек взял
+    кубок. Текущий месяц не учитывается: он ещё не закончился.
+
+    Один запрос на всю историю вместо запроса на месяц: документы
+    раскладываются по месяцам уже в Python. Ничья — кубок всем, кто набрал
+    максимум, как и в month_champions.
+    """
+    _, _, prev_label, _ = previous_month_bounds(now)
+    cached = _history_cache
+    if (
+        cached["period"] == prev_label
+        and cached["computed_at"] is not None
+        and (datetime.now(timezone.utc) - cached["computed_at"]).total_seconds() < _CACHE_TTL_SECONDS
+    ):
+        return cached["value"]
+
+    now_msk = (now or datetime.now(timezone.utc)).astimezone(MSK)
+    current_month = (now_msk.year, now_msk.month)
+
+    out_of_contest = {u.id for u in db.query(User).filter(User.role.in_(NOT_COMPETING)).all()}
+
+    per_month: dict = {}
+    for row in db.query(GeneratedDocument).all():
+        if row.user_id is None or row.user_id in out_of_contest:
+            continue
+        made = as_utc(row.created_at).astimezone(MSK)
+        month = (made.year, made.month)
+        if month >= current_month:
+            continue
+        per_month.setdefault(month, {}).setdefault(row.user_id, set()).add(_document_key(row))
+
+    history: dict = {}
+    for (year, month), counts in sorted(per_month.items()):
+        best = max((len(keys) for keys in counts.values()), default=0)
+        if best <= 0:
+            continue
+        label = "%s %d" % (_MONTHS_RU[month - 1], year)
+        for user_id, keys in counts.items():
+            if len(keys) == best:
+                history.setdefault(user_id, []).append(label)
+
+    _history_cache.update(
+        {"period": prev_label, "computed_at": datetime.now(timezone.utc), "value": history}
+    )
+    return history
 
 
 def _document_key(row) -> tuple:

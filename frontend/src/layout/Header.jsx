@@ -32,7 +32,7 @@ const TABS = [
 
 export function Header({ companyName = 'ML Docs' }) {
   const { theme, toggleTheme } = useTheme();
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const { openModal } = useModal();
 
   // Счётчик непросмотренных уведомлений (только admin). Обновляем на монтировании,
@@ -119,24 +119,19 @@ export function Header({ companyName = 'ML Docs' }) {
         >
           {theme === 'dark' ? '☀' : '☾'}
         </button>
-        {/* Кубок месяца — снаружи кнопки смены пароля: у него свой title
-            («чемпион за …»), а вложенный в кнопку он подменялся бы
-            подсказкой «Сменить пароль». */}
+        {/* Кубок месяца — снаружи кнопки профиля: у него свой title
+            («чемпион за …»), а вложенный в кнопку он подменялся бы её
+            подсказкой. Нажатие на кубок открывает своё окно. */}
         <ChampionBadge champion={user?.champion} isMe />
-        {/* Имя — точка входа в смену своего пароля: отдельная вкладка ради
-            одного действия избыточна, а profile-меню в макете не заложено. */}
+        {/* Имя — вход в карточку профиля: смена пароля, выход, достижения.
+            «Выйти» раньше стояло здесь же, отдельной кнопкой рядом с именем,
+            и вылетало по ошибке — теперь оно внутри карточки. */}
         <button
-          onClick={() => openModal('changePassword')}
-          title="Сменить пароль"
+          onClick={() => openModal('profile')}
+          title="Профиль"
           className="text-[13px] text-text-secondary hover:text-text bg-transparent border-none cursor-pointer p-0 font-sans"
         >
           {user?.full_name || user?.username}
-        </button>
-        <button
-          onClick={logout}
-          className="text-[13px] text-accent bg-transparent border-none cursor-pointer p-0 font-sans"
-        >
-          Выйти
         </button>
       </div>
     </header>
