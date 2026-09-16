@@ -30,6 +30,7 @@ import { DistaConnectPage } from './pages/DistaConnectPage';
 import { FinancePage } from './pages/FinancePage';
 import { FinanceReportsPage } from './pages/FinanceReportsPage';
 import { RightholderReportsPage } from './pages/RightholderReportsPage';
+import { NomenclaturePage } from './pages/NomenclaturePage';
 import { ChampionPage } from './pages/ChampionPage';
 
 /**
@@ -127,6 +128,12 @@ function AppShell() {
             ) : (
               <Navigate to="/search" replace />
             )
+          }
+        />
+        <Route
+          path="/finance/nomenclature"
+          element={
+            canUseFinance(user?.role) ? <NomenclaturePage /> : <Navigate to="/search" replace />
           }
         />
         <Route

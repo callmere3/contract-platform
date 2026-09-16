@@ -21,12 +21,21 @@
  * Когда раздел заработает, компонент снимается целиком — содержимое внутри
  * уже настоящее.
  */
-export function UnderConstruction({ children, note }) {
+export function UnderConstruction({ children, note, align = 'center' }) {
   return (
     <>
       {/* Слой показа: приглушён, но читаем — он и есть то, что человек пришёл
-          посмотреть. */}
-      <div className="opacity-60 grayscale pointer-events-none select-none text-center">
+          посмотреть.
+
+          align — про содержимое, а не про штамп: hero-экраны («Загрузка
+          отчётов», «Отчёты правообладателям») центрируются, а таблица
+          номенклатуры — нет, иначе по центру уехали бы и заголовки колонок, и
+          каждая ячейка. Сам штамп ниже центрируется всегда. */}
+      <div
+        className={`opacity-60 grayscale pointer-events-none select-none ${
+          align === 'center' ? 'text-center' : 'text-left'
+        }`}
+      >
         {children}
       </div>
 

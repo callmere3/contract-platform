@@ -126,6 +126,10 @@ export function Header({ companyName = 'ML Docs' }) {
   let financeTabs = [
     { to: '/finance', label: 'Загрузка отчётов', end: true },
     { to: '/finance/rightholders', label: 'Отчёты правообладателям' },
+    // Два справочника рядом: треки и люди. «Номенклатура» перед
+    // «Контрагентами» — расчёт идёт в этом же порядке: сначала чьи доли на
+    // треке, потом кому и сколько на счёт.
+    { to: '/finance/nomenclature', label: 'Номенклатура' },
     { to: '/finance/contragents', label: 'Контрагенты' },
   ];
   if (canUseDistaSync(user?.role)) {
