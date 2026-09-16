@@ -18,6 +18,7 @@ import { GuideModal } from './GuideModal';
 import { FinanceContragentModal } from './FinanceContragentModal';
 import { NewFinanceOperationModal } from './NewFinanceOperationModal';
 import { TrackCardModal } from './TrackCardModal';
+import { NomenclatureImportExportModal } from './NomenclatureImportExportModal';
 import { AlertModal } from './AlertModal';
 
 const REGISTRY = {
@@ -42,6 +43,7 @@ const REGISTRY = {
   financeContragent: FinanceContragentModal,
   newFinanceOperation: NewFinanceOperationModal,
   trackCard: TrackCardModal,
+  nomenclatureImportExport: NomenclatureImportExportModal,
 };
 
 export function ModalRoot() {

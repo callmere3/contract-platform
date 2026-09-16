@@ -111,6 +111,12 @@ export const canDeleteFinanceOperations = (role) => is(role, ADMIN);
 // (зеркало CAN_VIEW_NOMENCLATURE в roles.py).
 export const canViewNomenclature = (role) => is(role, ADMIN, DIRECTOR);
 
+// backend: CAN_EXPORT_NOMENCLATURE / CAN_IMPORT_NOMENCLATURE. Выгрузить
+// каталог могут оба, залить — только admin: импорт замещает состав прав у
+// каждого трека из файла, и цена ошибки тут выше, чем у чтения.
+export const canExportNomenclature = (role) => is(role, ADMIN, DIRECTOR);
+export const canImportNomenclature = (role) => is(role, ADMIN);
+
 // backend: CAN_EXPORT_CONTRAGENTS = (ADMIN, DIRECTOR) — у top_manager/tester убран
 export const canExport = (role) => is(role, ADMIN, DIRECTOR);
 

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { useModal } from '../modals/ModalProvider';
+import { useAuth } from '../auth/AuthContext';
+import { canExportNomenclature, canImportNomenclature } from '../auth/permissions';
 import { listTracks } from '../api/nomenclature';
 
 /**
@@ -52,6 +54,7 @@ export function NomenclaturePage() {
   const [error, setError] = useState('');
 
   const { openModal } = useModal();
+  const { role } = useAuth();
 
   // Смена фильтра — назад на первую страницу: иначе, отфильтровав до десятка
   // строк, останешься на «стр. 40», где пусто.
@@ -119,18 +122,23 @@ export function NomenclaturePage() {
             placeholder="Правообладатель"
             className={`w-[200px] ${inputClass}`}
           />
-          {/* Импорт/экспорт пока не работает: каталог заливают выгрузкой на
-              сервере (ops/import_tracks.py). Кнопка стоит там же, где на
-              «Контрагентах», и ждёт своего экрана — вместе с решением, кому
-              вообще дать право заливать треки. */}
-          <Button
-            variant="primary"
-            size="sm"
-            disabled
-            title="Пока каталог обновляется выгрузкой на сервере"
-          >
-            Импорт/экспорт
-          </Button>
+          {/* Импорт/экспорт стоит там же, где на «Контрагентах». Экспорт
+              выгружает ровно то, что видно при текущем фильтре, — поэтому
+              фильтры и передаются внутрь. */}
+          {(canExportNomenclature(role) || canImportNomenclature(role)) && (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() =>
+                openModal('nomenclatureImportExport', {
+                  filters: { q: q.trim(), owner: owner.trim() },
+                  onImported: load,
+                })
+              }
+            >
+              Импорт/экспорт
+            </Button>
+          )}
         </div>
 
         {loading && <div className="px-5 py-4 text-[13px] text-text-muted">Загрузка…</div>}
@@ -174,8 +182,12 @@ export function NomenclaturePage() {
                     >
                       {t.code || '—'}
                     </td>
+                    {/* Название и исполнитель — одинаково важные опознавательные
+                        знаки трека, поэтому и выглядят одинаково (просьба
+                        владельца 17.09.2026). Приглушённый исполнитель читался
+                        как пояснение к названию, хотя ищут чаще именно по нему. */}
                     <td className={`${td} font-semibold text-text`}>{t.title}</td>
-                    <td className={`${td} text-text-secondary`}>{t.artist || '—'}</td>
+                    <td className={`${td} font-semibold text-text`}>{t.artist || '—'}</td>
                     <td className={td}>
                       <RightsCell owners={t.rights?.related ?? []} />
                     </td>
