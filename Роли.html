@@ -208,6 +208,7 @@
         <tr><td class="act">Видит шаблоны с пометкой «скрыт»</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td><td class="yes">✓</td><td class="no">—</td></tr>
         <tr><td class="act">Скрывает / показывает шаблон</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
         <tr><td class="act">Кнопка «Тестовые данные» в форме <sup>1</sup></td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="yes">✓</td><td class="no">—</td></tr>
+        <tr><td class="act">Кнопка 🎁 «выдать случайное достижение» <sup>1</sup></td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="yes">✓</td><td class="no">—</td></tr>
 
         <tr class="grouprow"><td colspan="6">ML Finance <sup>7</sup></td></tr>
         <tr><td class="act">Второй продукт: балансы контрагентов, карточка с реквизитами</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
@@ -245,6 +246,7 @@
     <div class="note">
       <b><sup>1</sup> «Тестовые данные» — это интерфейс, не право</b>
       <p>Кнопка заполняет форму демо-значениями в один клик. Единственная роль без пары на сервере: демо-данные приходят в схеме всем, они заведомо ненастоящие, защищать нечего. Живёт в <code>canFillDemoData</code>.</p>
+      <p>Там же и 🎁 в шапке — выдать себе случайное достижение, чтобы проверить всплывашку и значок у имени (<code>canGrantDemoAchievement</code>). Тоже без сервера: достижения нигде не хранятся, «выдача» живёт в браузере. С 16.09.2026 она только у тестера — у админа была, пока владелец проверял механизм, и в рабочей шапке ей больше делать нечего.</p>
     </div>
     <div class="note">
       <b><sup>2</sup> «Только свои» — проверка на сервере</b>
