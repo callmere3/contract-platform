@@ -8,6 +8,7 @@
 
   POST   /users            — создать пользователя (только Admin, формы саморегистрации нет)
   GET    /users            — список пользователей (только Admin)
+  GET    /users/{id}/card  — карточка сотрудника с достижениями (Admin, Director)
   PATCH  /users/{id}       — сменить роль/пароль/активность (только Admin)
 
   GET /audit-log           — журнал действий, самые новые сверху (Admin, Director)
@@ -27,6 +28,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.achievements import user_achievements
 from app.audit import SOURCE_KEY, SOURCE_SCRIPT, log_action
 from app.champion import champion_badge, month_champions
 from app.auth import (
@@ -275,6 +277,45 @@ def list_users(db: Session = Depends(get_session)) -> list[dict]:
         }
         for u in users
     ]
+
+
+@users_router.get("/{user_id}/card", dependencies=[Depends(require_role(*CAN_VIEW_USERS))])
+def user_card(user_id: uuid.UUID, db: Session = Depends(get_session)) -> dict:
+    """
+    Карточка сотрудника для вкладки «Пользователи»: кто он и его достижения.
+
+    Почему НЕ в /profile/achievements, хотя считается тем же
+    user_achievements. Тот эндпоинт не принимает user_id вовсе — и это его
+    свойство, а не недосмотр: подглядеть чужие достижения подбором id там
+    нечем в принципе. Добавь туда параметр — и защита держалась бы уже на
+    проверке роли внутри, то есть на одной строке, которую легко потерять.
+    Здесь же проверка стоит на самом маршруте, рядом со списком
+    пользователей, доступ к которому у этих ролей и так есть.
+
+    Открыто тем же CAN_VIEW_USERS, что и список: admin и director. Для
+    остальных вкладки «Пользователи» нет, и отдавать им чужие значки
+    незачем.
+
+    Достижения считаются ровно так же, как свои, — включая секретные: если
+    человек «Призрака» не получил, и админ увидит замок без условия.
+    Показывать начальству больше, чем самому человеку, здесь нечего.
+    """
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+
+    return {
+        "user": {
+            "id": str(user.id),
+            "username": user.username,
+            "full_name": user.full_name,
+            "role": user.role,
+            "is_active": user.is_active,
+            "last_seen_at": user.last_seen_at.isoformat() if user.last_seen_at else None,
+            "champion": champion_badge(month_champions(db), user.id),
+        },
+        "achievements": user_achievements(db, user),
+    }
 
 
 @users_router.patch("/{user_id}", dependencies=[Depends(require_role(ADMIN))])

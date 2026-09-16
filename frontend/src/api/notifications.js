@@ -36,12 +36,16 @@ export function markNotificationsRead() {
 /**
  * Написать уведомление. toAll=true — всем действующим сотрудникам, кроме
  * автора; иначе адресаты берутся из userIds.
+ *
+ * Заголовок обязателен (сервер отвергнет пустой): в панели уведомления
+ * лежат списком, и по первым словам текста не всегда понятно, о чём речь.
+ * У отправленных до 16.09.2026 он пустой — их показываем как раньше.
  */
-export function sendNotification({ text, toAll, userIds = [] }) {
+export function sendNotification({ title, text, toAll, userIds = [] }) {
   return apiJson(`${API}/notifications`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, to_all: toAll, user_ids: userIds }),
+    body: JSON.stringify({ title, text, to_all: toAll, user_ids: userIds }),
   });
 }
 

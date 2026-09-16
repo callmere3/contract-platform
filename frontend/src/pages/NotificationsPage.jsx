@@ -22,6 +22,7 @@ import {
  * каждого адресата.
  */
 export function NotificationsPage() {
+  const [title, setTitle] = useState('');
   const [text, setText] = useState('');
   const [toAll, setToAll] = useState(true);
   const [picked, setPicked] = useState([]);   // id выбранных получателей
@@ -56,7 +57,12 @@ export function NotificationsPage() {
   }
 
   async function submit() {
+    const head = title.trim();
     const body = text.trim();
+    if (!head) {
+      setError('Напишите заголовок — по нему в панели видно, о чём уведомление.');
+      return;
+    }
     if (!body) {
       setError('Напишите текст уведомления.');
       return;
@@ -68,7 +74,8 @@ export function NotificationsPage() {
     setBusy(true);
     setError('');
     try {
-      await sendNotification({ text: body, toAll, userIds: picked });
+      await sendNotification({ title: head, text: body, toAll, userIds: picked });
+      setTitle('');
       setText('');
       setPicked([]);
       setToAll(true);
@@ -110,6 +117,17 @@ export function NotificationsPage() {
           Написать уведомление
         </div>
         <div className="p-5 flex flex-col gap-4">
+          {/* Заголовок отдельным полем, а не первой строкой текста: по нему
+              человек в панели понимает, о чём объявление, не разворачивая
+              его. Длина ограничена и здесь, и на сервере (120). */}
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            maxLength={120}
+            placeholder="Заголовок — о чём уведомление"
+            className="w-full bg-input-bg border border-border rounded-input px-3 py-2.5 text-[14px] font-semibold text-text font-sans outline-none"
+          />
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
@@ -185,6 +203,13 @@ export function NotificationsPage() {
         {!loading &&
           sent.map((n) => (
             <div key={n.id} className="px-5 py-4 border-b border-border last:border-b-0">
+              {/* У отправленных до 16.09.2026 заголовка нет — показываем их
+                  как раньше, одним текстом. */}
+              {n.title && (
+                <div className="text-[14px] font-semibold text-text leading-snug mb-1">
+                  {n.title}
+                </div>
+              )}
               <div className="text-[13.5px] text-text leading-relaxed whitespace-pre-line">
                 {n.text}
               </div>

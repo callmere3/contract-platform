@@ -105,6 +105,15 @@ export function NotificationsModal({ level, isTop }) {
               >
                 ✕
               </button>
+              {/* Заголовка нет у уведомлений, отправленных до 16.09.2026:
+                  колонку добавили позже, а придумать его за автора значило
+                  бы подписать его словами, которых он не писал. Такие
+                  показываем как раньше — одним текстом. */}
+              {n.title && (
+                <div className="text-[14px] font-semibold text-text leading-snug mb-1">
+                  {n.title}
+                </div>
+              )}
               <div className="text-[13.5px] text-text leading-relaxed whitespace-pre-line">
                 {n.text}
               </div>

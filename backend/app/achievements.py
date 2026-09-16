@@ -34,6 +34,7 @@
 from sqlalchemy.orm import Session
 
 from app.champion import MSK, _document_key, as_utc, champion_history, scoring_since
+from app.models import GeneratedDocument, RefreshToken, Template, User, UserEvent
 
 # Названия месяцев с большой буквы — плитка кубка подписана «Август 2026».
 # Отдельным списком, а не .capitalize() от справочника champion.py: тот
@@ -43,7 +44,6 @@ _MONTHS_RU_TITLE = (
     "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
     "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
 )
-from app.models import GeneratedDocument, RefreshToken, Template, User, UserEvent
 
 # Вехи по документам. Первая намеренно равна 1: у семи учёток из десяти
 # сейчас ноль документов, и без достижимой первой ступени раздел у них был

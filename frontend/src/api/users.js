@@ -12,6 +12,19 @@ export function listUsers() {
   return apiJson(`${API}/users`);
 }
 
+/**
+ * Карточка сотрудника: { user, achievements } — открывается нажатием на имя
+ * во вкладке «Пользователи».
+ *
+ * Отдельный эндпоинт, а не /profile/achievements с параметром: тот не
+ * принимает чужой id вовсе, и это его свойство, а не недоделка (см.
+ * routers_profile.py). Здесь доступ ограничен маршрутом — admin и director,
+ * те же, кому открыт сам список.
+ */
+export function fetchUserCard(userId) {
+  return apiJson(`${API}/users/${userId}/card`);
+}
+
 /** password — минимум 8 символов (Field(min_length=8) на бэкенде). */
 export function createUser({ username, password, fullName, role }) {
   return apiJson(`${API}/users`, {

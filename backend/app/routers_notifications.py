@@ -16,6 +16,11 @@
 удалять историю ради смены экрана несоразмерно, а вернуть логику можно из
 git.
 
+ЗАГОЛОВОК обязателен у новых уведомлений и NULL у отправленных до
+16.09.2026: в панели они лежат списком, и по первым словам текста не всегда
+понятно, о чём объявление. У старых заголовка нет и взяться ему неоткуда —
+фронт показывает их как раньше, одним текстом.
+
 ДВА РАЗНЫХ УДАЛЕНИЯ, не перепутать. «У себя» (DELETE /mine/{id}) прячет
 уведомление у одного человека и никого больше не касается. «Удалить»
 админом (DELETE /{id}) сносит объявление целиком, у всех сразу.
@@ -49,8 +54,15 @@ notifications_router = APIRouter(prefix="/notifications", tags=["notifications"]
 # случайной вставки всего договора.
 MAX_TEXT = 2000
 
+# Заголовок. 120 символов — строка, которая целиком видна в панели: длиннее
+# он перестаёт быть заголовком и становится вторым текстом.
+MAX_TITLE = 120
+
 
 class NewAnnouncement(BaseModel):
+    # Обязателен, хотя в БД колонка nullable: NULL там только у уведомлений,
+    # отправленных до появления заголовка, и заполнить их задним числом нечем.
+    title: str = Field(min_length=1, max_length=MAX_TITLE)
     text: str = Field(min_length=1, max_length=MAX_TEXT)
     # to_all=True — всем действующим сотрудникам, кроме самого автора.
     # Иначе адресаты берутся из user_ids (тоже без автора и без отключённых).
@@ -81,6 +93,7 @@ def list_my_notifications(
     return [
         {
             "id": str(note.id),
+            "title": note.title,
             "text": note.text,
             "author": note.author_username,
             "created_at": note.created_at.isoformat(),
@@ -196,6 +209,7 @@ def list_sent(db: Session = Depends(get_session)) -> list[dict]:
         out.append(
             {
                 "id": str(note.id),
+                "title": note.title,
                 "text": note.text,
                 "author": note.author_username,
                 "created_at": note.created_at.isoformat(),
@@ -224,7 +238,10 @@ def create_announcement(
     — тоже: писать себе незачем. Если после этих отсечений не осталось
     никого — 400, иначе объявление молча уходило бы в пустоту.
     """
+    title = body.title.strip()
     text = body.text.strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="Заголовок уведомления пуст")
     if not text:
         raise HTTPException(status_code=400, detail="Текст уведомления пуст")
 
@@ -244,6 +261,7 @@ def create_announcement(
     note = Announcement(
         author_id=current_user.id,
         author_username=current_user.full_name or current_user.username,
+        title=title,
         text=text,
     )
     db.add(note)

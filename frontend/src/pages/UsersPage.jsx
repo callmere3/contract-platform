@@ -139,7 +139,19 @@ export function UsersPage() {
               >
                 <div className="min-w-0">
                   <div className="text-[15px] font-semibold text-text truncate flex items-center gap-2">
-                    {u.full_name || u.username}
+                    {/* Имя открывает карточку сотрудника с достижениями.
+                        Кнопкой именно имя, а не вся строка: справа живут
+                        выбор роли и «Отключить», и нажатие мимо них не
+                        должно открывать окно поверх того, что человек
+                        собирался переключить. */}
+                    <button
+                      type="button"
+                      onClick={() => openModal('userProfile', { userId: u.id })}
+                      title="Открыть профиль и достижения"
+                      className="bg-transparent border-none p-0 cursor-pointer font-sans text-[15px] font-semibold text-text truncate hover:text-accent"
+                    >
+                      {u.full_name || u.username}
+                    </button>
                     <ChampionBadge
                       champion={u.champion}
                       name={u.full_name || u.username}
@@ -200,8 +212,8 @@ export function UsersPage() {
 
       <div className="text-[11px] text-text-muted mt-4 leading-snug">
         {canManage
-          ? 'Отключение пользователя сразу обрывает все его текущие сессии. Свою роль изменить нельзя — иначе можно потерять доступ безвозвратно.'
-          : 'Просмотр списка пользователей и их ролей. Создание, смена ролей и отключение — за администратором.'}
+          ? 'Нажмите на имя, чтобы открыть профиль сотрудника с достижениями. Отключение пользователя сразу обрывает все его текущие сессии. Свою роль изменить нельзя — иначе можно потерять доступ безвозвратно.'
+          : 'Нажмите на имя, чтобы открыть профиль сотрудника с достижениями. Создание, смена ролей и отключение — за администратором.'}
       </div>
     </div>
   );

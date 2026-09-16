@@ -12,6 +12,7 @@ import { ConfirmExitDraftModal } from './ConfirmExitDraftModal';
 import { ConfirmDuplicateContragentModal } from './ConfirmDuplicateContragentModal';
 import { ChampionModal } from './ChampionModal';
 import { ProfileModal } from './ProfileModal';
+import { UserProfileModal } from './UserProfileModal';
 import { AchievementModal } from './AchievementModal';
 import { NotificationsModal } from './NotificationsModal';
 import { GuideModal } from './GuideModal';
@@ -33,6 +34,7 @@ const REGISTRY = {
   confirmDuplicateContragent: ConfirmDuplicateContragentModal,
   champion: ChampionModal,
   profile: ProfileModal,
+  userProfile: UserProfileModal,
   achievement: AchievementModal,
   notifications: NotificationsModal,
   guide: GuideModal,
