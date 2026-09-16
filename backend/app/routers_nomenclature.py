@@ -257,8 +257,15 @@ def list_tracks(
     ).all()
 
     rights = _rights_by_track(db, [t.id for t in tracks])
+    # Чья это карточка, когда отбор идёт по ней: экран показывает имя прямо в
+    # поле правообладателя, и добывать его отдельным запросом ради одной
+    # строки незачем. Имя берём из карточки, а не из прав: у карточки может
+    # быть несколько написаний в каталоге, и показать одно из них значило бы
+    # выбрать наугад.
+    card = db.get(Contragent, contragent_id) if contragent_id else None
     return {
         "tracks": [_summary(t, rights.get(t.id, {})) for t in tracks],
+        "contragent": {"id": str(card.id), "title": card.title} if card else None,
         "total": total,
         "page": page,
         "page_size": page_size,

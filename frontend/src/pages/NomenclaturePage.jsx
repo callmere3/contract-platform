@@ -56,6 +56,10 @@ export function NomenclaturePage() {
 
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
+  // Чья карточка фильтрует — приходит с сервера вместе со списком: показываем
+  // её имя прямо в поле правообладателя, чтобы отбор был виден, а не
+  // угадывался по «показано 126 из 121 528».
+  const [cardOwner, setCardOwner] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -81,6 +85,7 @@ export function NomenclaturePage() {
       });
       setItems(data.tracks ?? []);
       setTotal(data.total ?? 0);
+      setCardOwner(data.contragent ?? null);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -113,26 +118,6 @@ export function NomenclaturePage() {
         строку — откроется карточка трека со всеми полями выгрузки.
       </p>
 
-      {/* Отбор по карточке пришёл из адреса, а не из полей сверху, поэтому и
-          показывается отдельно: иначе человек видел бы неполный каталог и не
-          понимал, почему. Снимается одним нажатием. */}
-      {contragentId && (
-        <div className="flex items-center gap-2 mb-4 text-[13px]">
-          <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-accent-soft text-accent">
-            Треки одного контрагента
-            <button
-              type="button"
-              onClick={() => setSearchParams({})}
-              aria-label="Показать весь каталог"
-              className="bg-transparent border-none text-accent cursor-pointer p-0 leading-none text-[15px]"
-            >
-              ×
-            </button>
-          </span>
-          <span className="text-text-muted">показан не весь каталог</span>
-        </div>
-      )}
-
       <Card>
         <div className="flex flex-wrap gap-3 p-5 border-b border-border">
           <input
@@ -141,13 +126,33 @@ export function NomenclaturePage() {
             placeholder="Артикул, ISRC/UPC, название или исполнитель…"
             className={`flex-1 min-w-[280px] ${inputClass}`}
           />
-          {/* Правообладатель — поле ввода, а не список: их 729, и такой
-              список листают дольше, чем набирают фамилию. */}
+          {/* Правообладатель — поле ввода, а не список: их 730, и такой
+              список листают дольше, чем набирают фамилию.
+
+              ПРИШЛИ ПО КНОПКЕ «ТРЕКИ» — в поле стоит имя той карточки, из
+              которой пришли: отбор должен быть виден, а не угадываться по
+              числу найденного. Отбирает при этом по-прежнему ССЫЛКА, а не
+              этот текст: у карточки бывает несколько написаний в каталоге,
+              и поиск по имени дал бы другой ответ (у «Густ Мьюзик» — 13 872
+              трека вместо 13 306). Поэтому при отборе по карточке поле
+              только показывает, а как только человек начинает печатать,
+              отбор по карточке снимается и включается обычный поиск по
+              тексту — что видно, то и работает. */}
           <input
-            value={owner}
-            onChange={(e) => setOwner(e.target.value)}
+            value={contragentId ? (cardOwner?.title ?? '') : owner}
+            onChange={(e) => {
+              if (contragentId) setSearchParams({});
+              setOwner(e.target.value);
+            }}
             placeholder="Правообладатель"
-            className={`w-[200px] ${inputClass}`}
+            title={
+              contragentId
+                ? 'Отбор по карточке контрагента. Начните печатать — станет обычным поиском по имени'
+                : undefined
+            }
+            className={`w-[220px] ${inputClass} ${
+              contragentId ? 'border-accent text-accent' : ''
+            }`}
           />
           {/* Импорт/экспорт стоит там же, где на «Контрагентах». Экспорт
               выгружает ровно то, что видно при текущем фильтре, — поэтому
