@@ -125,6 +125,7 @@ export function Header({ companyName = 'ML Docs' }) {
   // /finance/contragents, который начинается тем же путём.
   let financeTabs = [
     { to: '/finance', label: 'Загрузка отчётов', end: true },
+    { to: '/finance/rightholders', label: 'Отчёты правообладателям' },
     { to: '/finance/contragents', label: 'Контрагенты' },
   ];
   if (canUseDistaSync(user?.role)) {

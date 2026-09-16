@@ -29,6 +29,7 @@ import { NotificationsPage } from './pages/NotificationsPage';
 import { DistaConnectPage } from './pages/DistaConnectPage';
 import { FinancePage } from './pages/FinancePage';
 import { FinanceReportsPage } from './pages/FinanceReportsPage';
+import { RightholderReportsPage } from './pages/RightholderReportsPage';
 import { ChampionPage } from './pages/ChampionPage';
 
 /**
@@ -116,6 +117,16 @@ function AppShell() {
           path="/finance"
           element={
             canUseFinance(user?.role) ? <FinanceReportsPage /> : <Navigate to="/search" replace />
+          }
+        />
+        <Route
+          path="/finance/rightholders"
+          element={
+            canUseFinance(user?.role) ? (
+              <RightholderReportsPage />
+            ) : (
+              <Navigate to="/search" replace />
+            )
           }
         />
         <Route
