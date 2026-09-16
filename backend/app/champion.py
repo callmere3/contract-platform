@@ -60,10 +60,30 @@ SCORING_SINCE = datetime(2026, 9, 16, 0, 0, tzinfo=timezone(timedelta(hours=3)))
 
 def scoring_since() -> datetime:
     """
-    Дата начала зачёта. Функция, а не прямое чтение константы: так её можно
-    подменить в прогонах, где данные лежат в прошлом.
+    Момент сброса. По нему считаются ДОСТИЖЕНИЯ — накопительные значки,
+    которые команда зарабатывает заново.
+
+    Функция, а не прямое чтение константы: так её можно подменить в
+    прогонах, где данные лежат в прошлом.
     """
     return SCORING_SINCE
+
+
+def scoring_month_start() -> datetime:
+    """
+    Первое число месяца, в котором произошёл сброс. По нему считаются КУБОК
+    и рейтинг месяца.
+
+    Почему рубеж другой, чем у достижений: месяц — единица соревнования, и
+    резать его пополам нельзя. Иначе в рейтинге сентября висело бы «с 16-го»
+    (документы первой половины месяца молча пропали бы), а 1 октября кубок
+    ушёл бы не тому, кто весь месяц был первым на доске. Поэтому месяц
+    сброса идёт в зачёт ЦЕЛИКОМ, а отсекаются только месяцы до него —
+    с ними и уехал августовский кубок.
+    """
+    since_msk = SCORING_SINCE.astimezone(MSK)
+    first = since_msk.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    return first.astimezone(timezone.utc)
 
 _MONTHS_RU = (
     "январь", "февраль", "март", "апрель", "май", "июнь",
@@ -175,7 +195,7 @@ def champion_history(db: Session, now: datetime | None = None) -> dict:
 
     out_of_contest = {u.id for u in db.query(User).filter(User.role.in_(NOT_COMPETING)).all()}
 
-    since = scoring_since()
+    since = scoring_month_start()
     per_month: dict = {}
     for row in db.query(GeneratedDocument).all():
         if row.user_id is None or row.user_id in out_of_contest:
@@ -217,9 +237,10 @@ def unique_counts(db: Session, start: datetime, end: datetime) -> dict:
     {user_id: сколько уникальных документов} за период [start, end).
     Роли вне конкурса и записи без автора отброшены.
     """
-    # Началом периода берём более позднюю из двух дат: границы месяца и даты
-    # сброса. Поэтому месяц, целиком лежащий до сброса, даёт пустой результат.
-    since = max(start, scoring_since())
+    # Началом периода берём более позднюю из двух дат: границы месяца и
+    # начала месяца сброса. Поэтому месяцы ДО сброса дают пустой результат,
+    # а месяц сброса считается целиком.
+    since = max(start, scoring_month_start())
     rows = (
         db.query(GeneratedDocument)
         .filter(GeneratedDocument.created_at >= since, GeneratedDocument.created_at < end)

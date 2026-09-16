@@ -90,8 +90,10 @@ def _achievement(code, icon, title, hint, earned, subtitle=None, progress=None, 
 
 def user_achievements(db: Session, user: User) -> list[dict]:
     """Все достижения пользователя — и полученные, и ещё нет."""
-    # Только работа ПОСЛЕ сброса зачёта (см. SCORING_SINCE в champion.py):
-    # 16.09.2026 значки обнулили, чтобы их заработали заново.
+    # Только работа ПОСЛЕ момента сброса (SCORING_SINCE в champion.py):
+    # 16.09.2026 значки обнулили, чтобы их заработали заново. Рубеж здесь
+    # ТОЧНЫЙ, в отличие от кубка: достижения накопительные и ничьего месяца
+    # не делят, поэтому резать их по календарю незачем.
     rows = (
         db.query(GeneratedDocument)
         .filter(

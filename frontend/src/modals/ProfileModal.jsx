@@ -74,9 +74,13 @@ export function ProfileModal({ level, isTop }) {
           {error && <div className="text-[13px] text-danger">{error}</div>}
 
           {!loading && !error && (
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               {achievements.map((a) => (
-                <AchievementCard key={a.code} achievement={a} />
+                <AchievementCard
+                  key={a.code}
+                  achievement={a}
+                  onOpen={() => openModal('achievement', { achievement: a })}
+                />
               ))}
             </div>
           )}
@@ -87,48 +91,42 @@ export function ProfileModal({ level, isTop }) {
 }
 
 /**
- * Плитка достижения. Полученное — в цвете, ещё нет — приглушённое и с
- * прогрессом («3 из 10»), чтобы было видно, к чему идти: у семи учёток из
- * десяти пока ноль документов, и без этого раздел был бы просто пустым.
+ * Плитка достижения: только значок и название. Условие — подсказкой при
+ * наведении, всё остальное (счётчик повторов, месяцы, прогресс) — в окне
+ * по нажатию (AchievementModal). Так раздел читается как ряд наград, а не
+ * как таблица цифр.
+ *
+ * Полученное — в цвете и со сплошной рамкой, ещё нет — блёклое и
+ * пунктиром: разница видна сразу, без единой цифры на плитке.
  */
-function AchievementCard({ achievement }) {
-  const { icon, title, hint, subtitle, earned, progress, count } = achievement;
-  const share = progress && progress.target > 0 ? progress.current / progress.target : 0;
+function AchievementCard({ achievement, onOpen }) {
+  const { icon, title, hint, earned } = achievement;
 
   return (
-    <div
+    <button
+      type="button"
+      onClick={onOpen}
       title={hint}
-      className={`flex flex-col gap-1.5 p-3 rounded-input border ${
-        earned ? 'border-border bg-surface' : 'border-dashed border-border bg-transparent'
+      className={`flex flex-col items-center text-center gap-1.5 px-2 py-3 rounded-input border cursor-pointer min-h-[86px] justify-center ${
+        earned
+          ? 'border-border bg-surface'
+          : 'border-dashed border-border bg-transparent'
       }`}
     >
-      <div className="flex items-center gap-2">
-        <span role="img" aria-hidden="true" className={`text-[22px] leading-none ${earned ? '' : 'grayscale opacity-45'}`}>
-          {icon}
-        </span>
-        {/* Счётчик повторяемого достижения: «×2» у второго кубка. */}
-        {count > 1 && <span className="text-[13px] font-semibold text-accent">×{count}</span>}
-      </div>
-
-      <div className={`text-[13px] font-semibold leading-tight ${earned ? 'text-text' : 'text-text-muted'}`}>
+      <span
+        role="img"
+        aria-hidden="true"
+        className={`text-[26px] leading-none ${earned ? '' : 'grayscale opacity-40'}`}
+      >
+        {icon}
+      </span>
+      <span
+        className={`text-[11.5px] font-semibold leading-tight ${
+          earned ? 'text-text' : 'text-text-muted'
+        }`}
+      >
         {title}
-      </div>
-
-      <div className="text-[11.5px] text-text-muted leading-snug">{subtitle || hint}</div>
-
-      {!earned && progress && (
-        <div className="flex items-center gap-2 mt-0.5">
-          <span className="flex-1 h-1.5 bg-input-bg rounded-full overflow-hidden">
-            <span
-              className="block h-full rounded-full bg-border"
-              style={{ width: `${Math.min(100, Math.round(share * 100))}%` }}
-            />
-          </span>
-          <span className="text-[11px] text-text-muted tabular-nums">
-            {progress.current} из {progress.target}
-          </span>
-        </div>
-      )}
-    </div>
+      </span>
+    </button>
   );
 }
