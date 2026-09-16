@@ -5,11 +5,15 @@
 отдельной таблицы наград нет, как и у кубка. Плюс в том, что достижение
 можно добавить задним числом — оно сразу учтёт всю прошлую работу.
 
-Состав (по решению владельца 16.09.2026):
-  🏆 Кубок месяца   — сколько раз человек был чемпионом месяца;
-  📄 Вехи           — 1 / 10 / 25 / 50 / 100 уникальных документов за всё время;
-  🚗 Машина         — 10 уникальных документов за ОДИН день;
-  💎 Алмаз          — СЕКРЕТНОЕ: вернуться после перерыва больше 100 дней.
+Состав:
+  🏆 Кубок месяца        — сколько раз человек был чемпионом месяца;
+  👑 Три кубка подряд    — три победы в трёх месяцах подряд;
+  📄 Вехи                — 1 / 10 / 25 / 50 / 100 документов за всё время;
+  🚗 Машина              — 10 уникальных документов за ОДИН день;
+  🚀 20 за день          — то же, но двадцать;
+  🌙 Ночная смена        — документ между 22:00 и 6:00 по Москве;
+  🧠 Знает все шаблоны   — сделал и договор, и приложение, и акт;
+  👻 Призрак             — СЕКРЕТНОЕ: вернуться после перерыва больше 100 дней.
 
 Что считается одним документом — то же правило, что у кубка
 (`_document_key`): формат не в счёт, один и тот же документ в Word и в PDF
@@ -25,7 +29,7 @@
 from sqlalchemy.orm import Session
 
 from app.champion import MSK, _document_key, as_utc, champion_history, scoring_since
-from app.models import GeneratedDocument, RefreshToken, User
+from app.models import GeneratedDocument, RefreshToken, Template, User
 
 # Вехи по документам. Первая намеренно равна 1: у семи учёток из десяти
 # сейчас ноль документов, и без достижимой первой ступени раздел у них был
@@ -38,8 +42,20 @@ DOC_MILESTONES = (
     (100, "💯", "100 документов"),
 )
 
-MACHINE_TARGET = 10     # уникальных документов за один день
-DIAMOND_DAYS = 100      # перерыв между заходами
+MACHINE_TARGET = 10     # «Машина» — уникальных документов за один день
+ROCKET_TARGET = 20      # «20 за день» — то же, но вдвое больше
+CUP_STREAK_TARGET = 3   # «Три кубка подряд»
+GHOST_DAYS = 100        # «Призрак» — перерыв между заходами
+
+# «Ночная смена»: документ, сделанный с 22:00 до 6:00 по Москве. Границы
+# заданы явно и в подсказке к достижению написаны теми же числами — иначе
+# человек не поймёт, почему ночной документ не засчитался.
+NIGHT_FROM_HOUR = 22
+NIGHT_TO_HOUR = 6
+
+# «Знает все шаблоны» — по одному документу каждого типа. Значения те же,
+# что в Template.doc_type (см. models.py), а не выдуманные здесь.
+ALL_DOC_TYPES = ("contract", "appendix", "act")
 
 
 def longest_absence_days(db: Session, user_id) -> int:
@@ -72,6 +88,27 @@ def longest_absence_days(db: Session, user_id) -> int:
         int((later - earlier).total_seconds() // 86400)
         for earlier, later in zip(stamps, stamps[1:])
     )
+
+
+def _longest_cup_streak(months: list) -> int:
+    """
+    Самая длинная серия побед в идущих подряд месяцах.
+
+    Считается по (год, месяц) из champion_history, а не по подписям: между
+    «декабрём 2026» и «январём 2027» разрыва нет, и арифметика месяцев это
+    знает, а сравнение строк — нет.
+    """
+    best = 0
+    run = 0
+    previous = None
+    for year, month, _label in months:
+        following = previous is not None and (year, month) == (
+            (previous[0], previous[1] + 1) if previous[1] < 12 else (previous[0] + 1, 1)
+        )
+        run = run + 1 if following else 1
+        previous = (year, month)
+        best = max(best, run)
+    return best
 
 
 def _achievement(code, icon, title, hint, earned, subtitle=None, progress=None, count=None):
@@ -112,7 +149,29 @@ def user_achievements(db: Session, user: User) -> list[dict]:
         per_day.setdefault(day, set()).add(_document_key(row))
     best_day = max((len(keys) for keys in per_day.values()), default=0)
 
+    # Ночь — по московскому времени: у человека в браузере может быть любой
+    # часовой пояс, а «ночная смена» — про то, когда он реально работал.
+    night = any(
+        as_utc(row.created_at).astimezone(MSK).hour >= NIGHT_FROM_HOUR
+        or as_utc(row.created_at).astimezone(MSK).hour < NIGHT_TO_HOUR
+        for row in rows
+    )
+
+    # Типы документов берём из шаблонов: в истории генерации лежит только
+    # template_id. У удалённого шаблона связь обнулена (SET NULL) — такой
+    # документ в зачёт типов не идёт, восстановить его тип неоткуда.
+    template_ids = {row.template_id for row in rows if row.template_id}
+    covered_types = set()
+    if template_ids:
+        covered_types = {
+            t.doc_type
+            for t in db.query(Template).filter(Template.id.in_(template_ids)).all()
+            if t.doc_type in ALL_DOC_TYPES
+        }
+
     cups = champion_history(db).get(user.id, [])
+    cup_labels = [label for _year, _month, label in cups]
+    cup_streak = _longest_cup_streak(cups)
 
     out = []
 
@@ -125,8 +184,22 @@ def user_achievements(db: Session, user: User) -> list[dict]:
             title="Кубок месяца",
             hint="Больше всех документов за календарный месяц",
             earned=bool(cups),
-            subtitle=", ".join(cups) if cups else None,
+            subtitle=", ".join(cup_labels) if cups else None,
             count=len(cups) if cups else None,
+        )
+    )
+
+    out.append(
+        _achievement(
+            code="cup_streak",
+            icon="👑",
+            title="Три кубка подряд",
+            hint="Быть чемпионом три месяца подряд",
+            earned=cup_streak >= CUP_STREAK_TARGET,
+            subtitle=None,
+            progress=None
+            if cup_streak >= CUP_STREAK_TARGET
+            else {"current": cup_streak, "target": CUP_STREAK_TARGET},
         )
     )
 
@@ -157,28 +230,66 @@ def user_achievements(db: Session, user: User) -> list[dict]:
         )
     )
 
-    # 💎 Секретное. Пока не получено — наружу уходит «замок» без условия и
+    out.append(
+        _achievement(
+            code="rocket",
+            icon="🚀",
+            title="20 за день",
+            hint="20 документов за один день",
+            earned=best_day >= ROCKET_TARGET,
+            subtitle=("рекорд — %d за день" % best_day) if best_day >= ROCKET_TARGET else None,
+            progress=None
+            if best_day >= ROCKET_TARGET
+            else {"current": best_day, "target": ROCKET_TARGET},
+        )
+    )
+
+    out.append(
+        _achievement(
+            code="night",
+            icon="🌙",
+            title="Ночная смена",
+            hint="Сформировать документ между 22:00 и 6:00",
+            earned=night,
+        )
+    )
+
+    out.append(
+        _achievement(
+            code="all_types",
+            icon="🧠",
+            title="Знает все шаблоны",
+            hint="Сделать договор, приложение и акт",
+            earned=len(covered_types) == len(ALL_DOC_TYPES),
+            subtitle=None,
+            progress=None
+            if len(covered_types) == len(ALL_DOC_TYPES)
+            else {"current": len(covered_types), "target": len(ALL_DOC_TYPES)},
+        )
+    )
+
+    # 👻 Секретное. Пока не получено — наружу уходит «замок» без условия и
     # без прогресса: подсказка «вам осталось не заходить 40 дней» убила бы
     # и секрет, и смысл.
-    diamond_earned = longest_absence_days(db, user.id) >= DIAMOND_DAYS
-    if diamond_earned:
-        diamond = _achievement(
-            code="diamond",
-            icon="💎",
-            title="Алмаз",
+    ghost_earned = longest_absence_days(db, user.id) >= GHOST_DAYS
+    if ghost_earned:
+        ghost = _achievement(
+            code="ghost",
+            icon="👻",
+            title="Призрак",
             hint="Вернуться в сервис после перерыва больше 100 дней",
             earned=True,
             subtitle="перерыв больше 100 дней",
         )
     else:
-        diamond = _achievement(
-            code="diamond",
+        ghost = _achievement(
+            code="ghost",
             icon="🔒",
             title="Секретное достижение",
             hint="Условие скрыто",
             earned=False,
         )
-    diamond["secret"] = True
-    out.append(diamond)
+    ghost["secret"] = True
+    out.append(ghost)
 
     return out

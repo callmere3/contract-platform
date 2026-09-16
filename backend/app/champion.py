@@ -179,8 +179,13 @@ def days_left_in_month(now: datetime | None = None) -> int:
 
 def champion_history(db: Session, now: datetime | None = None) -> dict:
     """
-    {user_id: [«август 2026», …]} — в каких ЗАКРЫТЫХ месяцах человек взял
-    кубок. Текущий месяц не учитывается: он ещё не закончился.
+    {user_id: [(год, месяц, «август 2026»), …]} — в каких ЗАКРЫТЫХ месяцах
+    человек взял кубок, по возрастанию. Текущий месяц не учитывается: он ещё
+    не закончился.
+
+    Номера месяцев отдаём рядом с подписью, а не только подпись: по ним
+    считается серия побед подряд (достижение «Три кубка подряд»), а разбирать
+    её обратно из строки «август 2026» было бы дико.
 
     Один запрос на всю историю вместо запроса на месяц: документы
     раскладываются по месяцам уже в Python. Ничья — кубок всем, кто набрал
@@ -221,7 +226,7 @@ def champion_history(db: Session, now: datetime | None = None) -> dict:
         label = "%s %d" % (_MONTHS_RU[month - 1], year)
         for user_id, keys in counts.items():
             if len(keys) == best:
-                history.setdefault(user_id, []).append(label)
+                history.setdefault(user_id, []).append((year, month, label))
 
     _history_cache.update(
         {"period": prev_label, "computed_at": datetime.now(timezone.utc), "value": history}
