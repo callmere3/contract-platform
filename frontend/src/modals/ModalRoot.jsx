@@ -14,6 +14,7 @@ import { ChampionModal } from './ChampionModal';
 import { ProfileModal } from './ProfileModal';
 import { AchievementModal } from './AchievementModal';
 import { NotificationsModal } from './NotificationsModal';
+import { GuideModal } from './GuideModal';
 import { AlertModal } from './AlertModal';
 
 const REGISTRY = {
@@ -34,6 +35,7 @@ const REGISTRY = {
   profile: ProfileModal,
   achievement: AchievementModal,
   notifications: NotificationsModal,
+  guide: GuideModal,
 };
 
 export function ModalRoot() {

@@ -50,6 +50,16 @@ export function ProfileModal({ level, isTop }) {
         </div>
 
         <div className="flex flex-col gap-2.5">
+          {/* Инструкция первой: она нужна новичку, а смена пароля — раз в
+              полгода. */}
+          <Button
+            variant="secondary"
+            size="sm"
+            className="w-full"
+            onClick={() => openModal('guide')}
+          >
+            Инструкция
+          </Button>
           <Button
             variant="secondary"
             size="sm"
