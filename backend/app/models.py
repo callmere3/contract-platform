@@ -542,6 +542,13 @@ class AnnouncementRecipient(Base):
     )
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
+    # Получатель убрал уведомление у себя. Именно ПОМЕТКА, а не удаление
+    # строки: на строке держится и «кому адресовано», и «прочитал ли» —
+    # админское «прочитали 3 из 7». Удали её физически, и у админа молча
+    # уменьшился бы знаменатель, а человек пропал бы из списка получателей,
+    # будто ему и не отправляли.
+    hidden_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
     announcement: Mapped["Announcement"] = relationship(back_populates="recipients")
 
     __table_args__ = (

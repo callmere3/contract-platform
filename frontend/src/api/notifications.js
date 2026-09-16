@@ -45,6 +45,15 @@ export function sendNotification({ text, toAll, userIds = [] }) {
   });
 }
 
+/**
+ * Убрать уведомление У СЕБЯ. Чужих не касается: на сервере это пометка на
+ * строке «адресовано мне», а не удаление объявления. Админское удаление —
+ * deleteNotification ниже, оно сносит объявление у всех.
+ */
+export function hideMyNotification(id) {
+  return apiJson(`${API}/notifications/mine/${id}`, { method: 'DELETE' });
+}
+
 /** Отправленное — с отметками, кто прочитал (только admin). */
 export function listSentNotifications() {
   return apiJson(`${API}/notifications/sent`);

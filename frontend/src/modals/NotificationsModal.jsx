@@ -4,6 +4,7 @@ import { Button } from '../components/ui/Button';
 import { useModal } from './ModalProvider';
 import {
   emitNotificationsChanged,
+  hideMyNotification,
   listMyNotifications,
   markNotificationsRead,
 } from '../api/notifications';
@@ -21,6 +22,7 @@ export function NotificationsModal({ level, isTop }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [removing, setRemoving] = useState(null);
 
   useEffect(() => {
     let alive = true;
@@ -40,6 +42,25 @@ export function NotificationsModal({ level, isTop }) {
       alive = false;
     };
   }, []);
+
+  /**
+   * Убрать уведомление у себя. У других оно остаётся: на сервере это
+   * пометка на строке «адресовано мне». Из списка убираем сразу, не
+   * дожидаясь перезагрузки, — ответ ничего нового не приносит.
+   */
+  async function remove(id) {
+    setRemoving(id);
+    setError('');
+    try {
+      await hideMyNotification(id);
+      setItems((list) => list.filter((n) => n.id !== id));
+      emitNotificationsChanged();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setRemoving(null);
+    }
+  }
 
   return (
     <Modal
@@ -68,10 +89,22 @@ export function NotificationsModal({ level, isTop }) {
           {items.map((n) => (
             <div
               key={n.id}
-              className={`p-3.5 rounded-input border ${
+              className={`relative p-3.5 pr-9 rounded-input border ${
                 n.read_at ? 'border-border bg-transparent' : 'border-accent bg-accent-soft'
               }`}
             >
+              {/* Убрать у себя. Крестик в углу, а не кнопка в ряд: действие
+                  второстепенное, а читают здесь текст. */}
+              <button
+                type="button"
+                disabled={removing === n.id}
+                onClick={() => remove(n.id)}
+                title="Убрать у себя"
+                aria-label="Убрать уведомление"
+                className="absolute top-2.5 right-2.5 w-6 h-6 flex items-center justify-center rounded-full bg-transparent border-none cursor-pointer text-[13px] text-text-muted hover:text-danger font-sans"
+              >
+                ✕
+              </button>
               <div className="text-[13.5px] text-text leading-relaxed whitespace-pre-line">
                 {n.text}
               </div>

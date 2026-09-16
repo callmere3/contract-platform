@@ -1,12 +1,13 @@
 """
 Уведомления: админ пишет команде, остальные читают.
 
-  GET    /notifications          — мои уведомления (любая роль)
-  GET    /notifications/count    — сколько непрочитанных, для значка в шапке
-  POST   /notifications/read     — отметить мои прочитанными
-  POST   /notifications          — написать (только admin)
-  GET    /notifications/sent     — что я отправил, с отметками прочтения (admin)
-  DELETE /notifications/{id}     — удалить отправленное (admin)
+  GET    /notifications             — мои уведомления (любая роль)
+  GET    /notifications/count       — сколько непрочитанных, для значка в шапке
+  POST   /notifications/read        — отметить мои прочитанными
+  DELETE /notifications/mine/{id}   — убрать уведомление У СЕБЯ (любая роль)
+  POST   /notifications             — написать (только admin)
+  GET    /notifications/sent        — что я отправил, с отметками прочтения (admin)
+  DELETE /notifications/{id}        — удалить отправленное у всех (admin)
 
 ЧТО БЫЛО ЗДЕСЬ РАНЬШЕ. До 16.09.2026 вкладка показывала предложения
 дозаполнить карточку контрагента значениями из формы генерации. Механизм
@@ -15,14 +16,19 @@
 удалять историю ради смены экрана несоразмерно, а вернуть логику можно из
 git.
 
+ДВА РАЗНЫХ УДАЛЕНИЯ, не перепутать. «У себя» (DELETE /mine/{id}) прячет
+уведомление у одного человека и никого больше не касается. «Удалить»
+админом (DELETE /{id}) сносит объявление целиком, у всех сразу.
+
 ПОРЯДОК МАРШРУТОВ ВАЖЕН: /count, /read и /sent зарегистрированы РАНЬШЕ
 /{announcement_id} — иначе FastAPI попробует разобрать слово «sent» как
 uuid и вернёт 422 вместо обработчика (та же грабля, что с /import и
 /export в контрагентах).
 
-КТО ЧТО МОЖЕТ. Читать — любой залогиненный, и только СВОИ строки: чужие
-уведомления не отдаются ни по какому параметру, потому что параметра нет
-вовсе. Писать и удалять — только admin (CAN_SEND_NOTIFICATIONS).
+КТО ЧТО МОЖЕТ. Читать и убирать у себя — любой залогиненный, и только СВОИ
+строки: чужие уведомления не отдаются ни по какому параметру, потому что
+параметра нет вовсе, а скрытие ищет строку по паре (объявление, я). Писать
+и удалять у всех — только admin (CAN_SEND_NOTIFICATIONS).
 """
 import uuid
 from datetime import datetime, timezone
@@ -56,7 +62,12 @@ def _mine(db: Session, user: User):
     return (
         db.query(AnnouncementRecipient, Announcement)
         .join(Announcement, Announcement.id == AnnouncementRecipient.announcement_id)
-        .filter(AnnouncementRecipient.user_id == user.id)
+        .filter(
+            AnnouncementRecipient.user_id == user.id,
+            # Убранные получателем не показываем — но строка жива, и админ
+            # по-прежнему видит его в списке адресатов.
+            AnnouncementRecipient.hidden_at.is_(None),
+        )
         .order_by(Announcement.created_at.desc())
     )
 
@@ -90,6 +101,7 @@ def notifications_count(
         .filter(
             AnnouncementRecipient.user_id == current_user.id,
             AnnouncementRecipient.read_at.is_(None),
+            AnnouncementRecipient.hidden_at.is_(None),
         )
         .count()
     )
@@ -114,11 +126,46 @@ def mark_read(
         .filter(
             AnnouncementRecipient.user_id == current_user.id,
             AnnouncementRecipient.read_at.is_(None),
+            AnnouncementRecipient.hidden_at.is_(None),
         )
         .update({AnnouncementRecipient.read_at: now}, synchronize_session=False)
     )
     db.commit()
     return {"marked": marked}
+
+
+@notifications_router.delete("/mine/{announcement_id}")
+def hide_my_notification(
+    announcement_id: uuid.UUID,
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """
+    Убрать уведомление У СЕБЯ. Чужих не касается и объявление не удаляет —
+    для этого есть админский DELETE /{id}.
+
+    Строка получателя остаётся, проставляется hidden_at: она же служит
+    отметкой «кому отправляли» и «прочитал ли», и админское «прочитали 3 из
+    7» не должно меняться от того, что кто-то прибрал у себя в панели.
+
+    Ищем строку по паре (объявление, я) — поэтому подставить чужой id
+    нечем: уведомление, адресованное другому, просто не найдётся.
+    """
+    row = (
+        db.query(AnnouncementRecipient)
+        .filter(
+            AnnouncementRecipient.announcement_id == announcement_id,
+            AnnouncementRecipient.user_id == current_user.id,
+        )
+        .first()
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Уведомление не найдено")
+
+    if row.hidden_at is None:
+        row.hidden_at = datetime.now(timezone.utc)
+        db.commit()
+    return {"hidden": str(announcement_id)}
 
 
 @notifications_router.get("/sent", dependencies=[Depends(require_role(*CAN_SEND_NOTIFICATIONS))])
@@ -220,7 +267,9 @@ def delete_announcement(
     announcement_id: uuid.UUID, db: Session = Depends(get_session)
 ) -> dict:
     """
-    Удалить отправленное — для опечаток и отменённых новостей.
+    Удалить отправленное У ВСЕХ — для опечаток и отменённых новостей.
+    Не путать с DELETE /mine/{id}, которым получатель прячет уведомление
+    только у себя.
 
     Адресные строки уходят каскадом (см. модель), поэтому уведомление
     исчезает и из чужих панелей, и из счётчиков. Это осознанно: «отозвать»
