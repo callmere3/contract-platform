@@ -94,36 +94,71 @@ body {
 
 /* Плитка достижения, полученного только что: проявляется из серой в
    цветную при открытии профиля. Задержку задаёт инлайновый animation-delay
-   — чтобы несколько новых значков зажигались по очереди, а не разом. */
+   — чтобы несколько новых значков зажигались по очереди, а не разом.
+
+   Полторы секунды и заметный размах: девятисот миллисекунд не хватало,
+   значок успевал «мигнуть» — человек видел результат, но не событие. */
 @keyframes achievement-reveal {
-  from {
+  0% {
     filter: grayscale(1);
-    opacity: 0.35;
-    transform: scale(0.92);
+    opacity: 0.2;
+    transform: scale(0.5) rotate(-14deg);
   }
-  60% {
-    transform: scale(1.06);
+  45% {
+    filter: grayscale(0.15);
+    opacity: 1;
+    transform: scale(1.4) rotate(8deg);
   }
-  to {
+  70% {
+    transform: scale(0.92) rotate(-3deg);
+  }
+  85% {
+    transform: scale(1.08) rotate(1deg);
+  }
+  100% {
     filter: none;
     opacity: 1;
-    transform: scale(1);
+    transform: scale(1) rotate(0deg);
   }
 }
 
 .achievement-reveal {
-  animation: achievement-reveal 900ms ease-out both;
+  animation: achievement-reveal 1500ms cubic-bezier(0.2, 0.8, 0.25, 1) both;
 }
 
-/* Всплывашка «получено достижение» — выезжает снизу. */
+/* Подсветка самой плитки под значком: вспышка акцентом, которая гаснет.
+   Без неё «оживает» только эмодзи, и на сетке из пятнадцати плиток это
+   легко пропустить. */
+@keyframes achievement-reveal-card {
+  0% {
+    border-color: var(--c-accent);
+    box-shadow: 0 0 0 0 var(--c-accent-soft);
+  }
+  40% {
+    border-color: var(--c-accent);
+    box-shadow: 0 0 0 8px var(--c-accent-soft);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(0, 0, 0, 0);
+  }
+}
+
+.achievement-reveal-card {
+  animation: achievement-reveal-card 1500ms ease-out both;
+}
+
+/* Всплывашка «получено достижение» — выезжает снизу.
+   Двигаем ТОЛЬКО по вертикали: по горизонтали элемент центрируется
+   полями (left/right + margin auto), а не трансформой. Иначе анимация и
+   центрирование спорили бы за одно свойство transform. */
 @keyframes achievement-toast-in {
   from {
     opacity: 0;
-    transform: translate(-50%, 14px);
+    transform: translateY(14px);
   }
   to {
     opacity: 1;
-    transform: translate(-50%, 0);
+    transform: translateY(0);
   }
 }
 
@@ -134,6 +169,7 @@ body {
 /* Кому анимации мешают — тем их нет, значок просто появляется цветным. */
 @media (prefers-reduced-motion: reduce) {
   .achievement-reveal,
+  .achievement-reveal-card,
   .achievement-toast {
     animation: none;
   }

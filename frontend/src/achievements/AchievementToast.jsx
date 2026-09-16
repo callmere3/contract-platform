@@ -42,7 +42,10 @@ export function AchievementToast() {
   return (
     <div
       role="status"
-      className="achievement-toast fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3.5 bg-surface border border-accent rounded-card shadow-card pl-4 pr-3 py-3 max-w-[360px]"
+      // Центрируем полями (left-0 right-0 + mx-auto), а не -translate-x-1/2:
+      // трансформу занимает анимация выезда, и два механизма на одном
+      // свойстве — верный способ однажды разъехаться.
+      className="achievement-toast fixed bottom-6 left-0 right-0 mx-auto w-fit z-40 flex items-center gap-3.5 bg-surface border border-accent rounded-card shadow-card pl-4 pr-3 py-3 max-w-[360px]"
     >
       <span className="text-[34px] leading-none flex-shrink-0" aria-hidden="true">
         {current.icon}

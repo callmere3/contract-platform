@@ -140,7 +140,8 @@ function AchievementCard({ achievement, onOpen, isFresh = false, revealIndex = 0
         earned
           ? 'border-border bg-surface'
           : 'border-dashed border-border bg-transparent'
-      }`}
+      } ${isFresh ? 'achievement-reveal-card' : ''}`}
+      style={isFresh ? { animationDelay: `${revealIndex * 320}ms` } : undefined}
     >
       <span
         role="img"
@@ -149,7 +150,7 @@ function AchievementCard({ achievement, onOpen, isFresh = false, revealIndex = 0
           isFresh ? 'achievement-reveal' : ''
         }`}
         // Несколько новых значков зажигаются по очереди, а не разом.
-        style={isFresh ? { animationDelay: `${revealIndex * 220}ms` } : undefined}
+        style={isFresh ? { animationDelay: `${revealIndex * 320}ms` } : undefined}
       >
         {icon}
       </span>
