@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { useModal } from '../modals/ModalProvider';
-import { fetchCatalogs, listTracks } from '../api/nomenclature';
+import { listTracks } from '../api/nomenclature';
 
 /**
  * ML Finance → «Номенклатура»: каталог треков лейбла с правообладателями,
@@ -23,6 +23,11 @@ import { fetchCatalogs, listTracks } from '../api/nomenclature';
  *     продуктах: человек ходит между этими экранами, и поиск должен быть в
  *     одном и том же месте.
  *
+ * ФИЛЬТРОВ РОВНО ДВА: общий поиск и правообладатель. Выпадающий список
+ * каталогов тут был и убран (17.09.2026): каталогов 502, и выбрать в таком
+ * списке что-то нереально — он занимает место и создаёт видимость
+ * инструмента. На сервере параметр остался, но экрану он не нужен.
+ *
  * В ТАБЛИЦЕ ТОЛЬКО ТО, ПО ЧЕМУ ТРЕК ОПОЗНАЮТ: артикул, ISRC/UPC, название,
  * исполнитель и права. Всё остальное — авторы слов и музыки, альбом, жанр,
  * каталог, доли на уровне трека, дата прав — в карточке, которая открывается
@@ -39,29 +44,20 @@ const PAGE_SIZE = 50;
 export function NomenclaturePage() {
   const [q, setQ] = useState('');
   const [owner, setOwner] = useState('');
-  const [catalog, setCatalog] = useState('');
   const [page, setPage] = useState(1);
 
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [catalogs, setCatalogs] = useState([]);
 
   const { openModal } = useModal();
-
-  // Справочник каталогов тянется один раз: он меняется только с импортом.
-  useEffect(() => {
-    fetchCatalogs()
-      .then((r) => setCatalogs(r.catalogs ?? []))
-      .catch(() => {});
-  }, []);
 
   // Смена фильтра — назад на первую страницу: иначе, отфильтровав до десятка
   // строк, останешься на «стр. 40», где пусто.
   useEffect(() => {
     setPage(1);
-  }, [q, owner, catalog]);
+  }, [q, owner]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -70,7 +66,6 @@ export function NomenclaturePage() {
       const data = await listTracks({
         q: q.trim(),
         owner: owner.trim(),
-        catalog,
         page,
         pageSize: PAGE_SIZE,
       });
@@ -81,7 +76,7 @@ export function NomenclaturePage() {
     } finally {
       setLoading(false);
     }
-  }, [q, owner, catalog, page]);
+  }, [q, owner, page]);
 
   useEffect(() => {
     const timer = setTimeout(load, 300);
@@ -124,18 +119,6 @@ export function NomenclaturePage() {
             placeholder="Правообладатель"
             className={`w-[200px] ${inputClass}`}
           />
-          <select
-            value={catalog}
-            onChange={(e) => setCatalog(e.target.value)}
-            className="bg-input-bg border border-border rounded-input px-3 py-2.5 text-sm text-text font-sans outline-none max-w-[220px]"
-          >
-            <option value="">Все каталоги</option>
-            {catalogs.map((v) => (
-              <option key={v} value={v}>
-                {v}
-              </option>
-            ))}
-          </select>
           {/* Импорт/экспорт пока не работает: каталог заливают выгрузкой на
               сервере (ops/import_tracks.py). Кнопка стоит там же, где на
               «Контрагентах», и ждёт своего экрана — вместе с решением, кому
@@ -154,7 +137,7 @@ export function NomenclaturePage() {
         {!loading && error && <div className="px-5 py-4 text-[13px] text-danger">{error}</div>}
         {!loading && !error && items.length === 0 && (
           <div className="px-5 py-4 text-[13px] text-text-muted">
-            {q || owner || catalog ? 'Ничего не найдено.' : 'Каталог пуст.'}
+            {q || owner ? 'Ничего не найдено.' : 'Каталог пуст.'}
           </div>
         )}
 

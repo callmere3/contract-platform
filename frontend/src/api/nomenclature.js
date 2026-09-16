@@ -29,15 +29,6 @@ export function fetchTrackCard(trackId) {
   return apiJson(`${API}/nomenclature/${trackId}`);
 }
 
-/**
- * Каталоги для фильтра. Справочник считается ПО ДАННЫМ (в выгрузке их 502),
- * а не задан списком: каталог приезжает из Dista, и любой зафиксированный
- * перечень разошёлся бы с ним на первом же импорте.
- */
-export function fetchCatalogs() {
-  return apiJson(`${API}/nomenclature/catalogs`);
-}
-
 /** «80» → «80%»; пусто → прочерк. */
 export function formatPercent(value) {
   if (value === null || value === undefined || value === '') return '—';
