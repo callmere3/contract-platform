@@ -17,6 +17,7 @@
   🧠 Знает все шаблоны   — сделал и договор, и приложение, и акт;
   🔗 На связи            — приложение и акт одному контрагенту подряд;
   💰 Мешок денег         — договор с авансом;
+  📋 Сбор данных         — карточка контрагента, заполненная полностью;
   💔 Разбитое сердце     — вышел из формы, не сохранив черновик;
   👻 Призрак             — СЕКРЕТНОЕ: вернуться после перерыва больше 100 дней.
 
@@ -31,10 +32,18 @@
 секретное: пока не получено, наружу уходит только «замок» без условия,
 иначе никакого секрета не остаётся.
 """
+import uuid
+
 from sqlalchemy.orm import Session
 
+from app.audit import SOURCE_KEY, SOURCE_SCRIPT
 from app.champion import MSK, _document_key, as_utc, champion_history, scoring_since
-from app.models import GeneratedDocument, RefreshToken, Template, User, UserEvent
+from app.models import AuditLog, Contragent, GeneratedDocument, RefreshToken, Template, User, UserEvent
+# Правило «карточка заполнена полностью» берём ГОТОВЫМ, а не переписываем
+# здесь: тем же правилом красная подсветка отмечает неполные карточки в базе
+# контрагентов, и разойтись эти два места не должны — человек видит карточку
+# белой, а достижение молчит.
+from app.routers_contragents import _contragent_is_complete
 
 # Названия месяцев с большой буквы — плитка кубка подписана «Август 2026».
 # Отдельным списком, а не .capitalize() от справочника champion.py: тот
@@ -86,6 +95,11 @@ PAIR_WINDOW_SECONDS = 5 * 60
 # АВАНС_ОБЯЗАТЕЛЬСТВО (см. app/tags.py, тип договора — это две оси).
 ADVANCE_PREFIX = "АВАНС"
 
+# «Сбор данных»: какие записи журнала считаем «человек работал с карточкой».
+# Импорт сюда НЕ входит: он заливает сотни карточек разом, и заполненность
+# любой из них — заслуга выгрузки, а не того, кто нажал кнопку.
+CARD_ACTIONS = ("contragent.create", "contragent.update")
+
 # «Разбитое сердце»: имя события в user_events. Должно совпадать с тем, что
 # принимает POST /profile/events (ALLOWED_EVENTS там же).
 DRAFT_DISCARDED_EVENT = "draft_discarded"
@@ -120,6 +134,61 @@ def longest_absence_days(db: Session, user_id) -> int:
     return max(
         int((later - earlier).total_seconds() // 86400)
         for earlier, later in zip(stamps, stamps[1:])
+    )
+
+
+def filled_cards(db: Session, user_id) -> int:
+    """
+    Сколько карточек контрагентов, которых человек касался, заполнены
+    полностью ПРЯМО СЕЙЧАС.
+
+    Кто именно заполнил поле, нигде не хранится: у contragents нет ни
+    «кем создан», ни «кем изменён». Поэтому идём от журнала — берём
+    карточки, которые человек заводил или правил, и смотрим их текущее
+    состояние. Заполнил сам или дополнил чужую — одинаково: занятие одно и
+    то же, а делить поля по авторам не по чему.
+
+    Отсюда и свойство, которое стоит знать: достижение считается ПО
+    СЕГОДНЯШНЕМУ состоянию карточки. Если из неё потом вычистят ИНН,
+    значок пропадёт — как и красная подсветка вернётся в базе. Хранить
+    «однажды было заполнено» значило бы завести таблицу наград, которой у
+    нас намеренно нет.
+
+    Записи, сделанные скриптами (meta.via='script'), отбрасываем — по той
+    же причине, по которой их прячет журнал: это не работа человека.
+    Фильтруем в Python, а не в SQL: выборка маленькая (действия ОДНОГО
+    человека с карточками), а условие на JSONB в запросе пришлось бы писать
+    по-разному для Postgres и для SQLite, на котором гоняются прогоны.
+    """
+    touched = set()
+    for row in (
+        db.query(AuditLog)
+        .filter(
+            AuditLog.user_id == user_id,
+            AuditLog.entity_type == "contragent",
+            AuditLog.action.in_(CARD_ACTIONS),
+            AuditLog.created_at >= scoring_since(),
+        )
+        .all()
+    ):
+        if (row.meta or {}).get(SOURCE_KEY) == SOURCE_SCRIPT:
+            continue
+        if not row.entity_id:
+            continue
+        try:
+            touched.add(uuid.UUID(row.entity_id))
+        except ValueError:
+            # entity_id — обычная строка, и в старых записях там может
+            # лежать что угодно. Не разобралось — просто не наша карточка.
+            continue
+
+    if not touched:
+        return 0
+
+    return sum(
+        1
+        for card in db.query(Contragent).filter(Contragent.id.in_(touched)).all()
+        if _contragent_is_complete(card)
     )
 
 
@@ -245,6 +314,11 @@ def user_achievements(db: Session, user: User) -> list[dict]:
         .first()
         is not None
     )
+
+    # 📋 Полностью заполненные карточки контрагентов, которых человек
+    # касался. Единственное достижение не про генерацию: заполненная база —
+    # это работа, которой документы потом и живут.
+    complete_cards = filled_cards(db, user.id)
 
     cups = champion_history(db).get(user.id, [])
     cup_streak = _longest_cup_streak(cups)
@@ -380,6 +454,18 @@ def user_achievements(db: Session, user: User) -> list[dict]:
             title="Мешок денег",
             hint="Сформировать договор с авансом",
             earned=advance_contract,
+        )
+    )
+
+    out.append(
+        _achievement(
+            code="data_collector",
+            icon="📋",
+            title="Сбор данных",
+            hint="Заполнить карточку контрагента полностью: ФИО, страна, тип, "
+                 "рег. номер, номер и дата договора, роялти",
+            earned=complete_cards > 0,
+            subtitle=("полных карточек: %d" % complete_cards) if complete_cards else None,
         )
     )
 
