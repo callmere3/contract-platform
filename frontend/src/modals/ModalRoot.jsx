@@ -13,6 +13,7 @@ import { ConfirmDuplicateContragentModal } from './ConfirmDuplicateContragentMod
 import { ChampionModal } from './ChampionModal';
 import { ProfileModal } from './ProfileModal';
 import { AchievementModal } from './AchievementModal';
+import { NotificationsModal } from './NotificationsModal';
 import { AlertModal } from './AlertModal';
 
 const REGISTRY = {
@@ -32,6 +33,7 @@ const REGISTRY = {
   champion: ChampionModal,
   profile: ProfileModal,
   achievement: AchievementModal,
+  notifications: NotificationsModal,
 };
 
 export function ModalRoot() {

@@ -222,7 +222,8 @@
           <td class="yes">✓<span class="cap">только свои</span></td>
         </tr>
         <tr><td class="act">Удаление записей истории генерации</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
-        <tr><td class="act">Вкладка «Уведомления» <sup>3</sup></td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
+        <tr><td class="act">Вкладка «Уведомления»: написать команде <sup>3</sup></td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
+        <tr><td class="act">Значок уведомлений в шапке: получать и читать <sup>3</sup></td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr>
         <tr><td class="act">Вкладка «Dista Connect» <span style="color:var(--text-muted);font-size:12px">(сверка с базой Dista Music)</span></td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
         <tr><td class="act">Вкладка «Кубок» <sup>6</sup> <span style="color:var(--text-muted);font-size:12px">(обладатель кубка и рейтинг месяца)</span></td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
         <tr><td class="act">Участвует в зачёте кубка <sup>6</sup></td><td class="no">—</td><td class="no">—</td><td class="yes">✓</td><td class="no">—</td><td class="yes">✓</td></tr>
@@ -252,8 +253,8 @@
       <p>Тип договора, реквизиты, рег. номер, номер договора и псевдонимы менеджер правит независимо от послабления <sup>4</sup> — это отдельные права (<code>CAN_EDIT_CONTRACT_FAMILY</code>, <code>CAN_EDIT_REQUISITES</code>, <code>CAN_EDIT_REG_NUMBER</code>, <code>CAN_EDIT_CONTRACT_NUMBER</code>, <code>CAN_EDIT_NICKNAMES</code>, все = <code>ROLES</code>). Проверка поле-уровневая: эндпоинт правки открыт всем, но передачу поля, на которое права нет, сервер отклоняет (403). Когда послабление снимут, останутся именно они.</p>
     </div>
     <div class="note">
-      <b><sup>3</sup> «Уведомления» — дозаполнение карточек, только админ</b>
-      <p>Менеджеры вписывают недостающие карточкам данные (прежде всего рег. номер) прямо в форму генерации. Эти значения поднимаются во вкладку «Уведомления», где админ галочкой переносит их в карточку или крестиком отклоняет. Кривое или расходящееся значение показывается как ⚠ — применить нельзя, но видно, что документ стоит проверить. Только у админа (<code>CAN_VIEW_NOTIFICATIONS</code>): это правка эталонной базы.</p>
+      <b><sup>3</sup> «Уведомления» — админ пишет, команда читает</b>
+      <p>Админ пишет во вкладке «Уведомления» — всем сразу или выбранным людям; у остальных в шапке загорается значок 🔔 с числом непрочитанных. Открыть панель значит прочитать: отметка ставится на всё разом. Админ видит «прочитали 3 из 7» и по нажатию — поимённо. Писать и удалять может только он (<code>CAN_SEND_NOTIFICATIONS</code>), а читать — любая роль, и только свои: эндпоинты чтения отдают строки текущего пользователя, параметра «чьи» у них нет. Отключённые и сам автор в адресаты не попадают. Удаление уносит уведомление и из чужих панелей. <b>Раньше</b> вкладка показывала предложения дозаполнить карточку контрагента — механизм убран целиком 16.09.2026.</p>
     </div>
     <div class="note">
       <b><sup>6</sup> Кубок месяца</b>

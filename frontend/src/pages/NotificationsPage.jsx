@@ -1,40 +1,45 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Badge } from '../components/ui/Badge';
+import { useCallback, useEffect, useState } from 'react';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
+import { listUsers } from '../api/users';
 import {
-  applyNotification,
-  dismissNotification,
+  deleteNotification,
   emitNotificationsChanged,
-  listNotifications,
+  listSentNotifications,
+  sendNotification,
 } from '../api/notifications';
 
 /**
- * "Уведомления" — только admin (см. canViewNotifications / CAN_VIEW_NOTIFICATIONS).
+ * «Уведомления» — только admin (canSendNotifications / CAN_SEND_NOTIFICATIONS).
+ * Здесь их ПИШУТ; читают все остальные значком в шапке.
  *
- * Предложения дозаполнить карточку контрагента данными, которые менеджер вписал
- * в форму генерации. Две ситуации, по-разному оформленные (severity с бэкенда):
- *   suggestion — поле карточки пустое, значение валидно: кнопки Применить/Отклонить;
- *   warning    — значение кривое или расходится с уже заполненной карточкой:
- *                ⚠ с причиной, применить нельзя (только Скрыть — админ разобрался).
+ * Было до 16.09.2026: предложения дозаполнить карточку контрагента
+ * значениями из формы генерации. Механизм убран целиком — вместе с
+ * app/suggestions.py и захватом при генерации.
  *
- * Сгруппировано по контрагенту: у одного человека может накопиться несколько
- * недостающих полей, удобнее видеть их вместе.
- *
- * После каждого действия шлём window-событие (emitNotificationsChanged), чтобы
- * бейдж-счётчик в шапке обновился сразу, не дожидаясь своего опроса.
+ * Два блока: форма отправки сверху и список отправленного снизу, с
+ * отметками «прочитали N из M» — счёт приходит с сервера, строкой на
+ * каждого адресата.
  */
 export function NotificationsPage() {
-  const [items, setItems] = useState([]);
+  const [text, setText] = useState('');
+  const [toAll, setToAll] = useState(true);
+  const [picked, setPicked] = useState([]);   // id выбранных получателей
+  const [people, setPeople] = useState([]);
+  const [sent, setSent] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [busyId, setBusyId] = useState(null);
+  const [opened, setOpened] = useState(null); // у какого уведомления раскрыт список
 
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      setItems(await listNotifications());
+      const [users, notes] = await Promise.all([listUsers(), listSentNotifications()]);
+      // Отключённых в получатели не предлагаем — сервер их всё равно отсеет.
+      setPeople(users.filter((u) => u.is_active));
+      setSent(notes);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -46,155 +51,196 @@ export function NotificationsPage() {
     load();
   }, [load]);
 
-  async function act(id, fn) {
-    setBusyId(id);
+  function togglePerson(id) {
+    setPicked((list) => (list.includes(id) ? list.filter((x) => x !== id) : [...list, id]));
+  }
+
+  async function submit() {
+    const body = text.trim();
+    if (!body) {
+      setError('Напишите текст уведомления.');
+      return;
+    }
+    if (!toAll && picked.length === 0) {
+      setError('Выберите, кому отправить, или переключитесь на «всем».');
+      return;
+    }
+    setBusy(true);
     setError('');
     try {
-      await fn(id);
-      // Убираем обработанную запись из списка сразу, без полного перезапроса —
-      // отзывчивее, а остальные строки не мигают.
-      setItems((list) => list.filter((i) => i.id !== id));
+      await sendNotification({ text: body, toAll, userIds: picked });
+      setText('');
+      setPicked([]);
+      setToAll(true);
+      await load();
+      // Сам админ адресатом не становится, но значок мог измениться у него
+      // же в другой вкладке — событие дешёвое, пусть будет.
       emitNotificationsChanged();
     } catch (e) {
       setError(e.message);
     } finally {
-      setBusyId(null);
+      setBusy(false);
     }
   }
 
-  /**
-   * «Применить все» для группы контрагента — по просьбе владельца («выборочно
-   * ИЛИ целиком»). Применяем только actionable-строки (severity=suggestion):
-   * ⚠-предупреждения (расхождение/кривой ввод) применять нельзя, их пропускаем.
-   * Последовательно, чтобы reg_number-уникальность и т.п. не гонялись параллельно.
-   */
-  async function applyGroup(rows) {
-    const actionable = rows.filter((r) => r.severity === 'suggestion');
-    if (actionable.length === 0) return;
-    setBusyId(`group:${rows[0].contragent_id}`);
+  async function remove(id) {
+    setBusy(true);
     setError('');
-    const doneIds = [];
     try {
-      for (const r of actionable) {
-        await applyNotification(r.id);
-        doneIds.push(r.id);
-      }
+      await deleteNotification(id);
+      setSent((list) => list.filter((n) => n.id !== id));
+      emitNotificationsChanged();
     } catch (e) {
       setError(e.message);
     } finally {
-      if (doneIds.length) {
-        setItems((list) => list.filter((i) => !doneIds.includes(i.id)));
-        emitNotificationsChanged();
-      }
-      setBusyId(null);
+      setBusy(false);
     }
   }
 
-  // Группировка по контрагенту с сохранением порядка (первое появление).
-  const groups = useMemo(() => {
-    const byId = new Map();
-    for (const it of items) {
-      if (!byId.has(it.contragent_id)) {
-        byId.set(it.contragent_id, { id: it.contragent_id, title: it.contragent_title, rows: [] });
-      }
-      byId.get(it.contragent_id).rows.push(it);
-    }
-    return [...byId.values()];
-  }, [items]);
-
   return (
-    <div className="max-w-[980px] mx-auto px-8 pt-12 pb-20">
+    <div className="max-w-[880px] mx-auto px-8 pt-12 pb-20 flex flex-col gap-6">
+      {error && (
+        <Card>
+          <div className="p-4 text-[13px] text-danger">{error}</div>
+        </Card>
+      )}
+
       <Card>
-        <div className="flex items-center justify-between p-5 border-b border-border">
-          <span className="text-sm font-semibold text-text">Уведомления</span>
-          {!loading && items.length > 0 && (
-            <span className="text-[13px] text-text-muted">{items.length}</span>
-          )}
+        <div className="p-5 border-b border-border text-sm font-semibold text-text">
+          Написать уведомление
+        </div>
+        <div className="p-5 flex flex-col gap-4">
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            rows={4}
+            maxLength={2000}
+            placeholder="Например: с понедельника все акты по ИП делаем через новый шаблон"
+            className="w-full bg-input-bg border border-border rounded-input px-3 py-2.5 text-[14px] text-text font-sans outline-none resize-y leading-relaxed"
+          />
+
+          <div className="flex flex-col gap-2.5">
+            <div className="flex items-center gap-4 text-[13px]">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="radio" checked={toAll} onChange={() => setToAll(true)} />
+                <span className={toAll ? 'text-text font-medium' : 'text-text-secondary'}>
+                  Всем
+                </span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="radio" checked={!toAll} onChange={() => setToAll(false)} />
+                <span className={!toAll ? 'text-text font-medium' : 'text-text-secondary'}>
+                  Выбрать получателей
+                </span>
+              </label>
+            </div>
+
+            {!toAll && (
+              <div className="flex flex-wrap gap-2">
+                {people.map((u) => {
+                  const on = picked.includes(u.id);
+                  return (
+                    <button
+                      key={u.id}
+                      type="button"
+                      onClick={() => togglePerson(u.id)}
+                      className={`text-[13px] px-3 py-1.5 rounded-input border cursor-pointer ${
+                        on
+                          ? 'border-accent bg-accent-soft text-accent font-semibold'
+                          : 'border-border bg-transparent text-text-secondary'
+                      }`}
+                    >
+                      {u.full_name || u.username}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center justify-between">
+            <span className="text-[12px] text-text-muted">
+              {toAll
+                ? 'Получат все действующие сотрудники, кроме вас'
+                : `Выбрано: ${picked.length}`}
+            </span>
+            <Button variant="primary" size="sm" disabled={busy} onClick={submit}>
+              {busy ? 'Отправляем…' : 'Отправить'}
+            </Button>
+          </div>
+        </div>
+      </Card>
+
+      <Card>
+        <div className="p-5 border-b border-border text-sm font-semibold text-text">
+          Отправленные
         </div>
 
-        {loading && <div className="px-5 py-4 text-[13px] text-text-muted">Загрузка…</div>}
-        {!loading && error && <div className="px-5 py-4 text-[13px] text-danger">{error}</div>}
-        {!loading && !error && items.length === 0 && (
-          <div className="px-5 py-8 text-[13px] text-text-muted text-center">
-            Новых уведомлений нет. Здесь появятся данные, которые менеджеры вписывают
-            в форму генерации, — чтобы дозаполнить ими карточки контрагентов.
-          </div>
+        {loading && <div className="p-5 text-[13px] text-text-muted">Загружаем…</div>}
+
+        {!loading && sent.length === 0 && (
+          <div className="p-5 text-[13px] text-text-muted">Пока ничего не отправляли.</div>
         )}
 
         {!loading &&
-          groups.map((g) => {
-            const actionable = g.rows.filter((r) => r.severity === 'suggestion').length;
-            const groupBusy = busyId === `group:${g.id}`;
-            return (
-            <div key={g.id} className="border-b border-border last:border-b-0">
-              <div className="px-5 pt-4 pb-2 flex items-center justify-between gap-3">
-                <span className="text-[13px] font-semibold text-text">{g.title}</span>
-                {actionable > 1 && (
-                  <Button variant="secondary" size="sm" disabled={groupBusy} onClick={() => applyGroup(g.rows)}>
-                    {groupBusy ? 'Применяем…' : `Применить все (${actionable})`}
-                  </Button>
-                )}
+          sent.map((n) => (
+            <div key={n.id} className="px-5 py-4 border-b border-border last:border-b-0">
+              <div className="text-[13.5px] text-text leading-relaxed whitespace-pre-line">
+                {n.text}
               </div>
-              {g.rows.map((it) => (
-                <NotificationRow
-                  key={it.id}
-                  item={it}
-                  busy={busyId === it.id}
-                  onApply={() => act(it.id, applyNotification)}
-                  onDismiss={() => act(it.id, dismissNotification)}
-                />
-              ))}
-            </div>
-            );
-          })}
-      </Card>
+              <div className="flex items-center flex-wrap gap-2 mt-2 text-[12px] text-text-muted">
+                <span>{formatWhen(n.created_at)}</span>
+                <span className="text-border">·</span>
+                {/* Прочтения раскрываются по нажатию: имена нужны редко, а
+                    место занимают всегда. Список уже пришёл с сервера. */}
+                <button
+                  type="button"
+                  onClick={() => setOpened(opened === n.id ? null : n.id)}
+                  className="bg-transparent border-none p-0 cursor-pointer text-[12px] text-accent font-semibold font-sans"
+                >
+                  прочитали {n.read_count} из {n.total}
+                </button>
+                <span className="text-border">·</span>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => remove(n.id)}
+                  className="bg-transparent border-none p-0 cursor-pointer text-[12px] text-text-muted font-sans hover:text-danger"
+                >
+                  удалить
+                </button>
+              </div>
 
-      <div className="text-[11px] text-text-muted mt-4 leading-snug">
-        «Применить» переносит значение в карточку контрагента (титл и номер договора
-        не затрагиваются). ⚠ — менеджер вписал значение, которое не проходит проверку
-        или расходится с карточкой: применить нельзя, это повод проверить документ.
-      </div>
+              {opened === n.id && (
+                <div className="mt-2.5 flex flex-wrap gap-1.5">
+                  {n.recipients.map((r) => (
+                    <span
+                      key={r.id}
+                      title={r.read_at ? `прочитал(а) ${formatWhen(r.read_at)}` : 'ещё не открыл(а)'}
+                      className={`text-[11.5px] px-2 py-1 rounded-badge border ${
+                        r.read_at
+                          ? 'border-transparent bg-accent-soft text-accent'
+                          : 'border-dashed border-border text-text-muted'
+                      }`}
+                    >
+                      {r.full_name || r.username}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+      </Card>
     </div>
   );
 }
 
-function NotificationRow({ item, busy, onApply, onDismiss }) {
-  const isWarning = item.severity === 'warning';
-  return (
-    <div className="flex items-center justify-between gap-4 px-5 py-3.5 border-t border-border first:border-t-0">
-      <div className="min-w-0">
-        <div className="text-[14px] text-text flex items-center gap-2 flex-wrap">
-          <span className="text-text-muted">{item.field_label}:</span>
-          <span className="font-semibold">{item.value_display}</span>
-          {isWarning && <Badge variant="danger">⚠ {item.reason}</Badge>}
-        </div>
-        <div className="text-[12px] text-text-muted mt-0.5 flex items-center gap-1.5 flex-wrap">
-          {item.card_current_display && (
-            <>
-              <span>в карточке: {item.card_current_display}</span>
-              <span className="text-border">·</span>
-            </>
-          )}
-          {item.suggested_by && <span>вписал(а) {item.suggested_by}</span>}
-        </div>
-      </div>
-
-      <div className="flex items-center gap-2.5 flex-shrink-0">
-        {isWarning ? (
-          <Button variant="secondary" size="sm" disabled={busy} onClick={onDismiss}>
-            Скрыть
-          </Button>
-        ) : (
-          <>
-            <Button variant="primary" size="sm" disabled={busy} onClick={onApply}>
-              Применить
-            </Button>
-            <Button variant="secondary" size="sm" disabled={busy} onClick={onDismiss}>
-              Отклонить
-            </Button>
-          </>
-        )}
-      </div>
-    </div>
-  );
+function formatWhen(iso) {
+  return new Date(iso).toLocaleString('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }

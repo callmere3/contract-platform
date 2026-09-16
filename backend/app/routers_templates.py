@@ -39,7 +39,6 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.audit import log_generation
-from app.suggestions import capture_suggestions
 from app.auth import get_current_user, require_role
 from app.config import settings
 from app.context_builder import (
@@ -964,21 +963,9 @@ def generate_document(
         # документ (у контрагента их может быть несколько, см. GeneratedDocument).
         nickname = data.get("nickname") or None
 
-        generation_id = log_generation(
+        log_generation(
             db, current_user, template.id, template.name, format, data,
             contragent_id=contragent_id, contragent_title=contragent_title, nickname=nickname,
         )
-
-        # Захват предложений дозаполнить карточку — только когда генерация привязана
-        # к контрагенту (иначе некуда предлагать). Значения, что менеджер вписал в
-        # форму и которых нет/иначе в карточке, поднимаются во вкладку "Уведомления"
-        # для админа (см. app/suggestions.py). Не должен ронять генерацию — внутри
-        # свой try/except, документ уже собран выше.
-        if contragent is not None:
-            capture_suggestions(
-                db, current_user, contragent, data,
-                [(f.placeholder, f.maps_to) for f in template.fields],
-                generation_id,
-            )
 
     return response

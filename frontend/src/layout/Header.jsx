@@ -6,7 +6,7 @@ import { useAuth } from '../auth/AuthContext';
 import {
   canViewUsers,
   canViewGenerationHistory,
-  canViewNotifications,
+  canSendNotifications,
   canUseDistaSync,
   canViewChampionBoard,
 } from '../auth/permissions';
@@ -35,17 +35,16 @@ export function Header({ companyName = 'ML Docs' }) {
   const { user } = useAuth();
   const { openModal } = useModal();
 
-  // Счётчик непросмотренных уведомлений (только admin). Обновляем на монтировании,
-  // раз в минуту и мгновенно по window-событию 'notifications-changed', которое
-  // шлёт NotificationsPage после применения/отклонения — иначе бейдж отставал бы.
-  const showNotifications = canViewNotifications(user?.role);
-  const [notifCount, setNotifCount] = useState(0);
+  // Непрочитанные уведомления — у ВСЕХ ролей: значок читают все, пишет их
+  // только админ. Обновляем на монтировании, раз в минуту и мгновенно по
+  // window-событию 'notifications-changed' (его шлёт панель после прочтения и
+  // вкладка админа после отправки) — иначе значок отставал бы на минуту.
+  const [unread, setUnread] = useState(0);
   useEffect(() => {
-    if (!showNotifications) return undefined;
     let alive = true;
     const refresh = () =>
       notificationsCount()
-        .then((r) => alive && setNotifCount(r.pending || 0))
+        .then((r) => alive && setUnread(r.unread || 0))
         .catch(() => {});
     refresh();
     const timer = setInterval(refresh, 60_000);
@@ -55,14 +54,16 @@ export function Header({ companyName = 'ML Docs' }) {
       clearInterval(timer);
       window.removeEventListener(NOTIFICATIONS_CHANGED_EVENT, refresh);
     };
-  }, [showNotifications]);
+  }, []);
 
   let tabs = TABS;
   if (canViewGenerationHistory(user?.role)) {
     tabs = [...tabs, { to: '/generation-history', label: 'История генерации' }];
   }
-  if (showNotifications) {
-    tabs = [...tabs, { to: '/notifications', label: 'Уведомления', badge: notifCount }];
+  // Вкладка — это «написать», поэтому она только у админа и БЕЗ счётчика:
+  // непрочитанное показывает значок справа, а не пункт меню.
+  if (canSendNotifications(user?.role)) {
+    tabs = [...tabs, { to: '/notifications', label: 'Уведомления' }];
   }
   if (canViewUsers(user?.role)) {
     tabs = [...tabs, { to: '/users', label: 'Пользователи' }];
@@ -112,6 +113,21 @@ export function Header({ companyName = 'ML Docs' }) {
       </div>
 
       <div className="flex items-center gap-4">
+        {/* Значок уведомлений — у всех ролей. Счётчик рисуем только когда
+            есть что читать: пустой кружок с нулём выглядел бы поломкой. */}
+        <button
+          onClick={() => openModal('notifications')}
+          title={unread > 0 ? `Непрочитанных: ${unread}` : 'Уведомления'}
+          aria-label="Уведомления"
+          className="relative w-8 h-8 rounded-full border border-border flex items-center justify-center text-sm text-text-secondary cursor-pointer bg-transparent"
+        >
+          🔔
+          {unread > 0 && (
+            <span className="absolute -top-1 -right-1 inline-flex items-center justify-center min-w-[17px] h-[17px] px-1 rounded-full bg-danger text-white text-[10px] font-semibold leading-none">
+              {unread > 99 ? '99+' : unread}
+            </span>
+          )}
+        </button>
         <button
           onClick={toggleTheme}
           aria-label="Переключить тему"

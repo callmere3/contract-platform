@@ -4,7 +4,7 @@ import { AuthProvider, useAuth } from './auth/AuthContext';
 import {
   canViewUsers,
   canViewGenerationHistory,
-  canViewNotifications,
+  canSendNotifications,
   canUseDistaSync,
   canViewChampionBoard,
 } from './auth/permissions';
@@ -87,7 +87,7 @@ function AppShell() {
         <Route
           path="/notifications"
           element={
-            canViewNotifications(user?.role) ? (
+            canSendNotifications(user?.role) ? (
               <NotificationsPage />
             ) : (
               <Navigate to="/search" replace />

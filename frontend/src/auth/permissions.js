@@ -103,10 +103,12 @@ export const canViewUsers = (role) => is(role, ADMIN, DIRECTOR);
 // backend: CAN_MANAGE_USERS = (ADMIN,) — создание/правка/деактивация/смена ролей.
 export const canManageUsers = (role) => is(role, ADMIN);
 
-// backend: CAN_VIEW_NOTIFICATIONS = (ADMIN,) — вкладка "Уведомления": применить
+// backend: CAN_SEND_NOTIFICATIONS = (ADMIN,) — вкладка «Уведомления»,
+// то есть НАПИСАТЬ команде. Читать свои уведомления может любая роль,
+// отдельного права на это нет: сервер отдаёт строки текущего пользователя. — вкладка "Уведомления": применить
 // или отклонить предложения дозаполнить карточку контрагента данными, которые
 // менеджер вписал в форму генерации. Только admin (правка эталонных карточек).
-export const canViewNotifications = (role) => is(role, ADMIN);
+export const canSendNotifications = (role) => is(role, ADMIN);
 
 // Кнопка "Импорт/экспорт" целиком: у manager внутри неё нет ничего
 // доступного, поэтому прячем её саму, а не только поле импорта внутри

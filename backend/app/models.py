@@ -30,7 +30,18 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Numeric, String, false, func
+from sqlalchemy import (
+    Boolean,
+    Date,
+    DateTime,
+    ForeignKey,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+    false,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -461,82 +472,80 @@ class GeneratedDocument(Base):
     )
 
 
-class CardSuggestion(Base):
+class Announcement(Base):
     """
-    Предложение дозаполнить/исправить карточку контрагента — вкладка
-    "Уведомления" (только admin). Заводится автоматически при генерации
-    документа: если менеджер вписал в форму значение поля, которое связано
-    с карточкой (maps_to='contragent.*' или дата договора), и оно отличается
-    от того, что сейчас в карточке — сюда падает запись, а админ решает
-    галочкой применить её к карточке или крестиком отклонить.
+    Уведомление, которое админ написал команде — вкладка «Уведомления» у
+    него и значок с непрочитанными в шапке у всех остальных.
 
-    Смысл: у большинства карточек часть данных пуста (в первую очередь
-    reg_number — он в каждом документе), менеджеры дозаполняют их прямо в
-    форме генерации. Эти значения уже сохраняются в payload истории
-    генерации; здесь мы их поднимаем на поверхность и даём в один клик
-    перенести в карточку — actionable-двойник красной подсветки неполных
-    карточек (_contragent_is_complete).
+    Заменило собой card_suggestions (предложения дозаполнить карточку):
+    механизм признан бесполезным и убран целиком 16.09.2026, СТАРАЯ ТАБЛИЦА
+    при этом осталась в базе нетронутой — удалять историю ради смены экрана
+    несоразмерно.
 
-    field — какая колонка карточки: 'reg_number' | 'royalty_percent' |
-    'name' | 'contract_number' | 'contract_date'. Никнейм НЕ предлагается
-    (у контрагента их несколько, это не "недостающее поле"). title в
-    список не входит намеренно — он и номер меняются только импортом
-    (см. update_contragent), пересчёта нет.
+    text — обычный текст без разметки. Ни темы, ни важности намеренно:
+    объявление на десять человек — это одна-две фразы, а лишние поля
+    заставляют их выдумывать.
 
-    value — значение как его вписал менеджер, в каноничном для колонки
-    виде (reg_number/name/contract_number — строка; royalty_percent — целое
-    строкой; contract_date — ISO 'ГГГГ-ММ-ДД'). Применение пишет ровно эту
-    колонку напрямую, МИНУЯ пересчёт title/номера.
-
-    status — 'pending' | 'applied' | 'dismissed'. Как показывать pending
-    (кнопки применить/отклонить или ⚠ "внимание, проверьте документ")
-    решается НА МОМЕНТ ПОКАЗА против ТЕКУЩЕГО состояния карточки, а не
-    замораживается здесь: карточку могли дозаполнить другим путём между
-    генерацией и разбором, и разошедшееся значение могло уже сойтись
-    (см. routers_notifications._classify).
-
-    dismissed по конкретному (contragent, field, value) больше не всплывает;
-    но если менеджер впишет ДРУГОЕ значение того же поля — заведётся новая
-    запись (дедуп идёт по тройке contragent+field+value, см. capture).
-
-    contragent_id — CASCADE: предложение живёт только пока жива карточка,
-    к которой относится. suggested_by/resolved_by — SET NULL как и везде
-    (пользователя могут деактивировать/удалить, запись остаётся читаемой
-    по снимку username). source_generation_id — SET NULL: историю генерации
-    могут почистить, предложение от этого не должно пропадать.
+    author_id + author_username — как в AuditLog: снимок логина рядом с
+    ссылкой, чтобы объявление осталось читаемым после деактивации автора.
     """
-    __tablename__ = "card_suggestions"
+    __tablename__ = "announcements"
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
 
-    contragent_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("contragents.id", ondelete="CASCADE"), index=True
-    )
-    field: Mapped[str] = mapped_column(String(32))
-    value: Mapped[str] = mapped_column(String(255))
-
-    suggested_by: Mapped[uuid.UUID | None] = mapped_column(
+    author_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
     )
-    suggested_by_username: Mapped[str | None] = mapped_column(String(255))
-    # снимок логина того, кто вписал значение при генерации — переживает
-    # деактивацию/удаление пользователя (как в AuditLog/GeneratedDocument)
+    author_username: Mapped[str | None] = mapped_column(String(255))
 
-    source_generation_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("generated_documents.id", ondelete="SET NULL")
-    )
-
-    status: Mapped[str] = mapped_column(String(16), default="pending")
-
-    resolved_by: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("users.id", ondelete="SET NULL")
-    )
-    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    text: Mapped[str] = mapped_column(Text)
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+
+    recipients: Mapped[list["AnnouncementRecipient"]] = relationship(
+        back_populates="announcement", cascade="all, delete-orphan"
+    )
+
+
+class AnnouncementRecipient(Base):
+    """
+    Кому адресовано уведомление и прочитано ли им.
+
+    Строка на каждого получателя, а не флаг «всем» в самом объявлении.
+    Почему так:
+      - «прочитали 3 из 7» — это COUNT по строкам, а не догадка;
+      - состав адресатов фиксируется НА МОМЕНТ ОТПРАВКИ: сотрудник,
+        заведённый завтра, не увидит вчерашнее объявление, а отключение
+        человека не переписывает список задним числом;
+      - адресное «всем» и «выбранным» хранятся одинаково, и читающий код не
+        разветвляется.
+
+    read_at — когда человек открыл панель уведомлений (NULL = не читал).
+    Отметка ставится на всё непрочитанное разом: панель и есть прочтение,
+    отмечать каждое по отдельности незачем.
+    """
+    __tablename__ = "announcement_recipients"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+
+    announcement_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("announcements.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    announcement: Mapped["Announcement"] = relationship(back_populates="recipients")
+
+    __table_args__ = (
+        UniqueConstraint("announcement_id", "user_id", name="uq_announcement_recipient"),
     )
 
 

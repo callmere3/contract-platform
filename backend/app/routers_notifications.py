@@ -1,277 +1,234 @@
 """
-/notifications — вкладка "Уведомления" (только admin, см. CAN_VIEW_NOTIFICATIONS).
+Уведомления: админ пишет команде, остальные читают.
 
-Предложения дозаполнить/поправить карточку контрагента значениями, которые
-менеджер вписал в форму генерации (заводятся автоматически, см.
-app/suggestions.py: capture_suggestions). Админ применяет предложение к
-карточке галочкой или отклоняет крестиком.
+  GET    /notifications          — мои уведомления (любая роль)
+  GET    /notifications/count    — сколько непрочитанных, для значка в шапке
+  POST   /notifications/read     — отметить мои прочитанными
+  POST   /notifications          — написать (только admin)
+  GET    /notifications/sent     — что я отправил, с отметками прочтения (admin)
+  DELETE /notifications/{id}     — удалить отправленное (admin)
 
-  GET  /notifications              — список видимых pending-предложений
-  GET  /notifications/count        — счётчик для бейджа в шапке
-  POST /notifications/{id}/apply   — применить к карточке (прямая запись колонки)
-  POST /notifications/{id}/dismiss — отклонить (больше не всплывает)
+ЧТО БЫЛО ЗДЕСЬ РАНЬШЕ. До 16.09.2026 вкладка показывала предложения
+дозаполнить карточку контрагента значениями из формы генерации. Механизм
+признан бесполезным и убран целиком вместе с app/suggestions.py и захватом
+при генерации. Таблица card_suggestions осталась в базе нетронутой —
+удалять историю ради смены экрана несоразмерно, а вернуть логику можно из
+git.
 
-Как показывать каждую запись — actionable (✓/✗) или просто ⚠-предупреждение —
-решается ЗДЕСЬ, на момент показа, против ТЕКУЩЕГО состояния карточки, а не
-замораживается при захвате: карточку могли дозаполнить другим путём между
-генерацией и разбором. Логика в _classify:
+ПОРЯДОК МАРШРУТОВ ВАЖЕН: /count, /read и /sent зарегистрированы РАНЬШЕ
+/{announcement_id} — иначе FastAPI попробует разобрать слово «sent» как
+uuid и вернёт 422 вместо обработчика (та же грабля, что с /import и
+/export в контрагентах).
 
-  - поле карточки пусто, значение валидно      -> severity=suggestion (✓/✗)
-  - поле пусто, значение кривое (формат/длина)  -> severity=warning ("проверьте
-                                                   документ"), применить нельзя
-  - поле заполнено, значение совпадает          -> скрываем (уже дозаполнено)
-  - поле заполнено, значение расходится          -> severity=warning
-                                                   ("расходится с карточкой"),
-                                                   исправлять НЕ предлагаем
-
-Применение пишет ОДНУ колонку напрямую и НЕ трогает title/номер (их пересчёта
-нет вовсе, см. update_contragent) — для name это принципиально: имя правим,
-подпись оставляем как в базе.
+КТО ЧТО МОЖЕТ. Читать — любой залогиненный, и только СВОИ строки: чужие
+уведомления не отдаются ни по какому параметру, потому что параметра нет
+вовсе. Писать и удалять — только admin (CAN_SEND_NOTIFICATIONS).
 """
-import re
 import uuid
-from datetime import date as _date, datetime, timezone
-from decimal import Decimal, InvalidOperation
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.exc import IntegrityError
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.audit import log_action
 from app.auth import get_current_user, require_role
-from app.context_builder import parse_date
 from app.db import get_session
-from app.models import CardSuggestion, Contragent, User
-from app.roles import CAN_VIEW_NOTIFICATIONS
-from app.suggestions import current_value
-from app.tags import ALL_REQUISITE_FIELDS, normalize_reg_number
-from app.template_analysis import DATE_FIELDS, FIELD_META, KNOWN_CHOICES
+from app.models import Announcement, AnnouncementRecipient, User
+from app.roles import CAN_SEND_NOTIFICATIONS
 
 notifications_router = APIRouter(prefix="/notifications", tags=["notifications"])
 
-FIELD_LABELS = {
-    "reg_number": "Рег. номер",
-    "royalty_percent": "Роялти, %",
-    "name": "ФИО / название",
-    "contract_number": "Номер договора",
-    "contract_date": "Дата договора",
-}
+# Предел длины текста. 2000 символов — это примерно страница: объявление на
+# десять человек длиннее и не бывает, а ограничение защищает вкладку от
+# случайной вставки всего договора.
+MAX_TEXT = 2000
 
 
-def _field_label(field: str) -> str:
-    """Подпись поля: сначала свои (FIELD_LABELS), потом реквизиты (FIELD_META)."""
-    if field in FIELD_LABELS:
-        return FIELD_LABELS[field]
-    return FIELD_META.get(field, ("", field, ""))[1]
+class NewAnnouncement(BaseModel):
+    text: str = Field(min_length=1, max_length=MAX_TEXT)
+    # to_all=True — всем действующим сотрудникам, кроме самого автора.
+    # Иначе адресаты берутся из user_ids (тоже без автора и без отключённых).
+    to_all: bool = True
+    user_ids: list[uuid.UUID] = []
 
 
-# Реквизиты-даты в JSONB тоже в ISO — показываем ДД.ММ.ГГГГ, как contract_date.
-_ISO_DATE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})")
-
-
-def _evaluate(field: str, value: str, contragent: Contragent, db: Session):
-    """
-    Проверяет значение под тип контрагента. Возвращает (ok, error, coerced):
-    ok — валидно ли применять; error — текст для ⚠, если нет; coerced — то,
-    что реально писать в колонку при применении (нормализованный вид).
-    """
-    if field in ("name", "contract_number"):
-        return (True, None, value)  # свободный текст — любое непустое годится
-    if field == "reg_number":
-        try:
-            norm = normalize_reg_number(value, contragent.type)
-        except HTTPException as e:
-            return (False, str(e.detail), None)
-        if not norm:
-            return (False, "пустой рег. номер", None)
-        # Уникальность рег.номера НЕ проверяем — он больше не уникален
-        # (аванс/роялти карточки одного человека делят ИНН/ОГРНИП).
-        return (True, None, norm)
-    if field == "royalty_percent":
-        try:
-            d = Decimal(str(value).replace(",", "."))
-        except (InvalidOperation, ValueError):
-            return (False, "не число", None)
-        if not (0 <= d <= 100):
-            return (False, "должно быть от 0 до 100", None)
-        return (True, None, d)
-    if field == "contract_date":
-        parsed = parse_date(value)
-        if not parsed:
-            return (False, "не распознать дату", None)
-        day, month, year_full = parsed
-        try:
-            return (True, None, _date(int(year_full), int(month), int(day)))
-        except ValueError:
-            return (False, "некорректная дата", None)
-    # Реквизиты карточки (адреса, банк, паспорт, vat…): coerced — строка для
-    # записи в contragent.requisites[field] (не колонка). vat — из списка
-    # вариантов; даты-реквизиты — проверяем распознаваемость; прочее — свободный
-    # текст (любое непустое годится).
-    if field in ALL_REQUISITE_FIELDS:
-        if field in KNOWN_CHOICES:
-            allowed = {v for v, _ in KNOWN_CHOICES[field]}
-            if value not in allowed:
-                return (False, "недопустимое значение", None)
-        elif field in DATE_FIELDS:
-            if not parse_date(value):
-                return (False, "не распознать дату", None)
-        return (True, None, value)
-    return (False, "неизвестное поле", None)
-
-
-def _display(field: str, value: str | None) -> str | None:
-    """
-    Человекочитаемый вид значения: даты (contract_date и даты-реквизиты) ISO ->
-    ДД.ММ.ГГГГ; choice-реквизиты (vat) -> подпись варианта; остальное как есть.
-    """
-    if not value:
-        return value
-    if field == "contract_date" or field in DATE_FIELDS:
-        m = _ISO_DATE.match(value)
-        return f"{m.group(3)}.{m.group(2)}.{m.group(1)}" if m else value
-    if field in KNOWN_CHOICES:
-        for v, label in KNOWN_CHOICES[field]:
-            if v == value:
-                return label
-    return value
-
-
-def _visible_pending(db: Session) -> list[dict]:
-    """
-    Видимые во вкладке pending-предложения: скрываем те, что карточка уже
-    удовлетворила тем же значением (см. докстринг модуля). Общая сборка для
-    списка и счётчика — предложений мало, второй проход не дорог.
-    """
-    rows = (
-        db.query(CardSuggestion, Contragent, User.full_name)
-        .join(Contragent, Contragent.id == CardSuggestion.contragent_id)
-        .outerjoin(User, User.id == CardSuggestion.suggested_by)
-        .filter(CardSuggestion.status == "pending")
-        .order_by(CardSuggestion.created_at.desc())
-        .all()
+def _mine(db: Session, user: User):
+    return (
+        db.query(AnnouncementRecipient, Announcement)
+        .join(Announcement, Announcement.id == AnnouncementRecipient.announcement_id)
+        .filter(AnnouncementRecipient.user_id == user.id)
+        .order_by(Announcement.created_at.desc())
     )
-    items: list[dict] = []
-    for s, c, full_name in rows:
-        current = current_value(s.field, c)
-        if not current:
-            ok, error, _ = _evaluate(s.field, s.value, c, db)
-            severity, reason = ("suggestion", None) if ok else ("warning", error)
-        elif current == s.value:
-            continue  # карточку уже дозаполнили тем же значением — скрываем
-        else:
-            severity, reason = "warning", "расходится с карточкой"
-        items.append(
+
+
+@notifications_router.get("")
+def list_my_notifications(
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> list[dict]:
+    """Мои уведомления, новые сверху. Только свои — чужие сюда не попадают."""
+    return [
+        {
+            "id": str(note.id),
+            "text": note.text,
+            "author": note.author_username,
+            "created_at": note.created_at.isoformat(),
+            "read_at": row.read_at.isoformat() if row.read_at else None,
+        }
+        for row, note in _mine(db, current_user).all()
+    ]
+
+
+@notifications_router.get("/count")
+def notifications_count(
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Счётчик для значка в шапке. Опрашивается всеми раз в минуту."""
+    unread = (
+        db.query(AnnouncementRecipient)
+        .filter(
+            AnnouncementRecipient.user_id == current_user.id,
+            AnnouncementRecipient.read_at.is_(None),
+        )
+        .count()
+    )
+    return {"unread": unread}
+
+
+@notifications_router.post("/read")
+def mark_read(
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """
+    Отметить всё моё прочитанным — вызывается при открытии панели.
+
+    Панель и есть прочтение: отмечать каждое уведомление отдельной кнопкой
+    для десятка объявлений — лишний ритуал. Возвращаем, сколько отметили,
+    чтобы фронт знал, менять ли значок.
+    """
+    now = datetime.now(timezone.utc)
+    marked = (
+        db.query(AnnouncementRecipient)
+        .filter(
+            AnnouncementRecipient.user_id == current_user.id,
+            AnnouncementRecipient.read_at.is_(None),
+        )
+        .update({AnnouncementRecipient.read_at: now}, synchronize_session=False)
+    )
+    db.commit()
+    return {"marked": marked}
+
+
+@notifications_router.get("/sent", dependencies=[Depends(require_role(*CAN_SEND_NOTIFICATIONS))])
+def list_sent(db: Session = Depends(get_session)) -> list[dict]:
+    """
+    Отправленные уведомления с отметками прочтения.
+
+    Отдаём полный список получателей, а не только счётчик: во вкладке он
+    раскрывается по нажатию, и второй запрос ради десяти имён не нужен.
+    """
+    notes = db.query(Announcement).order_by(Announcement.created_at.desc()).all()
+    users = {u.id: u for u in db.query(User).all()}
+
+    out = []
+    for note in notes:
+        people = []
+        for row in note.recipients:
+            person = users.get(row.user_id)
+            people.append(
+                {
+                    "id": str(row.user_id),
+                    "username": person.username if person else "—",
+                    "full_name": person.full_name if person else None,
+                    "read_at": row.read_at.isoformat() if row.read_at else None,
+                }
+            )
+        people.sort(key=lambda p: (p["read_at"] is None, (p["full_name"] or p["username"]).lower()))
+        out.append(
             {
-                "id": str(s.id),
-                "contragent_id": str(s.contragent_id),
-                "contragent_title": c.title,
-                "field": s.field,
-                "field_label": _field_label(s.field),
-                "value": s.value,
-                "value_display": _display(s.field, s.value),
-                "severity": severity,
-                "reason": reason,
-                "card_current_display": _display(s.field, current) if current else None,
-                "suggested_by": full_name or s.suggested_by_username,
-                "created_at": s.created_at.isoformat() if s.created_at else None,
+                "id": str(note.id),
+                "text": note.text,
+                "author": note.author_username,
+                "created_at": note.created_at.isoformat(),
+                "read_count": sum(1 for p in people if p["read_at"]),
+                "total": len(people),
+                "recipients": people,
             }
         )
-    return items
+    return out
 
 
-@notifications_router.get("", dependencies=[Depends(require_role(*CAN_VIEW_NOTIFICATIONS))])
-def list_notifications(db: Session = Depends(get_session)) -> list[dict]:
-    return _visible_pending(db)
+@notifications_router.post("", dependencies=[Depends(require_role(*CAN_SEND_NOTIFICATIONS))])
+def create_announcement(
+    body: NewAnnouncement,
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """
+    Написать уведомление всем или выбранным.
 
+    Адресаты раскладываются строками ПРЯМО СЕЙЧАС и больше не меняются: это
+    и есть смысл «отправил» — список получателей не должен переписываться
+    задним числом, если кого-то потом отключили или завели нового.
 
-@notifications_router.get(
-    "/count", dependencies=[Depends(require_role(*CAN_VIEW_NOTIFICATIONS))]
-)
-def notifications_count(db: Session = Depends(get_session)) -> dict:
-    """Счётчик для бейджа: всего видимых pending и из них actionable (✓/✗)."""
-    items = _visible_pending(db)
+    Отключённые в адресаты не попадают (читать всё равно некому), сам автор
+    — тоже: писать себе незачем. Если после этих отсечений не осталось
+    никого — 400, иначе объявление молча уходило бы в пустоту.
+    """
+    text = body.text.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Текст уведомления пуст")
+
+    query = db.query(User).filter(User.is_active.is_(True), User.id != current_user.id)
+    if not body.to_all:
+        if not body.user_ids:
+            raise HTTPException(status_code=400, detail="Выберите, кому отправить")
+        query = query.filter(User.id.in_(body.user_ids))
+
+    recipients = query.all()
+    if not recipients:
+        raise HTTPException(
+            status_code=400,
+            detail="Некому отправить: среди выбранных нет действующих сотрудников",
+        )
+
+    note = Announcement(
+        author_id=current_user.id,
+        author_username=current_user.full_name or current_user.username,
+        text=text,
+    )
+    db.add(note)
+    db.flush()   # нужен note.id до вставки адресатов
+
+    for person in recipients:
+        db.add(AnnouncementRecipient(announcement_id=note.id, user_id=person.id))
+    db.commit()
+
     return {
-        "pending": len(items),
-        "actionable": sum(1 for i in items if i["severity"] == "suggestion"),
+        "id": str(note.id),
+        "created_at": note.created_at.isoformat(),
+        "total": len(recipients),
     }
 
 
-def _load_pending(suggestion_id: uuid.UUID, db: Session) -> CardSuggestion:
-    s = db.get(CardSuggestion, suggestion_id)
-    if s is None:
-        raise HTTPException(status_code=404, detail="Предложение не найдено")
-    if s.status != "pending":
-        raise HTTPException(status_code=400, detail="Предложение уже обработано")
-    return s
-
-
-@notifications_router.post(
-    "/{suggestion_id}/apply", dependencies=[Depends(require_role(*CAN_VIEW_NOTIFICATIONS))]
+@notifications_router.delete(
+    "/{announcement_id}", dependencies=[Depends(require_role(*CAN_SEND_NOTIFICATIONS))]
 )
-def apply_notification(
-    suggestion_id: uuid.UUID,
-    db: Session = Depends(get_session),
-    current_user: User = Depends(get_current_user),
+def delete_announcement(
+    announcement_id: uuid.UUID, db: Session = Depends(get_session)
 ) -> dict:
     """
-    Применяет предложение к карточке: пишет ОДНУ колонку напрямую (title/номер
-    не трогаются — их пересчёта нет). Применять можно только когда поле карточки
-    сейчас ПУСТО и значение проходит проверку — иначе это расхождение, а его
-    исправлять не предлагаем (409/400).
+    Удалить отправленное — для опечаток и отменённых новостей.
+
+    Адресные строки уходят каскадом (см. модель), поэтому уведомление
+    исчезает и из чужих панелей, и из счётчиков. Это осознанно: «отозвать»
+    для внутреннего объявления полезнее, чем хранить вечно.
     """
-    s = _load_pending(suggestion_id, db)
-    c = db.get(Contragent, s.contragent_id)
-    if c is None:
-        raise HTTPException(status_code=404, detail="Контрагент не найден")
-
-    now = datetime.now(timezone.utc)
-    current = current_value(s.field, c)
-    if current:
-        if current == s.value:
-            # карточку уже дозаполнили тем же значением — считаем применённым
-            s.status, s.resolved_by, s.resolved_at = "applied", current_user.id, now
-            db.commit()
-            return {"status": "applied", "already": True}
-        raise HTTPException(
-            status_code=409,
-            detail="Поле карточки уже заполнено другим значением — это расхождение, применять нельзя",
-        )
-
-    ok, error, coerced = _evaluate(s.field, s.value, c, db)
-    if not ok:
-        raise HTTPException(status_code=400, detail=f"Значение не проходит проверку: {error}")
-
-    if s.field in ALL_REQUISITE_FIELDS:
-        # Реквизит — в JSONB-словарь contragent.requisites (реассайн словаря,
-        # чтобы SQLAlchemy заметил изменение), а не в колонку.
-        c.requisites = {**(c.requisites or {}), s.field: coerced}
-    else:
-        setattr(c, s.field, coerced)  # имя колонки == s.field (см. CardSuggestion.field)
-    s.status, s.resolved_by, s.resolved_at = "applied", current_user.id, now
-    try:
-        db.commit()
-    except IntegrityError:
-        db.rollback()
-        raise HTTPException(status_code=409, detail="Не удалось применить (конфликт данных в базе).")
-
-    log_action(
-        db, current_user, "contragent.suggestion_apply",
-        entity_type="contragent", entity_id=c.id,
-        meta={"field": s.field, "value": s.value},
-    )
-    return {"status": "applied"}
-
-
-@notifications_router.post(
-    "/{suggestion_id}/dismiss", dependencies=[Depends(require_role(*CAN_VIEW_NOTIFICATIONS))]
-)
-def dismiss_notification(
-    suggestion_id: uuid.UUID,
-    db: Session = Depends(get_session),
-    current_user: User = Depends(get_current_user),
-) -> dict:
-    s = _load_pending(suggestion_id, db)
-    s.status, s.resolved_by, s.resolved_at = "dismissed", current_user.id, datetime.now(timezone.utc)
+    note = db.get(Announcement, announcement_id)
+    if note is None:
+        raise HTTPException(status_code=404, detail="Уведомление не найдено")
+    db.delete(note)
     db.commit()
-    return {"status": "dismissed"}
+    return {"deleted": str(announcement_id)}
