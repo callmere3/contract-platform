@@ -46,6 +46,7 @@ from app.nomenclature_import import (
     RELATED,
     RIGHT_SLOTS,
     OwnerIndex,
+    read_pasted,
     read_rows,
 )
 from app.roles import (
@@ -406,8 +407,33 @@ def _owner_index(db: Session) -> OwnerIndex:
     return OwnerIndex([*titles, *owners])
 
 
-def _read_upload(file: UploadFile):
-    """Загруженный .xlsx → разобранные строки. Ошибки формата — сразу 400."""
+def _read_input(file: UploadFile | None, pasted: str | None):
+    """
+    Источник импорта → разобранные строки. Их два, и оба ведут в один и тот
+    же разборщик:
+      - файл .xlsx, выгруженный из Dista или правленный в Excel;
+      - ВСТАВКА ИЗ БУФЕРА: человек выделил строки в Excel или в гриде Dista
+        и нажал Ctrl+V. Для десятка треков это быстрее, чем сохранять файл.
+
+    Проверки после этого одинаковые: разница только в том, откуда взялись
+    ячейки.
+    """
+    if pasted and pasted.strip():
+        rows = list(read_pasted(pasted))
+        # Ни одного артикула — значит, вставили не таблицу каталога, а
+        # что-то другое (одну колонку, текст, кусок другого отчёта). Отвечаем
+        # понятной фразой, а не сотней одинаковых ошибок «не заполнен
+        # артикул» в предпросмотре.
+        if not rows or not any(r.track.get("sku") for r in rows):
+            raise HTTPException(
+                400,
+                "В буфере нет строк каталога. Скопируйте строки из Excel или из окна "
+                "номенклатуры Dista — колонки должны идти в том же порядке, что в выгрузке.",
+            )
+        return _limit(rows)
+
+    if file is None:
+        raise HTTPException(400, "Не выбран файл и нечего вставить")
     if not (file.filename or "").endswith(".xlsx"):
         raise HTTPException(400, "Ожидается файл .xlsx — тот же, что выгружает Dista")
     content = file.file.read()
@@ -415,7 +441,11 @@ def _read_upload(file: UploadFile):
         wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True, read_only=True)
     except Exception as exc:
         raise HTTPException(400, f"Не удалось прочитать файл: {exc}")
-    rows = list(read_rows(wb[wb.sheetnames[0]]))
+    return _limit(list(read_rows(wb[wb.sheetnames[0]])))
+
+
+def _limit(rows: list):
+    """Один предел на оба источника — см. MAX_IMPORT_ROWS."""
     if len(rows) > MAX_IMPORT_ROWS:
         raise HTTPException(
             400,
@@ -578,7 +608,9 @@ def _plan(db: Session, rows: list) -> dict:
     "/import/check", dependencies=[Depends(require_role(*CAN_IMPORT_NOMENCLATURE))]
 )
 def import_check(
-    file: UploadFile = File(...), db: Session = Depends(get_session)
+    file: UploadFile | None = File(None),
+    pasted: str = Form(""),
+    db: Session = Depends(get_session),
 ) -> dict:
     """
     Прогон файла БЕЗ записи: что заведётся, что обновится, что не пройдёт и
@@ -588,15 +620,18 @@ def import_check(
     перестраховка: строка выгрузки несёт полное состояние трека, и применение
     ЗАМЕЩАЕТ состав его прав. Человек, который заливает файл руками каждый
     день, должен видеть, что именно он сейчас переписывает.
+
+    `pasted` — вставка из буфера вместо файла (Ctrl+V в окне импорта).
     """
-    return _plan(db, _read_upload(file))
+    return _plan(db, _read_input(file, pasted))
 
 
 @nomenclature_router.post(
     "/import/apply", dependencies=[Depends(require_role(*CAN_IMPORT_NOMENCLATURE))]
 )
 def import_apply(
-    file: UploadFile = File(...),
+    file: UploadFile | None = File(None),
+    pasted: str = Form(""),
     owner_map: str = Form("{}"),
     create_missing_owners: bool = Form(True),
     skip_rows: str = Form("[]"),
@@ -619,7 +654,7 @@ def import_apply(
     несколько десятков строк из-за одной кривой доли незачем откладывать
     остальные. Сколько пропущено и почему — в ответе.
     """
-    rows = _read_upload(file)
+    rows = _read_input(file, pasted)
     try:
         mapping = json.loads(owner_map or "{}")
         if not isinstance(mapping, dict):
@@ -665,7 +700,7 @@ def import_apply(
         )
     } if ready else {}
 
-    source = file.filename or "импорт"
+    source = (file.filename if file is not None else None) or "буфер обмена"
     now = datetime.now(timezone.utc)
     created = updated = 0
     touched: list[uuid.UUID] = []

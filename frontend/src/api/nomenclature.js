@@ -46,16 +46,29 @@ export async function exportTracks({ q, owner, catalog } = {}) {
 }
 
 /**
- * Прогон файла БЕЗ записи: что заведётся, что обновится, что не пройдёт и
- * кого из правообладателей сервер не узнаёт.
+ * Источник импорта → тело запроса. Их два: файл .xlsx и вставка из буфера
+ * (Ctrl+V), то есть текст с табуляциями, каким его кладут в буфер Excel и
+ * грид Dista. Проверки на сервере после этого одинаковые.
+ */
+function importBody(source) {
+  const body = new FormData();
+  if (source.file) body.append('file', source.file);
+  if (source.text) body.append('pasted', source.text);
+  return body;
+}
+
+/**
+ * Прогон источника БЕЗ записи: что заведётся, что обновится, что не пройдёт
+ * и кого из правообладателей сервер не узнаёт.
  *
  * Шаг обязательный: применение ЗАМЕЩАЕТ состав прав у каждого трека из
  * файла, и делать это вслепую нельзя.
  */
-export function checkTracksImport(file) {
-  const body = new FormData();
-  body.append('file', file);
-  return apiJson(`${API}/nomenclature/import/check`, { method: 'POST', body });
+export function checkTracksImport(source) {
+  return apiJson(`${API}/nomenclature/import/check`, {
+    method: 'POST',
+    body: importBody(source),
+  });
 }
 
 /**
@@ -64,11 +77,10 @@ export function checkTracksImport(file) {
  * заводить ли карточки на тех, кого в базе нет вовсе.
  */
 export function applyTracksImport(
-  file,
+  source,
   { ownerMap = {}, createMissingOwners = true, skipRows = [] } = {},
 ) {
-  const body = new FormData();
-  body.append('file', file);
+  const body = importBody(source);
   body.append('owner_map', JSON.stringify(ownerMap));
   body.append('create_missing_owners', createMissingOwners ? 'true' : 'false');
   // Номера строк, у которых человек снял галочку в предпросмотре.

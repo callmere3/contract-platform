@@ -1,4 +1,4 @@
-import { Fragment, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
 import { Modal } from '../components/ui/Modal';
 import { Button } from '../components/ui/Button';
 import { useModal } from './ModalProvider';
@@ -34,7 +34,9 @@ export function NomenclatureImportExportModal({ level, isTop, filters = {}, onIm
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [file, setFile] = useState(null);
+  // Источник импорта: выбранный файл или вставка из буфера. Храним целиком —
+  // «применить» повторяет проверку тем же источником.
+  const [source, setSource] = useState(null);
   const [plan, setPlan] = useState(null);
   const [result, setResult] = useState(null);
   // Решения по похожим именам: {имя из файла: заменить?}. По умолчанию — да.
@@ -66,13 +68,13 @@ export function NomenclatureImportExportModal({ level, isTop, filters = {}, onIm
     }
   }
 
-  async function handleCheck(picked) {
+  const handleCheck = useCallback(async (picked) => {
     if (!picked) return;
     setBusy(true);
     setError('');
     setPlan(null);
     setResult(null);
-    setFile(picked);
+    setSource(picked);
     try {
       const got = await checkTracksImport(picked);
       setPlan(got);
@@ -85,7 +87,31 @@ export function NomenclatureImportExportModal({ level, isTop, filters = {}, onIm
     } finally {
       setBusy(false);
     }
-  }
+  }, []);
+
+  /**
+   * CTRL+V ПРЯМО В ОКНЕ. Ежедневная порция — несколько десятков строк, и
+   * ради них сохранять файл из Excel лишнее движение: проще выделить строки
+   * и вставить. В буфере Excel и грид Dista оставляют таблицу текстом с
+   * табуляциями — по ним вставку и узнаём.
+   *
+   * Слушаем окно, а не поле ввода: своих текстовых полей в модалке нет, и
+   * заставлять человека сперва попасть курсором в нужный прямоугольник —
+   * ровно та возня, от которой вставка и избавляет. Текст без табуляций
+   * пропускаем молча: это не таблица, и перехватывать чужую вставку незачем.
+   */
+  useEffect(() => {
+    if (!canImportNomenclature(role)) return undefined;
+    const onPaste = (e) => {
+      const text = e.clipboardData?.getData('text/plain') ?? '';
+      if (!text.includes('\t')) return;
+      e.preventDefault();
+      const lines = text.trim().split(/\r?\n/).length;
+      handleCheck({ text, label: `вставка из буфера, строк: ${lines}` });
+    };
+    window.addEventListener('paste', onPaste);
+    return () => window.removeEventListener('paste', onPaste);
+  }, [role, handleCheck]);
 
   async function handleApply() {
     setBusy(true);
@@ -97,7 +123,7 @@ export function NomenclatureImportExportModal({ level, isTop, filters = {}, onIm
           .map((o) => [o.name, o.suggestion]),
       );
       setResult(
-        await applyTracksImport(file, {
+        await applyTracksImport(source, {
           ownerMap,
           createMissingOwners: createOwners,
           skipRows,
@@ -157,21 +183,40 @@ export function NomenclatureImportExportModal({ level, isTop, filters = {}, onIm
         <div>
           <div className="text-sm font-semibold text-text mb-1.5">Импорт</div>
           <div className="text-[13px] text-text-secondary mb-3">
-            Файл в формате выгрузки Dista. Строка ищется по артикулу: знакомый трек обновится, а
-            состав его прав заменится тем, что в файле.
+            Файл в формате выгрузки Dista — или вставленные из буфера строки в том же порядке
+            колонок. Строка ищется по артикулу: знакомый трек обновится, а состав его прав
+            заменится тем, что пришло.
           </div>
 
-          <label className="inline-block">
-            <input
-              type="file"
-              accept=".xlsx"
-              className="hidden"
-              onChange={(e) => handleCheck(e.target.files?.[0])}
-            />
-            <span className="inline-block px-3.5 py-2 rounded-input border border-border text-[13px] text-text cursor-pointer">
-              {busy ? 'Читаем файл…' : file ? 'Выбрать другой файл' : 'Выбрать файл .xlsx'}
+          <div className="flex items-center gap-3 flex-wrap">
+            <label className="inline-block">
+              <input
+                type="file"
+                accept=".xlsx"
+                className="hidden"
+                onChange={(e) => {
+                  const picked = e.target.files?.[0];
+                  if (picked) handleCheck({ file: picked, label: picked.name });
+                }}
+              />
+              <span className="inline-block px-3.5 py-2 rounded-input border border-border text-[13px] text-text cursor-pointer">
+                {busy ? 'Читаем…' : source ? 'Выбрать другой файл' : 'Выбрать файл .xlsx'}
+              </span>
+            </label>
+            <span className="text-[13px] text-text-muted">
+              или скопируйте строки в Excel и нажмите{' '}
+              <kbd className="px-1.5 py-0.5 rounded border border-border text-[12px] text-text">
+                Ctrl+V
+              </kbd>{' '}
+              прямо здесь
             </span>
-          </label>
+          </div>
+
+          {source?.label && (
+            <div className="text-[12.5px] text-text-secondary mt-2">
+              Источник: <span className="text-text">{source.label}</span>
+            </div>
+          )}
 
           {plan && (
             <Plan

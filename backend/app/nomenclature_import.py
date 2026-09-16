@@ -34,6 +34,8 @@
 строк, общая ставка роялти — у 75.4%, каталог — у 22.5%. Требовать их значило
 бы отвергать почти весь настоящий каталог.
 """
+import csv
+import io
 import re
 from dataclasses import dataclass, field
 from datetime import date, datetime
@@ -156,24 +158,33 @@ def share_percent(value, percent_format: bool) -> Decimal | None:
     """
     Доля и ставка правообладателя → проценты (0–100).
 
-    В ФАЙЛАХ ДВА ВИДА ЗАПИСИ, и отличаются они не величиной, а ФОРМАТОМ
-    ЯЧЕЙКИ:
+    ВИДОВ ЗАПИСИ ТРИ, и отличаются они не величиной:
+      - текст со знаком процента («80%») — так приходит вставка из буфера
+        обмена: там нет ячеек, есть только то, что человек видел на экране;
       - выгрузка Dista: ячейка с процентным форматом («0%»), внутри лежит
         доля единицы — 1 значит 100%, 0.8 значит 80%;
       - файл, собранный руками: обычное число, и 100 значит 100%, 70 — 70%.
 
-    Поэтому решает формат, а не величина. Гадать по величине нельзя: 1 — это
-    и 100% в первом случае, и 1% во втором, а единственная разница между ними
-    в том, как ячейка оформлена. Так первый вариант импорта и сыпал
-    предупреждениями на нормальном файле.
+    Поэтому решает знак процента и формат ячейки, а не величина. Гадать по
+    величине нельзя: 1 — это и 100%, и 1%, а вся разница между ними в
+    оформлении. Так первый вариант импорта и сыпал предупреждениями на
+    нормальном файле.
     """
     if value is None:
         return None
+    raw = str(value).strip().replace(",", ".")
+    if not raw:
+        return None
+    # Со знаком процента значение УЖЕ процент: так приходит текст из буфера
+    # обмена («80%» — то, что человек видит в Excel и в гриде Dista), и
+    # умножать его на сто нельзя, даже если ячейка была процентной.
+    written_as_percent = raw.endswith("%")
+    raw = raw.rstrip("%").strip()
     try:
-        number = Decimal(str(value).strip().replace(",", "."))
+        number = Decimal(raw)
     except (InvalidOperation, ValueError):
         return None
-    if percent_format:
+    if percent_format and not written_as_percent:
         number *= 100
     return number.quantize(Decimal("0.01"))
 
@@ -371,6 +382,28 @@ def read_rows(worksheet):
             i for i, c in enumerate(cells) if "%" in (c.number_format or "")
         }
         parsed = parse_row(values, row_num, percent_cols)
+        if parsed is not None:
+            yield parsed
+
+
+def read_pasted(text_block: str):
+    """
+    Вставка из буфера обмена → разобранные строки.
+
+    Excel и грид Dista кладут в буфер таблицу как ТЕКСТ С ТАБУЛЯЦИЯМИ: строки
+    разделены переводом строки, ячейки — табуляцией, а ячейка с переводом
+    строки внутри берётся в кавычки. Поэтому разбираем не split(), а
+    csv-читателем: он про кавычки знает.
+
+    Форматов ячеек тут нет и быть не может — в буфер попадает то, что человек
+    видел на экране. Проценты поэтому приходят со знаком («80%»), и
+    share_percent читает их как проценты.
+    """
+    rows = csv.reader(io.StringIO(text_block), delimiter="\t")
+    for row_num, values in enumerate(rows, start=1):
+        if not values:
+            continue
+        parsed = parse_row(tuple(v.strip() or None for v in values), row_num, set())
         if parsed is not None:
             yield parsed
 
