@@ -14,11 +14,14 @@ import { API, apiFetch, apiJson } from './client';
  */
 
 /** Список: { tracks: [...], total, page, page_size }. */
-export function listTracks({ q, owner, catalog, page, pageSize } = {}) {
+export function listTracks({ q, owner, catalog, contragentId, page, pageSize } = {}) {
   const params = new URLSearchParams();
   if (q) params.set('q', q);
   if (owner) params.set('owner', owner);
   if (catalog) params.set('catalog', catalog);
+  // Отбор по СВЯЗИ с карточкой, а не по имени: у контрагента бывает
+  // несколько написаний в выгрузке, и по титлу нашлись бы не все его треки.
+  if (contragentId) params.set('contragent_id', contragentId);
   if (page) params.set('page', String(page));
   if (pageSize) params.set('page_size', String(pageSize));
   return apiJson(`${API}/nomenclature?${params}`);
@@ -34,11 +37,12 @@ export function fetchTrackCard(trackId) {
  * текущих фильтров. Возвращает Blob: запрос требует Authorization, поэтому
  * просто перейти по ссылке нельзя.
  */
-export async function exportTracks({ q, owner, catalog } = {}) {
+export async function exportTracks({ q, owner, catalog, contragentId } = {}) {
   const params = new URLSearchParams();
   if (q) params.set('q', q);
   if (owner) params.set('owner', owner);
   if (catalog) params.set('catalog', catalog);
+  if (contragentId) params.set('contragent_id', contragentId);
   const qs = params.toString();
   const r = await apiFetch(`${API}/nomenclature/export${qs ? `?${qs}` : ''}`);
   if (!r.ok) throw new Error(await r.text());

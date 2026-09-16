@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { useModal } from '../modals/ModalProvider';
@@ -47,6 +48,11 @@ export function NomenclaturePage() {
   const [q, setQ] = useState('');
   const [owner, setOwner] = useState('');
   const [page, setPage] = useState(1);
+  // Отбор по карточке контрагента живёт В АДРЕСЕ, а не в состоянии: на него
+  // ведёт кнопка «Треки» из карточки, и такую ссылку должно быть видно и
+  // можно переслать. Сам фильтр — id, а не имя: см. api/nomenclature.js.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const contragentId = searchParams.get('contragent') || '';
 
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
@@ -60,7 +66,7 @@ export function NomenclaturePage() {
   // строк, останешься на «стр. 40», где пусто.
   useEffect(() => {
     setPage(1);
-  }, [q, owner]);
+  }, [q, owner, contragentId]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -69,6 +75,7 @@ export function NomenclaturePage() {
       const data = await listTracks({
         q: q.trim(),
         owner: owner.trim(),
+        contragentId,
         page,
         pageSize: PAGE_SIZE,
       });
@@ -79,7 +86,7 @@ export function NomenclaturePage() {
     } finally {
       setLoading(false);
     }
-  }, [q, owner, page]);
+  }, [q, owner, contragentId, page]);
 
   useEffect(() => {
     const timer = setTimeout(load, 300);
@@ -106,6 +113,26 @@ export function NomenclaturePage() {
         строку — откроется карточка трека со всеми полями выгрузки.
       </p>
 
+      {/* Отбор по карточке пришёл из адреса, а не из полей сверху, поэтому и
+          показывается отдельно: иначе человек видел бы неполный каталог и не
+          понимал, почему. Снимается одним нажатием. */}
+      {contragentId && (
+        <div className="flex items-center gap-2 mb-4 text-[13px]">
+          <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-accent-soft text-accent">
+            Треки одного контрагента
+            <button
+              type="button"
+              onClick={() => setSearchParams({})}
+              aria-label="Показать весь каталог"
+              className="bg-transparent border-none text-accent cursor-pointer p-0 leading-none text-[15px]"
+            >
+              ×
+            </button>
+          </span>
+          <span className="text-text-muted">показан не весь каталог</span>
+        </div>
+      )}
+
       <Card>
         <div className="flex flex-wrap gap-3 p-5 border-b border-border">
           <input
@@ -131,7 +158,7 @@ export function NomenclaturePage() {
               size="sm"
               onClick={() =>
                 openModal('nomenclatureImportExport', {
-                  filters: { q: q.trim(), owner: owner.trim() },
+                  filters: { q: q.trim(), owner: owner.trim(), contragentId },
                   onImported: load,
                 })
               }
@@ -145,7 +172,7 @@ export function NomenclaturePage() {
         {!loading && error && <div className="px-5 py-4 text-[13px] text-danger">{error}</div>}
         {!loading && !error && items.length === 0 && (
           <div className="px-5 py-4 text-[13px] text-text-muted">
-            {q || owner ? 'Ничего не найдено.' : 'Каталог пуст.'}
+            {q || owner || contragentId ? 'Ничего не найдено.' : 'Каталог пуст.'}
           </div>
         )}
 

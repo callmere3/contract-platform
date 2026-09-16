@@ -152,6 +152,7 @@ def _filtered_tracks(
     owner: str | None,
     catalog: str | None,
     include_archived: bool,
+    contragent_id: uuid.UUID | None = None,
 ):
     """
     Общий сбор фильтров для списка и выгрузки: экспорт обязан отдавать ровно
@@ -182,6 +183,18 @@ def _filtered_tracks(
             )
             .exists()
         )
+    if contragent_id is not None:
+        # По ССЫЛКЕ, а не по имени: у карточки может быть несколько написаний
+        # в каталоге, и поиск по титлу нашёл бы не все её треки. Ровно ради
+        # этого ссылка и заводилась.
+        query = query.where(
+            select(TrackRight.id)
+            .where(
+                TrackRight.track_id == Track.id,
+                TrackRight.contragent_id == contragent_id,
+            )
+            .exists()
+        )
     if catalog and catalog.strip():
         query = query.where(Track.catalog == catalog.strip())
     return query
@@ -192,6 +205,7 @@ def list_tracks(
     q: str | None = None,
     owner: str | None = None,
     catalog: str | None = None,
+    contragent_id: uuid.UUID | None = None,
     include_archived: bool = False,
     page: int = 1,
     page_size: int = DEFAULT_PAGE_SIZE,
@@ -205,8 +219,11 @@ def list_tracks(
     знает заранее, что именно он держит: код это или название. Ровно так же
     устроен поиск контрагентов (титл, ФИО, псевдоним одним полем).
 
-    `owner` — подстрока имени правообладателя, а не выбор из списка: их 729,
+    `owner` — подстрока имени правообладателя, а не выбор из списка: их 730,
     и выпадающий список такой длины листают дольше, чем набирают фамилию.
+    `contragent_id` — другое: это поиск по СВЯЗИ с карточкой, им пользуется
+    кнопка «Треки» в карточке контрагента. Имя и ссылка не взаимозаменяемы —
+    у карточки бывает несколько написаний в каталоге.
 
     `catalog` — точное совпадение, и в интерфейсе поля под него больше нет:
     выпадающий список на 502 каталога убран 17.09.2026, выбрать в нём что-то
@@ -219,7 +236,7 @@ def list_tracks(
     page = max(1, page)
     page_size = max(1, min(page_size, MAX_PAGE_SIZE))
 
-    query = _filtered_tracks(q, owner, catalog, include_archived)
+    query = _filtered_tracks(q, owner, catalog, include_archived, contragent_id)
 
     total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
 
@@ -255,6 +272,7 @@ def export_tracks(
     q: str | None = None,
     owner: str | None = None,
     catalog: str | None = None,
+    contragent_id: uuid.UUID | None = None,
     include_archived: bool = False,
     db: Session = Depends(get_session),
 ) -> StreamingResponse:
@@ -277,7 +295,9 @@ def export_tracks(
     ws = wb.create_sheet("Номенклатура")
     ws.append(list(COLUMNS))
 
-    ids = _filtered_tracks(q, owner, catalog, include_archived).with_only_columns(Track.id)
+    ids = _filtered_tracks(
+        q, owner, catalog, include_archived, contragent_id
+    ).with_only_columns(Track.id)
     # КОЛОНКАМИ, А НЕ ОБЪЕКТАМИ ORM. Сначала здесь было select(Track, TrackRight),
     # и выгрузка всего каталога занимала 93 секунды: на каждую из 244 тысяч
     # строк join'а SQLAlchemy собирал объекты Track и TrackRight со всей их
@@ -398,13 +418,13 @@ def _plain(value: Decimal | None):
 
 def _owner_index(db: Session) -> OwnerIndex:
     """
-    Кого мы уже знаем: титлы карточек контрагентов плюс имена, встречавшиеся
-    в каталоге. Контрагенты главные — в боевом каталоге 724 имени из 729
-    совпадают с титлом буква в букву.
+    Кого мы уже знаем: карточки контрагентов (с их id — по ним право получит
+    ссылку) плюс имена, встречавшиеся в каталоге. Контрагенты главные: в
+    боевом каталоге 729 имён из 730 совпадают с титлом буква в букву.
     """
-    titles = db.scalars(select(Contragent.title)).all()
+    cards = db.execute(select(Contragent.title, Contragent.id)).all()
     owners = db.scalars(select(TrackRight.owner).distinct()).all()
-    return OwnerIndex([*titles, *owners])
+    return OwnerIndex(owners, cards)
 
 
 def _read_input(file: UploadFile | None, pasted: str | None):
@@ -678,6 +698,7 @@ def import_apply(
         name for name in used if index.match(name)[0] == "new"
     )
     created_owners: list[str] = []
+    created_ids: dict[str, uuid.UUID] = {}
     if to_create:
         if not create_missing_owners:
             raise HTTPException(
@@ -687,7 +708,9 @@ def import_apply(
                 + ("…" if len(to_create) > 5 else ""),
             )
         for name in to_create:
-            db.add(Contragent(id=uuid.uuid4(), title=name))
+            card_id = uuid.uuid4()
+            db.add(Contragent(id=card_id, title=name))
+            created_ids[name] = card_id
             created_owners.append(name)
         db.flush()
 
@@ -729,7 +752,20 @@ def import_apply(
             updated += 1
         touched.append(track_id)
         for right in row.rights:
-            rights_rows.append({"id": uuid.uuid4(), "track_id": track_id, **right})
+            # Ссылка на карточку ставится ЗДЕСЬ, при записи: имя из файла уже
+            # прошло замены, а недостающие карточки только что заведены.
+            # Право без карточки останется с пустой ссылкой — врать ей
+            # некуда, а имя в строке всё равно сохранится.
+            owner_name = right["owner"]
+            contragent_id = created_ids.get(owner_name) or index.contragent_for(owner_name)
+            rights_rows.append(
+                {
+                    "id": uuid.uuid4(),
+                    "track_id": track_id,
+                    "contragent_id": contragent_id,
+                    **right,
+                }
+            )
 
     if touched:
         db.flush()

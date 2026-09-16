@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Modal } from '../components/ui/Modal';
 import { Button } from '../components/ui/Button';
 import { RequisitesSection } from '../components/ui/RequisitesSection';
@@ -20,7 +21,8 @@ import { deleteFinanceOperation, fetchFinanceCard, formatMoney } from '../api/fi
  * admin). Денежная строка, которую можно молча переписать, — не история.
  */
 export function FinanceContragentModal({ contragentId, level, isTop, onChanged }) {
-  const { closeModal, openModal } = useModal();
+  const { closeModal, closeAllModals, openModal } = useModal();
+  const navigate = useNavigate();
   const { role } = useAuth();
   // Подпись рег. номера зависит от типа контрагента (ИНН / ОГРНИП / ОГРН /
   // БИН) и приходит с сервера — без неё блок реквизитов эту строку не
@@ -77,6 +79,23 @@ export function FinanceContragentModal({ contragentId, level, isTop, onChanged }
       width={720}
       footer={
         <div className="flex items-center gap-3">
+          {/* «Треки» уводит в номенклатуру, отфильтрованную по ЭТОЙ карточке.
+              Отбор идёт по ссылке track_rights.contragent_id, а не по имени:
+              у одного лейбла в выгрузке встречается по два написания, и поиск
+              по титлу показал бы не все его треки. Кнопка появляется, только
+              если треки есть: пустой переход бессмысленен. */}
+          {card?.tracks_count > 0 && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                closeAllModals();
+                navigate(`/finance?contragent=${contragentId}`);
+              }}
+            >
+              Треки ({card.tracks_count})
+            </Button>
+          )}
           {canAddFinanceOperations(role) && (
             <>
               <Button

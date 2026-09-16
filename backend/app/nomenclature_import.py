@@ -410,23 +410,50 @@ def read_pasted(text_block: str):
 
 class OwnerIndex:
     """
-    Справочник известных имён правообладателей — чтобы узнавать своих.
+    Справочник известных имён правообладателей — чтобы узнавать своих и
+    находить карточку контрагента, которой имя принадлежит.
 
     Строится из ДВУХ источников: титлов карточек контрагентов и имён, уже
     встречавшихся в каталоге. Контрагенты здесь главные — в боевом каталоге
-    724 имени из 729 совпадают с титлом карточки буква в букву, — но и
+    729 имён из 730 совпадают с титлом карточки буква в букву, — но и
     каталожные написания нужны: пока новое имя не завели карточкой, оно
-    существует только там.
+    существует только там. У таких имён карточки нет, и `contragent_for`
+    честно возвращает None.
     """
 
-    def __init__(self, known_names):
+    def __init__(self, known_names, contragents=()):
         self.known = set()
         self.by_norm: dict[str, str] = {}
+        # Имя → id карточки. Отдельно от by_norm: там любое известное
+        # написание, здесь только те, за которыми стоит карточка.
+        self.ids: dict[str, object] = {}
+        self.ids_by_norm: dict[str, object] = {}
+        for title, contragent_id in contragents:
+            if not title:
+                continue
+            self.known.add(title)
+            self.by_norm.setdefault(normalize_owner(title), title)
+            self.ids.setdefault(title, contragent_id)
+            self.ids_by_norm.setdefault(normalize_owner(title), contragent_id)
         for name in known_names:
             if not name:
                 continue
             self.known.add(name)
             self.by_norm.setdefault(normalize_owner(name), name)
+
+    def contragent_for(self, name: str):
+        """
+        Карточка, которой принадлежит имя: сперва точное совпадение с титлом,
+        потом совпадение после нормализации («Князева А.А. (ИП)» против
+        «Князева А. А. (ИП)» — разница в одном пробеле).
+
+        Приблизительные совпадения (префикс, опечатка) СЮДА НЕ ВХОДЯТ: они
+        годятся, чтобы спросить человека, но не чтобы молча привязать деньги
+        к чужой карточке.
+        """
+        if name in self.ids:
+            return self.ids[name]
+        return self.ids_by_norm.get(normalize_owner(name))
 
     def match(self, name: str) -> tuple[str, str | None]:
         """

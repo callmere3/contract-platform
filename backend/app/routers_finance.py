@@ -34,6 +34,7 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, Form, HTTPException
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.audit import log_action
@@ -53,7 +54,7 @@ from app.finance import (
     period_label,
     totals,
 )
-from app.models import Contragent, FinanceOperation, User
+from app.models import Contragent, FinanceOperation, TrackRight, User
 from app.roles import (
     CAN_ADD_FINANCE_OPERATIONS,
     CAN_DELETE_FINANCE_OPERATIONS,
@@ -125,6 +126,17 @@ def finance_card(contragent_id: uuid.UUID, db: Session = Depends(get_session)) -
         raise HTTPException(status_code=404, detail="Контрагент не найден")
 
     sums = totals(db, contragent_id)
+    # Сколько треков каталога принадлежит этому контрагенту — по ССЫЛКЕ, а не
+    # по совпадению имени: у карточки бывает несколько написаний в выгрузке
+    # Dista, и счёт по титлу показал бы не все. DISTINCT обязателен: у трека
+    # две строки прав на одного и того же человека (смежные и авторские) —
+    # без него каждый трек считался бы дважды.
+    tracks_count = (
+        db.query(func.count(func.distinct(TrackRight.track_id)))
+        .filter(TrackRight.contragent_id == contragent_id)
+        .scalar()
+        or 0
+    )
     operations = (
         db.query(FinanceOperation)
         .filter(FinanceOperation.contragent_id == contragent_id)
@@ -138,6 +150,7 @@ def finance_card(contragent_id: uuid.UUID, db: Session = Depends(get_session)) -
         "id": str(contragent.id),
         "title": contragent.title,
         "name": contragent.name,
+        "tracks_count": tracks_count,
         "country": contragent.country,
         "type": contragent.type,
         "reg_number": contragent.reg_number,

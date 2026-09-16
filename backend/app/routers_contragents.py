@@ -51,6 +51,7 @@ from app.models import (
     ContragentNickname,
     FinanceOperation,
     Template,
+    TrackRight,
     User,
     doc_type_sort_key,
 )
@@ -1189,6 +1190,24 @@ def delete_contragent(
             detail=(
                 "По контрагенту есть операции в ML Finance (%d). "
                 "Удалите их там, если карточку всё-таки нужно снести." % money_rows
+            ),
+        )
+
+    # То же самое с каталогом: у track_rights.contragent_id тоже RESTRICT.
+    # Карточка, на которую ссылаются треки, не должна исчезать молча — иначе
+    # права остались бы без правообладателя, и обнаружилось бы это на первом
+    # расчёте выплат. Что делать оператору: поправить написание в выгрузке и
+    # залить её заново, чтобы права переехали на нужную карточку.
+    track_rows = (
+        db.query(TrackRight).filter(TrackRight.contragent_id == contragent_id).count()
+    )
+    if track_rows:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "На контрагента ссылаются права в номенклатуре (%d строк). "
+                "Перепривяжите их импортом, если карточку всё-таки нужно снести."
+                % track_rows
             ),
         )
 
