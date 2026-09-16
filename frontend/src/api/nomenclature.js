@@ -63,11 +63,16 @@ export function checkTracksImport(file) {
  * ({«ИП Погорельских»: «Погорельских А.А. (ИП)»}), createMissingOwners —
  * заводить ли карточки на тех, кого в базе нет вовсе.
  */
-export function applyTracksImport(file, { ownerMap = {}, createMissingOwners = true } = {}) {
+export function applyTracksImport(
+  file,
+  { ownerMap = {}, createMissingOwners = true, skipRows = [] } = {},
+) {
   const body = new FormData();
   body.append('file', file);
   body.append('owner_map', JSON.stringify(ownerMap));
   body.append('create_missing_owners', createMissingOwners ? 'true' : 'false');
+  // Номера строк, у которых человек снял галочку в предпросмотре.
+  body.append('skip_rows', JSON.stringify(skipRows));
   return apiJson(`${API}/nomenclature/import/apply`, { method: 'POST', body });
 }
 

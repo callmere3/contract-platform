@@ -74,6 +74,9 @@ MAX_IMPORT_ROWS = 20_000
 # Сколько проблемных строк показываем поимённо. Список на тысячу строк никто
 # не читает, а число в итогах говорит всё, что нужно.
 MAX_ISSUES = 100
+# Сколько строк показываем таблицей. Больше двух сотен никто глазами не
+# проверяет, а браузеру каждая строка — это тридцать ячеек.
+MAX_PREVIEW_ROWS = 200
 
 
 def percent(value: Decimal | None) -> str | None:
@@ -368,20 +371,27 @@ def _rights_cells(rights: dict) -> list:
             cells += ["", "", ""]
             continue
         owner, share, royalty = row
-        # Обратно в доли единицы: файл должен быть таким же, как из Dista.
+        # ПРОЦЕНТАМИ 0-100, как в файле, который приносит владелец. В выгрузке
+        # Dista те же числа лежат долями единицы, но в процентных ячейках
+        # (0.8 = 80%) — читаем мы оба вида, а пишем один: обычные числа
+        # понятны и Excel'ю, и человеку, который правит файл руками.
         cells += [
             owner,
-            float(share / 100) if share is not None else "",
-            float(royalty / 100) if royalty is not None else "",
+            float(share) if share is not None else "",
+            float(royalty) if royalty is not None else "",
         ]
     return cells
 
 
-def _plain(value: Decimal | None) -> str:
-    """Общая доля — строкой без хвостовых нулей, как в выгрузке («100», «33.33»)."""
+def _plain(value: Decimal | None):
+    """
+    Доля или ставка в ячейку — ЧИСЛОМ, а не строкой: файл правят в Excel, и
+    текстовые «100» в колонке чисел мешают и сортировке, и формулам. Пусто
+    остаётся пустым: ноль и «не заполнено» — разные вещи.
+    """
     if value is None:
         return ""
-    return f"{value:.2f}".rstrip("0").rstrip(".") or "0"
+    return float(value)
 
 
 def _owner_index(db: Session) -> OwnerIndex:
@@ -413,6 +423,60 @@ def _read_upload(file: UploadFile):
             "а через интерфейс — ежедневные выгрузки в несколько десятков строк.",
         )
     return rows
+
+
+def _preview_row(row, existing_skus: set) -> dict:
+    """
+    Строка файла для предпросмотра — значениями по колонкам, как их прочитал
+    сервер.
+
+    Именно КАК ПРОЧИТАЛ, а не как они лежат в файле: смысл экрана в том,
+    чтобы человек увидел, что доля «0.8» понята как 80%, дата — как дата, а
+    имя правообладателя попало в ту колонку, в которую он его клал. Список
+    ошибок без этого читается как приговор без дела.
+    """
+    track = row.track
+    values = [
+        track["rights_since"].strftime("%d.%m.%Y") if track.get("rights_since") else "",
+        track.get("sku") or "",
+        track.get("code") or "",
+        track.get("title") or "",
+        track.get("artist") or "",
+        track.get("authors") or "",
+        percent(track.get("share_author")) or "",
+        percent(track.get("share_related")) or "",
+        track.get("catalog") or "",
+        track.get("album") or "",
+        track.get("genre") or "",
+        percent(track.get("royalty_percent")) or "",
+    ]
+    by_slot = {(r["right_type"], r["slot"]): r for r in row.rights}
+    for right_type, slot in (
+        (AUTHOR, 1),
+        (AUTHOR, 2),
+        (RELATED, 1),
+        (RELATED, 2),
+        (AUTHOR, 3),
+        (RELATED, 3),
+    ):
+        right = by_slot.get((right_type, slot))
+        if right is None:
+            values += ["", "", ""]
+        else:
+            values += [
+                right["owner"],
+                percent(right["share"]) or "",
+                percent(right["royalty"]) or "",
+            ]
+
+    return {
+        "row": row.row_num,
+        "ok": row.ok,
+        "action": "update" if track.get("sku") in existing_skus else "new",
+        "errors": row.errors,
+        "warnings": row.warnings,
+        "values": values,
+    }
 
 
 def _plan(db: Session, rows: list) -> dict:
@@ -458,7 +522,14 @@ def _plan(db: Session, rows: list) -> dict:
             unknown.append({"name": name, "rows": count})
 
     ok_rows = [r for r in rows if r.ok]
+    existing_skus = existing
     return {
+        # Колонки отдаёт СЕРВЕР, а не рисует фронт: формат файла живёт в
+        # nomenclature_import.COLUMNS, и подписи в предпросмотре обязаны
+        # совпадать с ним, иначе человек будет сверять глазами не то.
+        "columns": list(COLUMNS),
+        "preview": [_preview_row(r, existing_skus) for r in rows[:MAX_PREVIEW_ROWS]],
+        "preview_limited": len(rows) > MAX_PREVIEW_ROWS,
         "rows": len(rows),
         "ready": len(ok_rows),
         "tracks_new": len({r.track["sku"] for r in ok_rows} - existing),
@@ -497,6 +568,7 @@ def import_apply(
     file: UploadFile = File(...),
     owner_map: str = Form("{}"),
     create_missing_owners: bool = Form(True),
+    skip_rows: str = Form("[]"),
     db: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> dict:
@@ -521,11 +593,14 @@ def import_apply(
         mapping = json.loads(owner_map or "{}")
         if not isinstance(mapping, dict):
             raise ValueError
-    except (ValueError, json.JSONDecodeError):
-        raise HTTPException(400, "owner_map должен быть объектом JSON")
+        # Строки, которые человек снял галочкой в предпросмотре. Номера, а не
+        # артикулы: в предпросмотре он видит именно номера строк файла.
+        skipped_by_hand = set(json.loads(skip_rows or "[]"))
+    except (ValueError, TypeError, json.JSONDecodeError):
+        raise HTTPException(400, "owner_map и skip_rows должны быть корректным JSON")
 
     index = _owner_index(db)
-    ready = [r for r in rows if r.ok]
+    ready = [r for r in rows if r.ok and r.row_num not in skipped_by_hand]
 
     # Имена после замен и те, кого придётся завести.
     used: set[str] = set()
@@ -598,9 +673,13 @@ def import_apply(
         db.execute(insert(TrackRight), rights_rows)
 
     skipped = [
-        {"row": r.row_num, "sku": r.track.get("sku"), "messages": r.errors}
+        {
+            "row": r.row_num,
+            "sku": r.track.get("sku"),
+            "messages": r.errors or ["снята галочка в предпросмотре"],
+        }
         for r in rows
-        if r.errors
+        if r.errors or r.row_num in skipped_by_hand
     ]
     # ОДНА запись в журнал на весь прогон, а не на каждый трек: журнал
     # недавно чистили от шума скриптов, засыпать его импортом нельзя.
@@ -614,6 +693,7 @@ def import_apply(
             "created": created,
             "updated": updated,
             "skipped": len(skipped),
+            "unchecked": len(skipped_by_hand),
             "owners_created": created_owners[:20],
             "owners_replaced": len(mapping),
         },

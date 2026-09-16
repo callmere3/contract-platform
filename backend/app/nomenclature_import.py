@@ -13,6 +13,11 @@
 («Роялти(%) авт. прав 1» с пробелом против «Роялти авт.прав 2» без процента),
 а порядок Dista держит.
 
+ДОЛИ И СТАВКИ — ПРОЦЕНТЫ 0–100. В файле они встречаются в двух видах, и
+отличаются не величиной, а форматом ячейки: у Dista это процентный формат с
+долей единицы внутри (0.8 = 80%), у файла, собранного руками, — обычное число
+(70 = 70%). Решает формат; см. share_percent.
+
 ЧТО ПРОВЕРЯЕТСЯ (правила владельца 17.09.2026):
   - обязательны: дата прав, артикул, наименование, исполнитель и обе общие
     доли. Код/ISRC, автор слов и музыки, альбом — необязательны: у альбома,
@@ -147,38 +152,30 @@ def text(value, field_name: str | None = None) -> str | None:
     return s
 
 
-def decimal_percent(value) -> Decimal | None:
-    """Общие доли и ставка трека лежат процентами: '100', '33,33', '80'."""
-    if value is None:
-        return None
-    s = str(value).strip().replace(",", ".").replace("%", "")
-    if not s:
-        return None
-    try:
-        return Decimal(s).quantize(Decimal("0.01"))
-    except (InvalidOperation, ValueError):
-        return None
-
-
-def fraction_percent(value) -> tuple[Decimal | None, bool]:
+def share_percent(value, percent_format: bool) -> Decimal | None:
     """
-    Доля и ставка правообладателя лежат ДОЛЯМИ ЕДИНИЦЫ: 1 = 100%, 0.8 = 80%.
-    Приводим к процентам здесь, один раз: иначе на сто умножало бы каждое
-    место показа, и однажды кто-нибудь забыл бы.
+    Доля и ставка правообладателя → проценты (0–100).
 
-    Второй элемент ответа — «значение было больше единицы». Такое считаем уже
-    процентом и не трогаем: если Dista сменит формат, каталог не должен молча
-    получить доли по 8000%.
+    В ФАЙЛАХ ДВА ВИДА ЗАПИСИ, и отличаются они не величиной, а ФОРМАТОМ
+    ЯЧЕЙКИ:
+      - выгрузка Dista: ячейка с процентным форматом («0%»), внутри лежит
+        доля единицы — 1 значит 100%, 0.8 значит 80%;
+      - файл, собранный руками: обычное число, и 100 значит 100%, 70 — 70%.
+
+    Поэтому решает формат, а не величина. Гадать по величине нельзя: 1 — это
+    и 100% в первом случае, и 1% во втором, а единственная разница между ними
+    в том, как ячейка оформлена. Так первый вариант импорта и сыпал
+    предупреждениями на нормальном файле.
     """
     if value is None:
-        return None, False
+        return None
     try:
         number = Decimal(str(value).strip().replace(",", "."))
     except (InvalidOperation, ValueError):
-        return None, False
-    if number > 1:
-        return number.quantize(Decimal("0.01")), True
-    return (number * 100).quantize(Decimal("0.01")), False
+        return None
+    if percent_format:
+        number *= 100
+    return number.quantize(Decimal("0.01"))
 
 
 def parse_date(value) -> date | None:
@@ -226,22 +223,23 @@ def normalize_owner(name: str) -> str:
     return re.sub(r"\s+", "", s)
 
 
-def _parse_rights(raw: tuple, row: Row) -> None:
+def _parse_rights(raw: tuple, percent_cols: set, row: Row) -> None:
     """Правообладатели строки. Пустой слот — норма, а не ошибка."""
     for right_type, slot, col_owner, col_share, col_royalty in RIGHT_SLOTS:
         owner = text(raw[col_owner], "owner")
         if not owner:
             continue
-        share, share_big = fraction_percent(raw[col_share])
-        royalty, royalty_big = fraction_percent(raw[col_royalty])
+        share = share_percent(raw[col_share], col_share in percent_cols)
+        royalty = share_percent(raw[col_royalty], col_royalty in percent_cols)
         label = RIGHT_LABELS[right_type]
         if share is None:
             row.errors.append(f"у {label} правообладателя «{owner}» не указана доля")
             continue
-        if share_big or royalty_big:
-            row.warnings.append(
-                f"доля или ставка «{owner}» больше единицы — прочитаны как проценты"
+        if share > 100 or (royalty is not None and royalty > 100):
+            row.errors.append(
+                f"у {label} правообладателя «{owner}» доля или ставка больше 100%"
             )
+            continue
         row.rights.append(
             {
                 "right_type": right_type,
@@ -285,7 +283,7 @@ def _num(value: Decimal) -> str:
     return f"{value:.2f}".rstrip("0").rstrip(".") or "0"
 
 
-def parse_row(raw: tuple, row_num: int) -> Row | None:
+def parse_row(raw: tuple, row_num: int, percent_cols: set | None = None) -> Row | None:
     """
     Строка файла → разобранная строка с ошибками и предупреждениями.
 
@@ -295,11 +293,12 @@ def parse_row(raw: tuple, row_num: int) -> Row | None:
     """
     if raw is None or all(v is None for v in raw):
         return None
+    percent_cols = percent_cols or set()
     if len(raw) < len(COLUMNS):
         raw = tuple(raw) + (None,) * (len(COLUMNS) - len(raw))
 
     sku = text(raw[COL_SKU], "sku")
-    if sku == "Артикул" or (sku is None and text(raw[COL_TITLE]) == "Наименование"):
+    if sku == "Артикул" or text(raw[COL_TITLE]) == "Наименование":
         return None
 
     row = Row(row_num=row_num, track={})
@@ -314,12 +313,16 @@ def parse_row(raw: tuple, row_num: int) -> Row | None:
         "title": text(raw[COL_TITLE], "title"),
         "artist": text(raw[COL_ARTIST], "artist"),
         "authors": text(raw[COL_AUTHORS]),
-        "share_author": decimal_percent(raw[COL_SHARE_AUTHOR]),
-        "share_related": decimal_percent(raw[COL_SHARE_RELATED]),
+        "share_author": share_percent(
+            raw[COL_SHARE_AUTHOR], COL_SHARE_AUTHOR in percent_cols
+        ),
+        "share_related": share_percent(
+            raw[COL_SHARE_RELATED], COL_SHARE_RELATED in percent_cols
+        ),
         "catalog": text(raw[COL_CATALOG], "catalog"),
         "album": text(raw[COL_ALBUM], "album"),
         "genre": text(raw[COL_GENRE], "genre"),
-        "royalty_percent": decimal_percent(raw[COL_ROYALTY]),
+        "royalty_percent": share_percent(raw[COL_ROYALTY], COL_ROYALTY in percent_cols),
         "rights_since": rights_since,
     }
 
@@ -339,7 +342,7 @@ def parse_row(raw: tuple, row_num: int) -> Row | None:
     if rights_since is None and raw_date is None:
         row.errors.append("не заполнено обязательное поле: дата прав")
 
-    _parse_rights(raw, row)
+    _parse_rights(raw, percent_cols, row)
     _check_shares(row)
 
     # Артикула нет — строку не на что записать, и все прочие претензии к ней
@@ -350,11 +353,24 @@ def parse_row(raw: tuple, row_num: int) -> Row | None:
 
 
 def read_rows(worksheet):
-    """Лист Excel → разобранные строки. Первая строка — шапка файла."""
-    for row_num, raw in enumerate(worksheet.iter_rows(values_only=True), start=1):
-        if row_num == 1:
-            continue
-        parsed = parse_row(raw, row_num)
+    """
+    Лист Excel → разобранные строки.
+
+    Читаем ЯЧЕЙКАМИ, а не значениями: нужен ещё и формат — по нему видно,
+    записана доля процентом («0%», внутри 0.8) или обычным числом (70).
+
+    ШАПКУ УЗНАЁМ ПО СОДЕРЖИМОМУ, а не по номеру строки. Файл от Dista
+    начинается с подписей колонок, а собранный руками — сразу с данных
+    (пример владельца от 17.09.2026), и пропускать первую строку вслепую
+    значит терять первый трек. Заодно так отсекается шапка, попавшая в
+    середину файла: экспорт грида Dista её подмешивает.
+    """
+    for row_num, cells in enumerate(worksheet.iter_rows(), start=1):
+        values = tuple(c.value for c in cells)
+        percent_cols = {
+            i for i, c in enumerate(cells) if "%" in (c.number_format or "")
+        }
+        parsed = parse_row(values, row_num, percent_cols)
         if parsed is not None:
             yield parsed
 
