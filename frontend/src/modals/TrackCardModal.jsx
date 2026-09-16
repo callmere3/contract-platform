@@ -69,19 +69,23 @@ export function TrackCardModal({ trackId, level, isTop }) {
 
           {/* Два блока, а не одна таблица прав: смежные и авторские
               независимы, и складывать их доли между собой нельзя — у кавера
-              фонограмма своя, а произведение чужое. */}
-          <RightsBlock title="Смежные права" hint="на фонограмму" owners={card.rights.related} />
-          <RightsBlock
-            title="Авторские права"
-            hint="на произведение — музыку и текст"
-            owners={card.rights.author}
-          />
+              фонограмма своя, а произведение чужое.
 
-          <div className="text-[11px] text-text-muted mt-5 leading-snug">
-            {card.source_file ? `Из выгрузки «${card.source_file}»` : 'Источник выгрузки неизвестен'}
-            {card.imported_at ? ` · загружено ${russianDate(card.imported_at.slice(0, 10))}` : ''}
-            {card.archived ? ' · трек в архиве: его нет в последней выгрузке' : ''}
-          </div>
+              Подписи «на фонограмму» и «на произведение» убраны (просьба
+              владельца 17.09.2026): в карточку смотрят те, кто и так знает
+              разницу, а объяснять её каждый раз — шум. */}
+          <RightsBlock title="Смежные права" owners={card.rights.related} />
+          <RightsBlock title="Авторские права" owners={card.rights.author} />
+
+          {/* Откуда и когда приехала строка, в карточке больше не пишем: это
+              нужно при разборе импорта, а не при взгляде на трек. Данные
+              никуда не делись — они в tracks.source_file и imported_at.
+              Архив — другое дело: это состояние самого трека. */}
+          {card.archived && (
+            <div className="text-[11px] text-text-muted mt-5 leading-snug">
+              Трек в архиве: его нет в последней выгрузке.
+            </div>
+          )}
         </>
       )}
     </Modal>
@@ -100,13 +104,10 @@ function Row({ label, value, mono }) {
 }
 
 /** Правообладатели одного вида прав. Пусто — осмысленный ответ, не пробел. */
-function RightsBlock({ title, hint, owners }) {
+function RightsBlock({ title, owners }) {
   return (
     <div className="mb-5 last:mb-0">
-      <div className="flex items-baseline gap-2 mb-2">
-        <span className="text-[13px] font-semibold text-text">{title}</span>
-        <span className="text-[11.5px] text-text-muted">{hint}</span>
-      </div>
+      <div className="text-[13px] font-semibold text-text mb-2">{title}</div>
       {owners.length === 0 ? (
         <div className="text-[13px] text-text-muted italic">
           Наших долей нет — такое бывает у каверов и ремиксов.
