@@ -59,6 +59,28 @@ function writeCodes(key, codes) {
   }
 }
 
+/**
+ * Как выглядит секретное достижение, когда оно получено.
+ *
+ * Нужно ТОЛЬКО кнопке обкатки: у настоящего достижения раскрытый вид
+ * присылает сервер (см. app/achievements.py — пока не получено, наружу
+ * уходит замок без условия, а после получения приходит уже призрак).
+ * Здесь же значок «выдан» понарошку, сервер о нём не знает и раскрыть его
+ * не может — приходится держать копию текста.
+ *
+ * ЕСЛИ СЕКРЕТНОЕ ДОСТИЖЕНИЕ ПОМЕНЯЕТСЯ, поправить и здесь: иначе кнопка
+ * обкатки будет показывать вчерашнее название.
+ */
+export function revealSecret(achievement) {
+  if (!achievement?.secret || achievement.earned) return achievement;
+  return {
+    ...achievement,
+    icon: '👻',
+    title: 'Призрак',
+    hint: 'Вернуться в сервис после перерыва больше 100 дней',
+  };
+}
+
 /** Коды, выданные кнопкой обкатки. Профиль рисует их как полученные. */
 export function demoCodes() {
   return readCodes(DEMO_KEY) ?? [];
@@ -101,11 +123,9 @@ export function grantRandomAchievement() {
   const nextDemo = [...new Set([...(pool.length > 0 ? granted : []), pick.code])];
   writeCodes(DEMO_KEY, nextDemo);
 
-  // Секретное под замком показываем как настоящее: у него другой значок и
+  // Секретное под замком показываем раскрытым: у него другой значок и
   // название, и именно это и интересно проверить.
-  const shown = pick.secret && !pick.earned
-    ? { ...pick, icon: '👻', title: 'Призрак', hint: 'Вернуться после перерыва больше 100 дней' }
-    : pick;
+  const shown = revealSecret(pick);
 
   window.dispatchEvent(new Event(ACHIEVEMENTS_CHANGED_EVENT));
   window.dispatchEvent(

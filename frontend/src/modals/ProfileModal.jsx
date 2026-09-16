@@ -5,7 +5,12 @@ import { ChampionBadge } from '../components/ui/ChampionBadge';
 import { useModal } from './ModalProvider';
 import { useAuth } from '../auth/AuthContext';
 import { fetchMyAchievements } from '../api/profile';
-import { demoCodes, markProfileOpened, unopenedCodes } from '../achievements/tracker';
+import {
+  demoCodes,
+  markProfileOpened,
+  revealSecret,
+  unopenedCodes,
+} from '../achievements/tracker';
 
 /**
  * Карточка профиля — открывается нажатием на своё имя в шапке.
@@ -33,6 +38,13 @@ export function ProfileModal({ level, isTop }) {
   // Значки, выданные кнопкой обкатки: сервер о них не знает, но показать их
   // надо полученными — иначе проверять анимацию было бы не на чем.
   const [demo] = useState(() => demoCodes());
+
+  // Полученное достижение должно выглядеть полученным. Для секретного это
+  // значит раскрыть его: у выданного кнопкой сервер по-прежнему присылает
+  // замок, и без подмены значок так и остался бы 🔒 — но уже цветным, что
+  // выглядит поломкой. У настоящего раскрытый вид приходит с сервера, и
+  // revealSecret его не трогает.
+  const asShown = (a) => (demo.includes(a.code) ? { ...revealSecret(a), earned: true } : a);
 
   useEffect(() => {
     let alive = true;
@@ -101,14 +113,10 @@ export function ProfileModal({ level, isTop }) {
               {achievements.map((a) => (
                 <AchievementCard
                   key={a.code}
-                  achievement={demo.includes(a.code) ? { ...a, earned: true } : a}
+                  achievement={asShown(a)}
                   isFresh={fresh.includes(a.code)}
                   revealIndex={fresh.indexOf(a.code)}
-                  onOpen={() =>
-                    openModal('achievement', {
-                      achievement: demo.includes(a.code) ? { ...a, earned: true } : a,
-                    })
-                  }
+                  onOpen={() => openModal('achievement', { achievement: asShown(a) })}
                 />
               ))}
             </div>
