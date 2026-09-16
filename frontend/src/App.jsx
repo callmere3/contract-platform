@@ -117,6 +117,12 @@ function AppShell() {
         <Route
           path="/finance"
           element={
+            canUseFinance(user?.role) ? <NomenclaturePage /> : <Navigate to="/search" replace />
+          }
+        />
+        <Route
+          path="/finance/reports"
+          element={
             canUseFinance(user?.role) ? <FinanceReportsPage /> : <Navigate to="/search" replace />
           }
         />
@@ -128,12 +134,6 @@ function AppShell() {
             ) : (
               <Navigate to="/search" replace />
             )
-          }
-        />
-        <Route
-          path="/finance/nomenclature"
-          element={
-            canUseFinance(user?.role) ? <NomenclaturePage /> : <Navigate to="/search" replace />
           }
         />
         <Route

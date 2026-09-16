@@ -21,6 +21,15 @@ import { UnderConstruction } from '../components/ui/UnderConstruction';
  *     «Контрагентах» ML Finance: человек ходит между этими экранами, и поиск
  *     должен быть в одном и том же месте.
  *
+ * В ТАБЛИЦЕ ТОЛЬКО ТО, ПО ЧЕМУ ТРЕК ОПОЗНАЮТ: артикул, ISRC/UPC, название,
+ * исполнитель и права. Автор слов/музыки и альбом убраны отсюда (просьба
+ * владельца 16.09.2026) — они пойдут в карточку трека, которая откроется
+ * нажатием на строку. Исполнитель при этом ОТДЕЛЬНАЯ колонка, а не вторая
+ * строчка под названием: по нему ищут и им сортируют, а подпись ни
+ * отсортировать, ни выровнять глазом по столбцу нельзя. В демо-строках автор
+ * и альбом оставлены — они понадобятся карточке, и выбрасывать их, чтобы
+ * через неделю вписывать заново, незачем.
+ *
  * Строки ниже — демонстрационные (взяты из того же скриншота), в них видно
  * главное свойство каталога: доли считаются ОТДЕЛЬНО по видам прав, и у
  * кавера наших авторских может не быть вовсе. Когда каталог появится
@@ -28,6 +37,7 @@ import { UnderConstruction } from '../components/ui/UnderConstruction';
  * запрос — разметка таблицы уже настоящая.
  */
 
+// author и album в таблицу не выводятся — они для карточки трека (см. выше).
 const DEMO_TRACKS = [
   {
     sku: '7231772',
@@ -168,7 +178,7 @@ export function NomenclaturePage() {
                   <th className={th}>Артикул</th>
                   <th className={th}>ISRC / UPC</th>
                   <th className={th}>Наименование</th>
-                  <th className={th}>Альбом</th>
+                  <th className={th}>Исполнитель</th>
                   <th className={th}>Смежные права</th>
                   <th className={th}>Авторские права</th>
                   <th className={th}>Права с</th>
@@ -183,14 +193,8 @@ export function NomenclaturePage() {
                     <td className={`${td} font-mono text-[12px] text-text-secondary whitespace-nowrap`}>
                       {t.code}
                     </td>
-                    <td className={td}>
-                      <span className="block font-semibold text-text">{t.title}</span>
-                      <span className="block text-[12px] text-text-muted mt-0.5">
-                        {t.artist}
-                        {t.author && t.author !== t.artist ? ` · сл./муз.: ${t.author}` : ''}
-                      </span>
-                    </td>
-                    <td className={`${td} text-text-secondary`}>{t.album}</td>
+                    <td className={`${td} font-semibold text-text`}>{t.title}</td>
+                    <td className={`${td} text-text-secondary`}>{t.artist}</td>
                     <td className={td}>
                       <RightsCell owners={t.related} />
                     </td>
@@ -205,7 +209,8 @@ export function NomenclaturePage() {
           </div>
 
           <div className="px-5 py-4 border-t border-border text-[13px] text-text-muted">
-            Показаны 6 строк · в каталоге Dista их больше 100 000
+            Показаны 6 строк · в каталоге Dista их больше 100 000 · нажатие на строку откроет
+            карточку трека: альбом, авторы слов и музыки, история долей
           </div>
         </Card>
       </UnderConstruction>
