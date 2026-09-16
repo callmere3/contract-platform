@@ -272,27 +272,69 @@ def export_tracks(
     ws = wb.create_sheet("Номенклатура")
     ws.append(list(COLUMNS))
 
-    query = _filtered_tracks(q, owner, catalog, include_archived)
-    joined = (
-        select(Track, TrackRight)
+    ids = _filtered_tracks(q, owner, catalog, include_archived).with_only_columns(Track.id)
+    # КОЛОНКАМИ, А НЕ ОБЪЕКТАМИ ORM. Сначала здесь было select(Track, TrackRight),
+    # и выгрузка всего каталога занимала 93 секунды: на каждую из 244 тысяч
+    # строк join'а SQLAlchemy собирал объекты Track и TrackRight со всей их
+    # обвязкой. Кортежи те же данные отдают в разы быстрее, а собирать из них
+    # строку файла всё равно приходится вручную.
+    rows = (
+        select(
+            Track.id,
+            Track.rights_since,
+            Track.sku,
+            Track.code,
+            Track.title,
+            Track.artist,
+            Track.authors,
+            Track.share_author,
+            Track.share_related,
+            Track.catalog,
+            Track.album,
+            Track.genre,
+            Track.royalty_percent,
+            TrackRight.right_type,
+            TrackRight.slot,
+            TrackRight.owner,
+            TrackRight.share,
+            TrackRight.royalty,
+        )
         .select_from(Track)
         .outerjoin(TrackRight, TrackRight.track_id == Track.id)
-        .where(Track.id.in_(query.with_only_columns(Track.id)))
-        .order_by(Track.sku, TrackRight.slot)
-        .execution_options(yield_per=2000)
+        .where(Track.id.in_(ids))
+        .order_by(Track.sku)
+        .execution_options(yield_per=5000)
     )
 
-    current: Track | None = None
-    rights: list[TrackRight] = []
-    for track, right in db.execute(joined):
-        if current is not None and track.id != current.id:
-            ws.append(_export_row(current, rights))
-            rights = []
-        current = track
-        if right is not None:
-            rights.append(right)
-    if current is not None:
-        ws.append(_export_row(current, rights))
+    current_id = None
+    track_cells: list = []
+    rights: dict = {}
+    for row in db.execute(rows):
+        if row[0] != current_id:
+            if current_id is not None:
+                ws.append(track_cells + _rights_cells(rights))
+            current_id = row[0]
+            track_cells = [
+                # Датой, а не строкой: Excel покажет её как дату, и наш же
+                # импорт прочитает её обратно без разбора текста.
+                row[1] or "",
+                row[2],
+                row[3] or "",
+                row[4],
+                row[5] or "",
+                row[6] or "",
+                _plain(row[7]),
+                _plain(row[8]),
+                row[9] or "",
+                row[10] or "",
+                row[11] or "",
+                _plain(row[12]),
+            ]
+            rights = {}
+        if row[13] is not None:
+            rights[(row[13], row[14])] = (row[15], row[16], row[17])
+    if current_id is not None:
+        ws.append(track_cells + _rights_cells(rights))
 
     buffer = io.BytesIO()
     wb.save(buffer)
@@ -304,43 +346,35 @@ def export_tracks(
     )
 
 
-def _export_row(track: Track, rights: list[TrackRight]) -> list:
-    """Трек и его права → строка в формате выгрузки Dista."""
-    by_slot = {(r.right_type, r.slot): r for r in rights}
+def _rights_cells(rights: dict) -> list:
+    """
+    Права трека → 18 ячеек в порядке выгрузки Dista.
 
-    def cells(right_type: str, slot: int) -> list:
-        row = by_slot.get((right_type, slot))
+    Порядок именно такой (первый и второй авторские, первые и вторые
+    смежные, и только потом третьи) — он исторический, и менять его нельзя:
+    файл должен заливаться обратно чем угодно, что читает выгрузку Dista.
+    """
+    cells: list = []
+    for right_type, slot in (
+        (AUTHOR, 1),
+        (AUTHOR, 2),
+        (RELATED, 1),
+        (RELATED, 2),
+        (AUTHOR, 3),
+        (RELATED, 3),
+    ):
+        row = rights.get((right_type, slot))
         if row is None:
-            return ["", "", ""]
+            cells += ["", "", ""]
+            continue
+        owner, share, royalty = row
         # Обратно в доли единицы: файл должен быть таким же, как из Dista.
-        return [
-            row.owner,
-            float(row.share / 100) if row.share is not None else "",
-            float(row.royalty / 100) if row.royalty is not None else "",
+        cells += [
+            owner,
+            float(share / 100) if share is not None else "",
+            float(royalty / 100) if royalty is not None else "",
         ]
-
-    return [
-        # Датой, а не строкой: Excel покажет её как дату, и наш же импорт
-        # прочитает её обратно без разбора текста.
-        track.rights_since or "",
-        track.sku,
-        track.code or "",
-        track.title,
-        track.artist or "",
-        track.authors or "",
-        _plain(track.share_author),
-        _plain(track.share_related),
-        track.catalog or "",
-        track.album or "",
-        track.genre or "",
-        _plain(track.royalty_percent),
-        *cells(AUTHOR, 1),
-        *cells(AUTHOR, 2),
-        *cells(RELATED, 1),
-        *cells(RELATED, 2),
-        *cells(AUTHOR, 3),
-        *cells(RELATED, 3),
-    ]
+    return cells
 
 
 def _plain(value: Decimal | None) -> str:
