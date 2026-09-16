@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { Modal } from '../components/ui/Modal';
 import { Button } from '../components/ui/Button';
 import { useModal } from './ModalProvider';
@@ -301,52 +301,69 @@ function Plan({ plan, replace, setReplace, skipRows, setSkipRows }) {
                   {c}
                 </th>
               ))}
-              <th className={head}>Замечания</th>
             </tr>
           </thead>
           <tbody>
             {plan.preview.map((r) => {
               const skipped = !r.ok || skipRows.includes(r.row);
+              const notes = [...r.errors, ...r.warnings];
               return (
-                <tr
-                  key={r.row}
-                  className={
-                    !r.ok
-                      ? 'bg-danger-soft'
-                      : skipped
-                        ? 'opacity-40'
-                        : r.action === 'new'
-                          ? 'bg-accent-soft'
-                          : undefined
-                  }
-                >
-                  <td className={cell}>
-                    <input
-                      type="checkbox"
-                      checked={!skipped}
-                      disabled={!r.ok}
-                      onChange={() => toggleRow(r.row)}
-                      title={r.ok ? 'Снять — не заливать эту строку' : 'Строка не прошла проверку'}
-                    />
-                  </td>
-                  <td className={`${cell} text-text-muted tabular-nums`}>{r.row}</td>
-                  {r.values.map((v, i) => (
-                    <td key={i} className={`${cell} text-text max-w-[220px] truncate`} title={v}>
-                      {v}
+                <Fragment key={r.row}>
+                  <tr
+                    className={
+                      !r.ok
+                        ? 'bg-danger-soft'
+                        : skipped
+                          ? 'opacity-40'
+                          : r.action === 'new'
+                            ? 'bg-accent-soft'
+                            : undefined
+                    }
+                  >
+                    <td className={cell}>
+                      <input
+                        type="checkbox"
+                        checked={!skipped}
+                        disabled={!r.ok}
+                        onChange={() => toggleRow(r.row)}
+                        title={
+                          r.ok ? 'Снять — не заливать эту строку' : 'Строка не прошла проверку'
+                        }
+                      />
                     </td>
-                  ))}
-                  <td className={`${cell} text-danger`}>
-                    {[...r.errors, ...r.warnings].join('; ')}
-                  </td>
-                </tr>
+                    <td className={`${cell} text-text-muted tabular-nums`}>{r.row}</td>
+                    {r.values.map((v, i) => (
+                      <td key={i} className={`${cell} text-text max-w-[220px] truncate`} title={v}>
+                        {v}
+                      </td>
+                    ))}
+                  </tr>
+                  {/* Замечание — ПОД строкой, а не колонкой справа: колонка
+                      уезжала за правый край, и до причины приходилось листать
+                      таблицу вбок (жалоба владельца 17.09.2026). Под строкой
+                      оно и ближе к тому, о чём говорит. */}
+                  {notes.length > 0 && (
+                    <tr className={!r.ok ? 'bg-danger-soft' : undefined}>
+                      <td />
+                      <td
+                        colSpan={plan.columns.length + 1}
+                        className={`${cell} ${r.ok ? 'text-text-muted' : 'text-danger'} whitespace-normal`}
+                      >
+                        {notes.join('; ')}
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               );
             })}
           </tbody>
         </table>
       </div>
       <div className="px-4 py-2 text-[11.5px] text-text-muted">
-        Цветом выделены новые треки, красным — строки, которые не пройдут. Галочку можно снять и у
-        нормальной строки, если заливать её не нужно.
+        Цветом выделены новые треки, красным — строки, которые не пройдут; причина написана под
+        самой строкой. Галочку можно снять и у нормальной строки, если заливать её не нужно.
+        Пустые места правообладателей в таблицу не выводятся: если вторых и третьих нет во всём
+        файле, их столбцов здесь не будет.
         {plan.preview_limited ? ` Показаны первые ${plan.preview.length} строк из ${plan.rows}.` : ''}
       </div>
     </div>

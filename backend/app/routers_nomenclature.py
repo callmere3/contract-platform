@@ -44,6 +44,7 @@ from app.nomenclature_import import (
     AUTHOR,
     COLUMNS,
     RELATED,
+    RIGHT_SLOTS,
     OwnerIndex,
     read_rows,
 )
@@ -425,7 +426,42 @@ def _read_upload(file: UploadFile):
     return rows
 
 
-def _preview_row(row, existing_skus: set) -> dict:
+def _used_slots(rows: list) -> list:
+    """
+    Какие места правообладателей заняты хоть в одной строке файла.
+
+    Нужно, чтобы не показывать в предпросмотре пустые колонки: у файла,
+    где у всех треков по одному правообладателю, шесть заготовленных мест
+    превращаются в восемнадцать пустых столбцов, и таблицу приходится
+    листать вбок (жалоба владельца 17.09.2026).
+
+    Считается ПО ВСЕМУ ФАЙЛУ, а не по показанным двум сотням строк: иначе
+    колонка исчезла бы из-за того, что второй правообладатель встречается
+    лишь на пятисотой строке, и человек решил бы, что данные потерялись.
+
+    Порядок — как в файле (первый и второй авторские, первые и вторые
+    смежные, потом третьи): человек сверяет предпросмотр со своим Excel.
+    """
+    present = {
+        (right["right_type"], right["slot"]) for row in rows for right in row.rights
+    }
+    order = [(t, s) for t, s, *_ in RIGHT_SLOTS]
+    # Первое место показываем всегда, даже если файл пустой: без него
+    # непонятно, куда вообще попадают правообладатели.
+    always = {(AUTHOR, 1), (RELATED, 1)}
+    return [slot for slot in order if slot in present or slot in always]
+
+
+def _preview_columns(slots: list) -> list:
+    """Подписи колонок предпросмотра: общие поля плюс занятые места прав."""
+    by_slot = {(t, s): (c_owner, c_share, c_royalty) for t, s, c_owner, c_share, c_royalty in RIGHT_SLOTS}
+    columns = list(COLUMNS[:12])
+    for slot in slots:
+        columns += [COLUMNS[i] for i in by_slot[slot]]
+    return columns
+
+
+def _preview_row(row, existing_skus: set, slots: list) -> dict:
     """
     Строка файла для предпросмотра — значениями по колонкам, как их прочитал
     сервер.
@@ -451,14 +487,7 @@ def _preview_row(row, existing_skus: set) -> dict:
         percent(track.get("royalty_percent")) or "",
     ]
     by_slot = {(r["right_type"], r["slot"]): r for r in row.rights}
-    for right_type, slot in (
-        (AUTHOR, 1),
-        (AUTHOR, 2),
-        (RELATED, 1),
-        (RELATED, 2),
-        (AUTHOR, 3),
-        (RELATED, 3),
-    ):
+    for right_type, slot in slots:
         right = by_slot.get((right_type, slot))
         if right is None:
             values += ["", "", ""]
@@ -523,12 +552,14 @@ def _plan(db: Session, rows: list) -> dict:
 
     ok_rows = [r for r in rows if r.ok]
     existing_skus = existing
+    slots = _used_slots(rows)
     return {
         # Колонки отдаёт СЕРВЕР, а не рисует фронт: формат файла живёт в
         # nomenclature_import.COLUMNS, и подписи в предпросмотре обязаны
-        # совпадать с ним, иначе человек будет сверять глазами не то.
-        "columns": list(COLUMNS),
-        "preview": [_preview_row(r, existing_skus) for r in rows[:MAX_PREVIEW_ROWS]],
+        # совпадать с ним, иначе человек будет сверять глазами не то. Пустые
+        # места правообладателей сюда не попадают — см. _used_slots.
+        "columns": _preview_columns(slots),
+        "preview": [_preview_row(r, existing_skus, slots) for r in rows[:MAX_PREVIEW_ROWS]],
         "preview_limited": len(rows) > MAX_PREVIEW_ROWS,
         "rows": len(rows),
         "ready": len(ok_rows),
