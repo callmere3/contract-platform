@@ -28,6 +28,7 @@ import { GenerationHistoryPage } from './pages/GenerationHistoryPage';
 import { NotificationsPage } from './pages/NotificationsPage';
 import { DistaConnectPage } from './pages/DistaConnectPage';
 import { FinancePage } from './pages/FinancePage';
+import { FinanceReportsPage } from './pages/FinanceReportsPage';
 import { ChampionPage } from './pages/ChampionPage';
 
 /**
@@ -113,6 +114,12 @@ function AppShell() {
             право стоит на всём роутере /finance. */}
         <Route
           path="/finance"
+          element={
+            canUseFinance(user?.role) ? <FinanceReportsPage /> : <Navigate to="/search" replace />
+          }
+        />
+        <Route
+          path="/finance/contragents"
           element={canUseFinance(user?.role) ? <FinancePage /> : <Navigate to="/search" replace />}
         />
         {/* Dista Connect — только admin, та же защита от прямого захода по

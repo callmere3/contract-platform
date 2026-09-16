@@ -120,7 +120,13 @@ export function Header({ companyName = 'ML Docs' }) {
 
   // Вкладки ML Finance. Своих «Пользователей» и «Уведомлений» у него нет —
   // администрирование одно на оба продукта и живёт в ML Docs.
-  let financeTabs = [{ to: '/finance', label: 'Контрагенты' }];
+  // «Загрузка отчётов» первой: это лицо продукта, хоть она пока и в
+  // разработке. end: true — иначе NavLink считал бы её активной и на
+  // /finance/contragents, который начинается тем же путём.
+  let financeTabs = [
+    { to: '/finance', label: 'Загрузка отчётов', end: true },
+    { to: '/finance/contragents', label: 'Контрагенты' },
+  ];
   if (canUseDistaSync(user?.role)) {
     financeTabs = [...financeTabs, { to: '/dista', label: 'Dista Connect' }];
   }
@@ -199,6 +205,7 @@ export function Header({ companyName = 'ML Docs' }) {
             <NavLink
               key={tab.to}
               to={tab.to}
+              end={tab.end}
               title={tab.title}
               aria-label={tab.title}
               className={({ isActive }) =>
