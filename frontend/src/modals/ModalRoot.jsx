@@ -15,6 +15,8 @@ import { ProfileModal } from './ProfileModal';
 import { UserProfileModal } from './UserProfileModal';
 import { AchievementModal } from './AchievementModal';
 import { GuideModal } from './GuideModal';
+import { FinanceContragentModal } from './FinanceContragentModal';
+import { NewFinanceOperationModal } from './NewFinanceOperationModal';
 import { AlertModal } from './AlertModal';
 
 const REGISTRY = {
@@ -36,6 +38,8 @@ const REGISTRY = {
   userProfile: UserProfileModal,
   achievement: AchievementModal,
   guide: GuideModal,
+  financeContragent: FinanceContragentModal,
+  newFinanceOperation: NewFinanceOperationModal,
 };
 
 export function ModalRoot() {

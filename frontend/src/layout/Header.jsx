@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChampionBadge } from '../components/ui/ChampionBadge';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useTheme } from '../theme/ThemeContext';
 import { useAuth } from '../auth/AuthContext';
 import {
@@ -10,6 +10,7 @@ import {
   canUseDistaSync,
   canViewChampionBoard,
   canGrantDemoAchievement,
+  canUseFinance,
 } from '../auth/permissions';
 import { notificationsCount, NOTIFICATIONS_CHANGED_EVENT } from '../api/notifications';
 import {
@@ -37,10 +38,32 @@ const TABS = [
   { to: '/folders', label: 'Шаблоны' },
 ];
 
+/**
+ * ДВА ПРОДУКТА В ОДНОМ ПРИЛОЖЕНИИ. ML Docs — документы, ML Finance — деньги
+ * по тем же контрагентам. Переключаются нажатием на название слева в шапке.
+ *
+ * Текущий продукт определяется АДРЕСОМ, а не состоянием компонента: иначе
+ * после перезагрузки страницы /finance человек оказался бы в финансах с
+ * вкладками документов, а сохранённая ссылка вела бы не туда, куда ведёт.
+ *
+ * «Dista Connect» живёт в ML Finance (переехала 16.09.2026): сверка нашей
+ * базы с выгрузкой Dista — работа про контрагентов и деньги, а не про
+ * договоры, и в меню ML Docs она была чужой.
+ */
+const FINANCE_PATHS = ['/finance', '/dista'];
+
 export function Header({ companyName = 'ML Docs' }) {
   const { theme, toggleTheme } = useTheme();
   const { user } = useAuth();
   const { openModal } = useModal();
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  // В каком продукте мы сейчас — по адресу (см. FINANCE_PATHS выше).
+  const inFinance = FINANCE_PATHS.some((p) => location.pathname.startsWith(p));
+  const hasFinance = canUseFinance(user?.role);
+  const [productsOpen, setProductsOpen] = useState(false);
+  const productRef = useRef(null);
 
   // Непрочитанные уведомления — у ВСЕХ ролей: значок читают все, пишет их
   // только админ. Обновляем на монтировании, раз в минуту и мгновенно по
@@ -67,6 +90,23 @@ export function Header({ companyName = 'ML Docs' }) {
     };
   }, []);
 
+  // Меню продуктов закрывается нажатием мимо — как панель уведомлений.
+  // Сама кнопка из «мимо» исключена: иначе её обработчик закрывал бы меню и
+  // тут же открывал заново.
+  useEffect(() => {
+    if (!productsOpen) return undefined;
+    const onDown = (e) => {
+      if (!productRef.current?.contains(e.target)) setProductsOpen(false);
+    };
+    const onKey = (e) => e.key === 'Escape' && setProductsOpen(false);
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [productsOpen]);
+
   // Точка у имени: есть полученное достижение, которое человек ещё не
   // открывал в профиле. Гаснет при открытии профиля, а не при показе
   // всплывашки — её легко пропустить.
@@ -77,6 +117,13 @@ export function Header({ companyName = 'ML Docs' }) {
     window.addEventListener(ACHIEVEMENTS_CHANGED_EVENT, refresh);
     return () => window.removeEventListener(ACHIEVEMENTS_CHANGED_EVENT, refresh);
   }, []);
+
+  // Вкладки ML Finance. Своих «Пользователей» и «Уведомлений» у него нет —
+  // администрирование одно на оба продукта и живёт в ML Docs.
+  let financeTabs = [{ to: '/finance', label: 'Контрагенты' }];
+  if (canUseDistaSync(user?.role)) {
+    financeTabs = [...financeTabs, { to: '/dista', label: 'Dista Connect' }];
+  }
 
   let tabs = TABS;
   if (canViewGenerationHistory(user?.role)) {
@@ -90,15 +137,13 @@ export function Header({ companyName = 'ML Docs' }) {
   if (canViewUsers(user?.role)) {
     tabs = [...tabs, { to: '/users', label: 'Пользователи' }];
   }
-  if (canUseDistaSync(user?.role)) {
-    tabs = [...tabs, { to: '/dista', label: 'Dista Connect' }];
-  }
   if (canViewChampionBoard(user?.role)) {
     // Вместо подписи — сам кубок. title/aria-label обязательны: иначе
     // вкладка остаётся без имени — и для screen reader, и для того, кто
     // видит незнакомый значок и наводит мышь, чтобы понять, что это.
     tabs = [...tabs, { to: '/champion', label: '🏆', title: 'Кубок', emoji: true }];
   }
+  if (inFinance) tabs = financeTabs;
 
   return (
     // z-[45] — не украшение: шапка задаёт слой для выпадающей панели
@@ -107,7 +152,48 @@ export function Header({ companyName = 'ML Docs' }) {
     // ComboCell (z-50) и модалки (со 100): им и положено перекрывать шапку.
     <header className="flex items-center justify-between px-8 h-16 bg-surface border-b border-border sticky top-0 z-[45]">
       <div className="flex items-center gap-9">
-        <span className="font-bold text-base tracking-[-0.01em] text-text">{companyName}</span>
+        {/* Название слева — вход во второй продукт (просьба владельца:
+            «перейти можно, нажав слева на ML Docs»). У кого доступа к
+            финансам нет, тот видит прежнюю неподвижную надпись: меню из
+            одного пункта — это не меню. */}
+        {hasFinance ? (
+          <div className="relative" ref={productRef}>
+            <button
+              type="button"
+              onClick={() => setProductsOpen((open) => !open)}
+              aria-expanded={productsOpen}
+              title="Переключить продукт"
+              className="flex items-center gap-1.5 bg-transparent border-none p-0 cursor-pointer font-sans font-bold text-base tracking-[-0.01em] text-text"
+            >
+              {inFinance ? 'ML Finance' : companyName}
+              <span className="text-[10px] text-text-muted leading-none">▾</span>
+            </button>
+            {productsOpen && (
+              <div className="absolute left-0 top-[calc(100%+10px)] w-[210px] bg-surface border border-border rounded-card shadow-card z-20 p-1.5 flex flex-col">
+                <ProductItem
+                  name={companyName}
+                  hint="Договоры, шаблоны, генерация"
+                  active={!inFinance}
+                  onClick={() => {
+                    setProductsOpen(false);
+                    navigate('/search');
+                  }}
+                />
+                <ProductItem
+                  name="ML Finance"
+                  hint="Балансы, поступления и расходы"
+                  active={inFinance}
+                  onClick={() => {
+                    setProductsOpen(false);
+                    navigate('/finance');
+                  }}
+                />
+              </div>
+            )}
+          </div>
+        ) : (
+          <span className="font-bold text-base tracking-[-0.01em] text-text">{companyName}</span>
+        )}
         <nav className="flex items-center gap-7">
           {tabs.map((tab) => (
             <NavLink
@@ -210,5 +296,23 @@ export function Header({ companyName = 'ML Docs' }) {
         </button>
       </div>
     </header>
+  );
+}
+
+/** Пункт меню продуктов: название и строчка о том, что внутри. */
+function ProductItem({ name, hint, active, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`text-left px-3 py-2 rounded-input border-none cursor-pointer font-sans ${
+        active ? 'bg-accent-soft' : 'bg-transparent'
+      }`}
+    >
+      <span className={`block text-[13.5px] font-semibold ${active ? 'text-accent' : 'text-text'}`}>
+        {name}
+      </span>
+      <span className="block text-[11.5px] text-text-muted mt-0.5">{hint}</span>
+    </button>
   );
 }

@@ -46,7 +46,14 @@ from app.audit import log_action
 from app.auth import get_current_user, require_role
 from app.context_builder import build_contract_number, build_contragent_title, parse_date
 from app.db import get_session
-from app.models import Contragent, ContragentNickname, Template, User, doc_type_sort_key
+from app.models import (
+    Contragent,
+    ContragentNickname,
+    FinanceOperation,
+    Template,
+    User,
+    doc_type_sort_key,
+)
 from app.roles import (
     ADMIN,
     CAN_CREATE_CONTRAGENTS,
@@ -1165,6 +1172,25 @@ def delete_contragent(
     contragent = db.get(Contragent, contragent_id)
     if contragent is None:
         raise HTTPException(status_code=404, detail="Контрагент не найден")
+
+    # Деньги удаление карточки не переживают — и не должны исчезать молча.
+    # У finance_operations ondelete='RESTRICT', так что без этой проверки
+    # запрос упал бы 500-й ошибкой внешнего ключа, из которой человек не
+    # понял бы ничего. Что делать оператору: сначала разобраться с
+    # операциями в ML Finance, а карточку удалять после.
+    money_rows = (
+        db.query(FinanceOperation)
+        .filter(FinanceOperation.contragent_id == contragent_id)
+        .count()
+    )
+    if money_rows:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "По контрагенту есть операции в ML Finance (%d). "
+                "Удалите их там, если карточку всё-таки нужно снести." % money_rows
+            ),
+        )
 
     deleted_title = contragent.title  # запомнить до удаления — после db.delete() поле недоступно
     db.delete(contragent)

@@ -564,6 +564,65 @@ class AnnouncementRecipient(Base):
     )
 
 
+class FinanceOperation(Base):
+    """
+    Поступление или расход по контрагенту — ML Finance.
+
+    Баланс контрагента НЕ ХРАНИТСЯ отдельной колонкой, а считается суммой
+    операций (app/finance.py: balances/totals). Хранимый баланс — это второй
+    источник правды: его надо пересчитывать при каждой правке, и он тихо
+    разъезжается с операциями ровно в тот день, когда кто-то поправит строку
+    мимо приложения. Операций у одного контрагента десятки, не миллионы —
+    считать их на лету дёшево.
+
+    amount — ВСЕГДА ПОЛОЖИТЕЛЬНАЯ. Знак задаёт kind ('income' / 'expense'),
+    а не минус в сумме: иначе одно и то же («вернули аванс») можно записать
+    двумя способами, и любой отчёт по расходам придётся считать с оговорками.
+
+    Numeric(14, 2), а не float: деньги в двоичной дроби расходятся в копейках,
+    которые потом никто не найдёт. 14 знаков — это до 999 999 999 999.99.
+
+    occurred_on — когда операция ПРОИЗОШЛА, created_at — когда её занесли.
+    Это разные даты: операцию регулярно заносят задним числом, и баланс на
+    дату должен считаться по первой, а «кто и когда внёс» — по второй.
+
+    created_by + created_username — как в audit_log: снимок имени рядом со
+    ссылкой, чтобы строка осталась читаемой после деактивации сотрудника.
+
+    Удаления контрагента с операциями НЕТ: ondelete='RESTRICT' (см. также
+    delete_contragent — он отвечает понятным 409). Каскад здесь означал бы,
+    что удаление карточки молча стирает денежную историю.
+    """
+    __tablename__ = "finance_operations"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+
+    contragent_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("contragents.id", ondelete="RESTRICT"), index=True
+    )
+
+    # 'income' | 'expense' — см. OPERATION_KINDS в app/finance.py.
+    kind: Mapped[str] = mapped_column(String(16))
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    # Код категории из FINANCE_CATEGORIES (app/finance.py), не подпись:
+    # подпись можно переписать, не трогая сохранённые строки.
+    category: Mapped[str] = mapped_column(String(32))
+
+    occurred_on: Mapped[date] = mapped_column(Date, index=True)
+    document_number: Mapped[str | None] = mapped_column(String(64))
+    comment: Mapped[str | None] = mapped_column(Text)
+
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_username: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 class UserEvent(Base):
     """
     След действия в интерфейсе, которого нет в других таблицах.

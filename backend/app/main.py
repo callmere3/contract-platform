@@ -32,6 +32,7 @@ from app.routers_champion import champion_router
 from app.routers_contragents import contragents_router
 from app.routers_profile import profile_router
 from app.routers_dista import dista_router
+from app.routers_finance import finance_router
 from app.routers_generation_history import generation_history_router
 from app.routers_notifications import notifications_router
 from app.routers_tags import tags_router
@@ -54,6 +55,7 @@ app.include_router(contragents_router)
 app.include_router(champion_router)
 app.include_router(profile_router)
 app.include_router(dista_router)
+app.include_router(finance_router)
 app.include_router(tags_router)
 app.include_router(generation_history_router)
 app.include_router(notifications_router)

@@ -8,6 +8,7 @@ import {
   canSendNotifications,
   canUseDistaSync,
   canViewChampionBoard,
+  canUseFinance,
 } from './auth/permissions';
 import { TagsProvider } from './api/TagsContext';
 import { ModalProvider } from './modals/ModalProvider';
@@ -26,6 +27,7 @@ import { UsersPage } from './pages/UsersPage';
 import { GenerationHistoryPage } from './pages/GenerationHistoryPage';
 import { NotificationsPage } from './pages/NotificationsPage';
 import { DistaConnectPage } from './pages/DistaConnectPage';
+import { FinancePage } from './pages/FinancePage';
 import { ChampionPage } from './pages/ChampionPage';
 
 /**
@@ -104,7 +106,19 @@ function AppShell() {
             )
           }
         />
-        {/* Dista Connect — только admin, та же защита от прямого захода по адресу. */}
+        {/* ML Finance — второй продукт (admin и director). Та же защита от
+            прямого захода по адресу, что у «Пользователей»: без неё менеджер
+            по ссылке /app/finance увидел бы пустой экран с 403 вместо
+            понятного возврата на поиск. Настоящая защита — на сервере, там
+            право стоит на всём роутере /finance. */}
+        <Route
+          path="/finance"
+          element={canUseFinance(user?.role) ? <FinancePage /> : <Navigate to="/search" replace />}
+        />
+        {/* Dista Connect — только admin, та же защита от прямого захода по
+            адресу. Вкладка переехала в меню ML Finance, но маршрут прежний:
+            менять адрес ради переезда пункта меню значило бы ломать
+            сохранённые ссылки. */}
         <Route
           path="/dista"
           element={

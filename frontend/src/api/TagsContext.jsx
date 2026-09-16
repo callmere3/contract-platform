@@ -29,6 +29,9 @@ export function TagsProvider({ children }) {
     // Поля реквизитов карточки по типу: {тип: [{name, type, label, hint, choices?}]}.
     // Из них строится сворачиваемый блок реквизитов в карточке контрагента.
     requisite_fields_by_type: {},
+    // Категории операций ML Finance: [{value, label}] — аванс, роялти, услуги…
+    // Справочник живёт в app/finance.py, фронт его не хардкодит.
+    finance_categories: [],
   });
   const [error, setError] = useState('');
 

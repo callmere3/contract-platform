@@ -10,6 +10,7 @@ contract_family) и метаданные рег. номера (reg_number_meta) 
 from fastapi import APIRouter, Depends
 
 from app.auth import get_current_user
+from app.finance import FINANCE_CATEGORIES
 from app.roles import ROLES
 from app.tags import (
     COMPANY_TYPE_BY_COUNTRY,
@@ -46,6 +47,14 @@ def get_tags() -> dict:
         # выбранную страну (для KZ предлагает ТОО, а не ООО), не хардкодя
         # связку у себя. См. COMPANY_TYPE_BY_COUNTRY в app/tags.py.
         "company_type_by_country": COMPANY_TYPE_BY_COUNTRY,
+        # Категории операций ML Finance: [{value, label}] из app/finance.py.
+        # Здесь же, а не отдельным эндпоинтом: /tags и есть место, откуда фронт
+        # берёт справочники, а второй такой же вызов ради шести строк лишний.
+        # Отдаём всем ролям — это просто словарь, доступ к деньгам стоит на
+        # эндпоинтах /finance.
+        "finance_categories": [
+            {"value": code, "label": label} for code, label in FINANCE_CATEGORIES
+        ],
         # Список ролей для селекта на вкладке "Пользователи" — из того же
         # единственного источника правды (app/roles.py: ROLES), которым
         # валидируется роль при создании/правке пользователя.

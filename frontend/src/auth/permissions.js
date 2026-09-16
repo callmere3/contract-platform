@@ -30,6 +30,9 @@
  *   история генерации: вся, не своя |  +  |    +     |     -       |   -    |   -
  *   уведомления: написать команде |   +   |    -     |     -       |   -    |   -
  *   вкладка «Кубок»               |   +   |    +     |     +       |   +    |   +
+ *   ML Finance (второй продукт)   |   +   |    +     |     -       |   -    |   -
+ *   внести поступление/расход     |   +   |    +     |     -       |   -    |   -
+ *   удалить операцию              |   +   |    -     |     -       |   -    |   -
  *   кнопка "Тестовые данные"      |   +   |    -     |     -       |   +    |   -
  *
  * «+ врем.» у менеджера — послабление на период заполнения базы
@@ -87,8 +90,20 @@ export const canEditTitle = (role) => is(role, ADMIN);
 export const canViewArticle = (role) => is(role, ADMIN);
 
 // backend: CAN_USE_DISTA_SYNC = (ADMIN,) — вкладка «Dista Connect» (сверка
-// базы контрагентов с выгрузкой Dista Music). Только admin.
+// базы контрагентов с выгрузкой Dista Music). Только admin. С 16.09.2026
+// вкладка живёт в ML Finance, но право прежнее.
 export const canUseDistaSync = (role) => is(role, ADMIN);
+
+// backend: CAN_USE_FINANCE = (ADMIN, DIRECTOR) — второй продукт ML Finance
+// (балансы контрагентов, поступления и расходы) и переключатель продуктов в
+// шапке. У кого права нет, тот второго продукта не видит вовсе.
+export const canUseFinance = (role) => is(role, ADMIN, DIRECTOR);
+
+// backend: CAN_ADD_FINANCE_OPERATIONS = (ADMIN, DIRECTOR) — вносить деньги
+// могут оба, а вот удалять (CAN_DELETE_FINANCE_OPERATIONS) — только admin.
+// Правки операции нет вовсе: ошибочную удаляют и вносят заново.
+export const canAddFinanceOperations = (role) => is(role, ADMIN, DIRECTOR);
+export const canDeleteFinanceOperations = (role) => is(role, ADMIN);
 
 // backend: CAN_EXPORT_CONTRAGENTS = (ADMIN, DIRECTOR) — у top_manager/tester убран
 export const canExport = (role) => is(role, ADMIN, DIRECTOR);
