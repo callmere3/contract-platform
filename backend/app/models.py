@@ -556,6 +556,34 @@ class AnnouncementRecipient(Base):
     )
 
 
+class UserEvent(Base):
+    """
+    След действия в интерфейсе, которого нет в других таблицах.
+
+    Заведена ради достижения «Разбитое сердце» (выйти из формы, не сохранив
+    черновик): документ при этом не создан, черновик стёрт, в audit_log
+    такое не пишется — журнал про работу с данными, а не про клики.
+    Считать достижение не из чего, если не оставить строчку здесь.
+
+    Таблица общая, а не «сброшенные черновики»: подобных событий будет
+    больше, и таблица под каждое — расточительство. Имя события — строка,
+    но сервер принимает только из белого списка (routers_profile.py),
+    иначе клиент мог бы насыпать сюда что угодно.
+    """
+    __tablename__ = "user_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE")
+    )
+    event: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 def folder_path(folder: TemplateFolder) -> list[str]:
     """
     Собирает путь от корня до папки: ['РУ', 'Договор', 'СГ-роялти'].

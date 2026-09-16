@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { refreshAchievements } from '../achievements/tracker';
+import { reportEvent } from '../api/profile';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
@@ -738,6 +739,14 @@ export function DocFormPage() {
       },
       onDiscard: () => {
         clearDraft();
+        // Сброшенный черновик не оставляет следа: документа нет, черновик
+        // стёрт. Отмечаем событие на сервере — иначе «Разбитое сердце»
+        // считать не из чего. Уход со страницы не ждём: ошибка отметки не
+        // повод задерживать человека, значок подтянется при следующем
+        // обновлении достижений.
+        reportEvent('draft_discarded')
+          .then(() => refreshAchievements())
+          .catch(() => {});
         navigate(-1);
       },
     });

@@ -15,6 +15,9 @@
   🚀 Ракета              — то же, но двадцать;
   🌙 Ночная смена        — документ между 22:00 и 6:00 по Москве;
   🧠 Знает все шаблоны   — сделал и договор, и приложение, и акт;
+  🔗 На связи            — приложение и акт одному контрагенту подряд;
+  💰 Мешок денег         — договор с авансом;
+  💔 Разбитое сердце     — вышел из формы, не сохранив черновик;
   👻 Призрак             — СЕКРЕТНОЕ: вернуться после перерыва больше 100 дней.
 
 Что считается одним документом — то же правило, что у кубка
@@ -31,7 +34,7 @@
 from sqlalchemy.orm import Session
 
 from app.champion import MSK, _document_key, as_utc, champion_history, scoring_since
-from app.models import GeneratedDocument, RefreshToken, Template, User
+from app.models import GeneratedDocument, RefreshToken, Template, User, UserEvent
 
 # Вехи по документам. Первая намеренно равна 1: у семи учёток из десяти
 # сейчас ноль документов, и без достижимой первой ступени раздел у них был
@@ -62,6 +65,21 @@ NIGHT_TO_HOUR = 6
 # «Знает все шаблоны» — по одному документу каждого типа. Значения те же,
 # что в Template.doc_type (см. models.py), а не выдуманные здесь.
 ALL_DOC_TYPES = ("contract", "appendix", "act")
+
+# «На связи»: приложение и акт одному контрагенту, сделанные подряд. Форма
+# предлагает собрать парный Акт сразу после Приложения, и тогда разрыв —
+# секунды. Пять минут — с запасом на того, кто сделал их вручную один за
+# другим: это ровно тот же сценарий, наказывать за лишний клик незачем.
+PAIR_WINDOW_SECONDS = 5 * 60
+
+# «Мешок денег»: договор, у шаблона которого платёжная ось — аванс. Префикс,
+# а не точное равенство: семейств с авансом два — АВАНС и
+# АВАНС_ОБЯЗАТЕЛЬСТВО (см. app/tags.py, тип договора — это две оси).
+ADVANCE_PREFIX = "АВАНС"
+
+# «Разбитое сердце»: имя события в user_events. Должно совпадать с тем, что
+# принимает POST /profile/events (ALLOWED_EVENTS там же).
+DRAFT_DISCARDED_EVENT = "draft_discarded"
 
 
 def longest_absence_days(db: Session, user_id) -> int:
@@ -167,13 +185,57 @@ def user_achievements(db: Session, user: User) -> list[dict]:
     # template_id. У удалённого шаблона связь обнулена (SET NULL) — такой
     # документ в зачёт типов не идёт, восстановить его тип неоткуда.
     template_ids = {row.template_id for row in rows if row.template_id}
-    covered_types = set()
+    kinds = {}
     if template_ids:
-        covered_types = {
-            t.doc_type
+        kinds = {
+            t.id: (t.doc_type, t.contract_family)
             for t in db.query(Template).filter(Template.id.in_(template_ids)).all()
-            if t.doc_type in ALL_DOC_TYPES
         }
+    covered_types = {
+        doc_type for doc_type, _family in kinds.values() if doc_type in ALL_DOC_TYPES
+    }
+
+    # 💰 Договор с авансом — по платёжной оси шаблона.
+    advance_contract = any(
+        kinds.get(row.template_id, (None, None))[0] == "contract"
+        and (kinds.get(row.template_id, (None, None))[1] or "").startswith(ADVANCE_PREFIX)
+        for row in rows
+    )
+
+    # 🔗 Приложение и акт одному контрагенту подряд. Раскладываем времена по
+    # паре (контрагент, тип) и ищем сближение — без контрагента пара
+    # бессмысленна, поэтому такие документы пропускаем.
+    times: dict = {}
+    for row in rows:
+        doc_type = kinds.get(row.template_id, (None, None))[0]
+        if doc_type not in ("appendix", "act") or row.contragent_id is None:
+            continue
+        times.setdefault((row.contragent_id, doc_type), []).append(as_utc(row.created_at))
+
+    paired = False
+    for (contragent_id, _kind) in list(times):
+        appendices = times.get((contragent_id, "appendix"), [])
+        acts = times.get((contragent_id, "act"), [])
+        if any(
+            abs((a - b).total_seconds()) <= PAIR_WINDOW_SECONDS
+            for a in appendices
+            for b in acts
+        ):
+            paired = True
+            break
+
+    # 💔 Сброшенный черновик — единственное достижение, которое считается не
+    # по данным, а по отметке из интерфейса (см. UserEvent в models.py).
+    broken_heart = (
+        db.query(UserEvent)
+        .filter(
+            UserEvent.user_id == user.id,
+            UserEvent.event == DRAFT_DISCARDED_EVENT,
+            UserEvent.created_at >= scoring_since(),
+        )
+        .first()
+        is not None
+    )
 
     cups = champion_history(db).get(user.id, [])
     cup_labels = [label for _year, _month, label in cups]
@@ -271,6 +333,36 @@ def user_achievements(db: Session, user: User) -> list[dict]:
             progress=None
             if len(covered_types) == len(ALL_DOC_TYPES)
             else {"current": len(covered_types), "target": len(ALL_DOC_TYPES)},
+        )
+    )
+
+    out.append(
+        _achievement(
+            code="paired",
+            icon="🔗",
+            title="На связи",
+            hint="Сформировать приложение и акт одному контрагенту подряд",
+            earned=paired,
+        )
+    )
+
+    out.append(
+        _achievement(
+            code="money",
+            icon="💰",
+            title="Мешок денег",
+            hint="Сформировать договор с авансом",
+            earned=advance_contract,
+        )
+    )
+
+    out.append(
+        _achievement(
+            code="broken_heart",
+            icon="💔",
+            title="Разбитое сердце",
+            hint="Выйти из формы генерации, не сохранив черновик",
+            earned=broken_heart,
         )
     )
 
