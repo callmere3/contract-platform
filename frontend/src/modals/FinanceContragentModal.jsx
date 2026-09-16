@@ -164,6 +164,15 @@ export function FinanceContragentModal({ contragentId, level, isTop, onChanged }
             <Row label="ФИО / название" value={card.name} />
             <Row label="Псевдонимы" value={card.nicknames.join(', ')} />
             <Row label="Страна и тип" value={[card.country, card.type].filter(Boolean).join(' · ')} />
+            {/* Связка с Dista переехала сюда из карточки ML Docs (17.09.2026):
+                там она была чужой — ML Docs про договоры, а Dista про каталог
+                и деньги. Рядом с ней и живёт всё остальное дистовское:
+                «Dista Connect» и номенклатура. «Исключён из Dista» — не то же
+                самое, что пусто: это решение человека, а не пробел в данных. */}
+            <Row
+              label="Dista ID"
+              value={card.dista_id || (card.dista_excluded ? 'исключён из Dista' : '')}
+            />
           </section>
 
           {/* Реквизиты рисует тот же компонент, что и в ML Docs: набор полей

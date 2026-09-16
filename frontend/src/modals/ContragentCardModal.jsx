@@ -160,16 +160,11 @@ export function ContragentCardModal({ contragentId, level, isTop, onChanged }) {
                 </td>
               </tr>
             )}
-            {/* Связка с Dista (id записи в Dista Music) — только админу, для
-                отладки синхронизации. «—», пока карточка не связана. */}
-            {canViewArticle(role) && (
-              <tr>
-                <td className="text-text-secondary py-1.5 whitespace-nowrap pr-4">Dista ID</td>
-                <td className="text-right py-1.5 text-text tabular-nums">
-                  {data.dista_id || (data.dista_excluded ? 'исключён из Dista' : '—')}
-                </td>
-              </tr>
-            )}
+            {/* Dista ID здесь БОЛЬШЕ НЕ ПОКАЗЫВАЕМ (17.09.2026, решение
+                владельца): ML Docs про Dista ничего не знает — это про
+                договоры и шаблоны. Связка переехала в карточку ML Finance,
+                туда же, где каталог и сверка. Само поле никуда не делось: оно
+                по-прежнему главный ключ импорта контрагентов. */}
             {ROWS.map(([key, label]) => (
               <tr key={key}>
                 <td className="text-text-secondary py-1.5 whitespace-nowrap pr-4">

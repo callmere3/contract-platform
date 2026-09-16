@@ -150,6 +150,11 @@ def finance_card(contragent_id: uuid.UUID, db: Session = Depends(get_session)) -
         "id": str(contragent.id),
         "title": contragent.title,
         "name": contragent.name,
+        # Связка с Dista живёт в ML Finance: ML Docs про Dista больше ничего
+        # не знает (решение владельца 17.09.2026). Карточки и документы — одно,
+        # каталог, деньги и сверка с Dista — другое.
+        "dista_id": contragent.dista_id,
+        "dista_excluded": contragent.dista_excluded,
         "tracks_count": tracks_count,
         "country": contragent.country,
         "type": contragent.type,
