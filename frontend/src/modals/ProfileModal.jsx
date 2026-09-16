@@ -5,7 +5,7 @@ import { ChampionBadge } from '../components/ui/ChampionBadge';
 import { useModal } from './ModalProvider';
 import { useAuth } from '../auth/AuthContext';
 import { fetchMyAchievements } from '../api/profile';
-import { markProfileOpened, unopenedCodes } from '../achievements/tracker';
+import { demoCodes, markProfileOpened, unopenedCodes } from '../achievements/tracker';
 
 /**
  * Карточка профиля — открывается нажатием на своё имя в шапке.
@@ -30,6 +30,9 @@ export function ProfileModal({ level, isTop }) {
   // снимаем ОДИН раз при монтировании — сразу после этого он гасится
   // (markProfileOpened ниже), и без снимка анимировать было бы уже нечего.
   const [fresh] = useState(() => unopenedCodes());
+  // Значки, выданные кнопкой обкатки: сервер о них не знает, но показать их
+  // надо полученными — иначе проверять анимацию было бы не на чем.
+  const [demo] = useState(() => demoCodes());
 
   useEffect(() => {
     let alive = true;
@@ -98,10 +101,14 @@ export function ProfileModal({ level, isTop }) {
               {achievements.map((a) => (
                 <AchievementCard
                   key={a.code}
-                  achievement={a}
+                  achievement={demo.includes(a.code) ? { ...a, earned: true } : a}
                   isFresh={fresh.includes(a.code)}
                   revealIndex={fresh.indexOf(a.code)}
-                  onOpen={() => openModal('achievement', { achievement: a })}
+                  onOpen={() =>
+                    openModal('achievement', {
+                      achievement: demo.includes(a.code) ? { ...a, earned: true } : a,
+                    })
+                  }
                 />
               ))}
             </div>

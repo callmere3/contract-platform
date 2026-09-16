@@ -143,3 +143,9 @@ export const canDeleteGenerationHistory = (role) => is(role, ADMIN);
 // TESTER — роль, заведённая ровно ради этой кнопки: по правам доступа она
 // копия TOP_MANAGER, а вся разница здесь.
 export const canFillDemoData = (role) => is(role, ADMIN, TESTER);
+
+// Кнопка «выдать случайное достижение» в шапке — как и «Тестовые данные»,
+// это удобство для обкатки, а не право: серверной проверки нет и быть не
+// может, достижение выдаётся только в браузере (см. tracker.js). ADMIN
+// добавлен, чтобы владелец мог проверить механизм, не переключая себе роль.
+export const canGrantDemoAchievement = (role) => is(role, ADMIN, TESTER);

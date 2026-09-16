@@ -9,9 +9,14 @@ import {
   canSendNotifications,
   canUseDistaSync,
   canViewChampionBoard,
+  canGrantDemoAchievement,
 } from '../auth/permissions';
 import { notificationsCount, NOTIFICATIONS_CHANGED_EVENT } from '../api/notifications';
-import { ACHIEVEMENTS_CHANGED_EVENT, unopenedCodes } from '../achievements/tracker';
+import {
+  ACHIEVEMENTS_CHANGED_EVENT,
+  grantRandomAchievement,
+  unopenedCodes,
+} from '../achievements/tracker';
 import { useModal } from '../modals/ModalProvider';
 
 // Первые три вкладки видны всем ролям (см. ТЗ: "менеджер видит все вкладки").
@@ -125,6 +130,20 @@ export function Header({ companyName = 'ML Docs' }) {
       </div>
 
       <div className="flex items-center gap-4">
+        {/* Кнопка обкатки: выдаёт случайное достижение, чтобы проверить
+            всплывашку, точку у имени и проявление плитки. Настоящим значок
+            не становится — он живёт только в браузере (см. tracker.js).
+            Поэтому и права на неё серверного нет, как у «Тестовых данных». */}
+        {canGrantDemoAchievement(user?.role) && (
+          <button
+            onClick={() => grantRandomAchievement()}
+            title="Выдать случайное достижение — для проверки механизма"
+            aria-label="Выдать случайное достижение"
+            className="w-8 h-8 rounded-full border border-dashed border-border flex items-center justify-center text-sm text-text-secondary cursor-pointer bg-transparent"
+          >
+            🎁
+          </button>
+        )}
         {/* Значок уведомлений — у всех ролей. Счётчик рисуем только когда
             есть что читать: пустой кружок с нулём выглядел бы поломкой. */}
         <button

@@ -25,6 +25,9 @@ import { fetchMyAchievements } from '../api/profile';
 
 const SEEN_KEY = 'ml_achievements_seen';
 const OPENED_KEY = 'ml_achievements_opened';
+// Достижения, «выданные» кнопкой обкатки. Отдельным ключом, чтобы их было
+// видно как ненастоящие и можно было стереть, не трогая остальное.
+const DEMO_KEY = 'ml_achievements_demo';
 
 /** Событие «набор достижений обновился» — шапка перерисовывает точку. */
 export const ACHIEVEMENTS_CHANGED_EVENT = 'achievements-changed';
@@ -34,6 +37,8 @@ export const ACHIEVEMENT_EARNED_EVENT = 'achievement-earned';
 // Последний известный список полученного. Держим в памяти, чтобы шапка
 // могла спросить «есть ли непросмотренное?» без запроса к серверу.
 let lastEarned = [];
+// Последний полный ответ сервера — из него кнопка обкатки берёт, что выдать.
+let lastItems = [];
 
 function readCodes(key) {
   try {
@@ -54,16 +59,59 @@ function writeCodes(key, codes) {
   }
 }
 
+/** Коды, выданные кнопкой обкатки. Профиль рисует их как полученные. */
+export function demoCodes() {
+  return readCodes(DEMO_KEY) ?? [];
+}
+
 /** Коды полученных достижений, которые человек ещё не смотрел в профиле. */
 export function unopenedCodes() {
   const opened = readCodes(OPENED_KEY) ?? [];
-  return lastEarned.filter((code) => !opened.includes(code));
+  const all = [...new Set([...lastEarned, ...demoCodes()])];
+  return all.filter((code) => !opened.includes(code));
 }
 
 /** Профиль открыт — гасим точку и запоминаем, что всё показано. */
 export function markProfileOpened() {
-  writeCodes(OPENED_KEY, lastEarned);
+  writeCodes(OPENED_KEY, [...new Set([...lastEarned, ...demoCodes()])]);
   window.dispatchEvent(new Event(ACHIEVEMENTS_CHANGED_EVENT));
+}
+
+/**
+ * Выдать случайное достижение — кнопка обкатки для тестера.
+ *
+ * Настоящим оно не становится и стать не может: достижения считаются из
+ * истории генерации, и «выдать» их сервер не умеет по устройству. Здесь
+ * проверяется ровно то, что и требуется проверить, — всплывашка, точка у
+ * имени и проявление плитки в профиле.
+ *
+ * Выдаём из ещё не выданных, чтобы каждое нажатие давало новый значок.
+ * Когда закончились — набор сбрасывается и можно идти по кругу, иначе
+ * кнопка однажды перестала бы что-либо делать.
+ */
+export function grantRandomAchievement() {
+  if (lastItems.length === 0) return null;
+
+  const granted = demoCodes();
+  const pool = lastItems.filter((a) => !a.earned && !granted.includes(a.code));
+  const source = pool.length > 0 ? pool : lastItems;
+  if (pool.length === 0) writeCodes(DEMO_KEY, []);   // круг пройден, начинаем заново
+
+  const pick = source[Math.floor(Math.random() * source.length)];
+  const nextDemo = [...new Set([...(pool.length > 0 ? granted : []), pick.code])];
+  writeCodes(DEMO_KEY, nextDemo);
+
+  // Секретное под замком показываем как настоящее: у него другой значок и
+  // название, и именно это и интересно проверить.
+  const shown = pick.secret && !pick.earned
+    ? { ...pick, icon: '👻', title: 'Призрак', hint: 'Вернуться после перерыва больше 100 дней' }
+    : pick;
+
+  window.dispatchEvent(new Event(ACHIEVEMENTS_CHANGED_EVENT));
+  window.dispatchEvent(
+    new CustomEvent(ACHIEVEMENT_EARNED_EVENT, { detail: { achievements: [shown] } }),
+  );
+  return shown;
 }
 
 /**
@@ -82,6 +130,7 @@ export async function refreshAchievements() {
     return [];
   }
 
+  lastItems = items;
   const earned = items.filter((a) => a.earned);
   lastEarned = earned.map((a) => a.code);
 
