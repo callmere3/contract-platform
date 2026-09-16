@@ -128,9 +128,21 @@ export function ChampionPage() {
       {/* Обладатель кубка */}
       <Card>
         <div className="flex flex-col items-center text-center gap-3 px-6 py-9">
-          <span role="img" aria-label="Кубок" className="text-[64px] leading-none">
-            🏆
-          </span>
+          {/* Пока чемпиона нет — вместо кубка знак вопроса: доска сразу
+              читается как «место свободно», а не как поломка. Пунктирный
+              круг — тот же приём, что у незаработанных достижений. */}
+          {current ? (
+            <span role="img" aria-label="Кубок" className="text-[64px] leading-none">
+              🏆
+            </span>
+          ) : (
+            <span
+              aria-label="Чемпион ещё не определён"
+              className="w-[74px] h-[74px] rounded-full border-2 border-dashed border-border flex items-center justify-center text-[36px] font-semibold text-text-muted leading-none"
+            >
+              ?
+            </span>
+          )}
           {loading ? (
             <div className="text-[13px] text-text-muted">Загружаем…</div>
           ) : current ? (
@@ -145,10 +157,10 @@ export function ChampionPage() {
             </>
           ) : (
             <>
-              <div className="text-[17px] font-semibold text-text">Кубок пока никому не вручён</div>
-              <div className="text-[13px] text-text-muted max-w-[42ch] leading-relaxed">
-                За прошлый месяц не сформировано ни одного документа. Кубок появится
-                первого числа месяца, следующего за тем, в котором была работа.
+              <div className="text-[17px] font-semibold text-text">Чемпион ещё не определён</div>
+              <div className="text-[13px] text-text-muted max-w-[44ch] leading-relaxed">
+                Кубок вручается первого числа — тому, кто сделал больше всех документов
+                за предыдущий месяц.
               </div>
             </>
           )}

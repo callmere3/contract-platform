@@ -47,6 +47,24 @@ MSK = timezone(timedelta(hours=3))
 # одна строка, без правки логики.
 NOT_COMPETING = (ADMIN,)
 
+# НАЧАЛО ЗАЧЁТА. Всё, что сделано раньше, в кубках и достижениях не
+# участвует: 16.09.2026 счёт обнулили по просьбе владельца, чтобы команда
+# зарабатывала значки заново, а не получила их сразу за прошлую работу.
+#
+# Сброс сделан датой, а НЕ удалением записей: generated_documents — боевая
+# история, из неё воссоздают документы (см. вкладку «История генерации»).
+# Трогать её ради игровых значков нельзя. Сдвинуть дату = сбросить счёт
+# заново; убрать (поставить очень раннюю) = вернуть всю историю в зачёт.
+SCORING_SINCE = datetime(2026, 9, 16, 0, 0, tzinfo=timezone(timedelta(hours=3)))
+
+
+def scoring_since() -> datetime:
+    """
+    Дата начала зачёта. Функция, а не прямое чтение константы: так её можно
+    подменить в прогонах, где данные лежат в прошлом.
+    """
+    return SCORING_SINCE
+
 _MONTHS_RU = (
     "январь", "февраль", "март", "апрель", "май", "июнь",
     "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь",
@@ -157,10 +175,13 @@ def champion_history(db: Session, now: datetime | None = None) -> dict:
 
     out_of_contest = {u.id for u in db.query(User).filter(User.role.in_(NOT_COMPETING)).all()}
 
+    since = scoring_since()
     per_month: dict = {}
     for row in db.query(GeneratedDocument).all():
         if row.user_id is None or row.user_id in out_of_contest:
             continue
+        if as_utc(row.created_at) < since:
+            continue          # сделано до сброса — в зачёт не идёт
         made = as_utc(row.created_at).astimezone(MSK)
         month = (made.year, made.month)
         if month >= current_month:
@@ -196,9 +217,12 @@ def unique_counts(db: Session, start: datetime, end: datetime) -> dict:
     {user_id: сколько уникальных документов} за период [start, end).
     Роли вне конкурса и записи без автора отброшены.
     """
+    # Началом периода берём более позднюю из двух дат: границы месяца и даты
+    # сброса. Поэтому месяц, целиком лежащий до сброса, даёт пустой результат.
+    since = max(start, scoring_since())
     rows = (
         db.query(GeneratedDocument)
-        .filter(GeneratedDocument.created_at >= start, GeneratedDocument.created_at < end)
+        .filter(GeneratedDocument.created_at >= since, GeneratedDocument.created_at < end)
         .all()
     )
     out_of_contest = {u.id for u in db.query(User).filter(User.role.in_(NOT_COMPETING)).all()}

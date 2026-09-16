@@ -8,7 +8,7 @@
 Состав (по решению владельца 16.09.2026):
   🏆 Кубок месяца   — сколько раз человек был чемпионом месяца;
   📄 Вехи           — 1 / 10 / 25 / 50 / 100 уникальных документов за всё время;
-  🤖 Машина         — 10 уникальных документов за ОДИН день;
+  🚗 Машина         — 10 уникальных документов за ОДИН день;
   💎 Алмаз          — СЕКРЕТНОЕ: вернуться после перерыва больше 100 дней.
 
 Что считается одним документом — то же правило, что у кубка
@@ -24,7 +24,7 @@
 """
 from sqlalchemy.orm import Session
 
-from app.champion import MSK, _document_key, as_utc, champion_history
+from app.champion import MSK, _document_key, as_utc, champion_history, scoring_since
 from app.models import GeneratedDocument, RefreshToken, User
 
 # Вехи по документам. Первая намеренно равна 1: у семи учёток из десяти
@@ -58,7 +58,11 @@ def longest_absence_days(db: Session, user_id) -> int:
     stamps = [
         as_utc(t.created_at)
         for t in db.query(RefreshToken)
-        .filter(RefreshToken.user_id == user_id)
+        .filter(
+            RefreshToken.user_id == user_id,
+            # Заходы до сброса зачёта не считаются — как и всё остальное.
+            RefreshToken.created_at >= scoring_since(),
+        )
         .order_by(RefreshToken.created_at)
         .all()
     ]
@@ -86,8 +90,15 @@ def _achievement(code, icon, title, hint, earned, subtitle=None, progress=None, 
 
 def user_achievements(db: Session, user: User) -> list[dict]:
     """Все достижения пользователя — и полученные, и ещё нет."""
+    # Только работа ПОСЛЕ сброса зачёта (см. SCORING_SINCE в champion.py):
+    # 16.09.2026 значки обнулили, чтобы их заработали заново.
     rows = (
-        db.query(GeneratedDocument).filter(GeneratedDocument.user_id == user.id).all()
+        db.query(GeneratedDocument)
+        .filter(
+            GeneratedDocument.user_id == user.id,
+            GeneratedDocument.created_at >= scoring_since(),
+        )
+        .all()
     )
 
     unique_keys = {_document_key(row) for row in rows}
@@ -135,7 +146,7 @@ def user_achievements(db: Session, user: User) -> list[dict]:
     out.append(
         _achievement(
             code="machine",
-            icon="🤖",
+            icon="🚗",
             title="Машина",
             hint="10 документов за один день",
             earned=best_day >= MACHINE_TARGET,

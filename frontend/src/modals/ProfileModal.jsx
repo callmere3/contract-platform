@@ -1,19 +1,18 @@
 import { useEffect, useState } from 'react';
 import { Modal } from '../components/ui/Modal';
 import { Button } from '../components/ui/Button';
-import { Badge } from '../components/ui/Badge';
 import { ChampionBadge } from '../components/ui/ChampionBadge';
 import { useModal } from './ModalProvider';
 import { useAuth } from '../auth/AuthContext';
-import { ROLE_LABELS } from '../auth/permissions';
 import { fetchMyAchievements } from '../api/profile';
 
 /**
  * Карточка профиля — открывается нажатием на своё имя в шапке.
  *
- * Имя, роль, смена пароля, выход и достижения. «Выйти» переехало сюда из
- * шапки: в верхнем меню оно стояло рядом с именем и вылетало по ошибке,
- * а внутри карточки требует двух осознанных действий.
+ * Имя, смена пароля, выход и достижения. «Выйти» переехало сюда из шапки:
+ * в верхнем меню оно стояло рядом с именем и вылетало по ошибке, а внутри
+ * карточки требует двух осознанных действий. Роль не подписываем — на
+ * собственной карточке она выглядит служебной пометкой.
  *
  * Достижения запрашиваются при открытии, а не живут в /auth/me: их счёт
  * идёт по всей истории генерации, и дёргать его на каждой загрузке
@@ -41,13 +40,13 @@ export function ProfileModal({ level, isTop }) {
   return (
     <Modal title="Профиль" onClose={closeModal} level={level} isTop={isTop} width={480}>
       <div className="flex flex-col gap-5">
-        {/* Кто я */}
+        {/* Кто я. Роль не подписываем: человек и так знает, кто он, а на
+            своей же карточке это выглядит как служебная пометка. */}
         <div className="flex items-center gap-2.5">
           <span className="text-[19px] font-semibold text-text truncate">
             {user?.full_name || user?.username}
           </span>
           <ChampionBadge champion={user?.champion} isMe />
-          <Badge variant="neutral">{ROLE_LABELS[user?.role] ?? user?.role}</Badge>
         </div>
 
         <div className="flex flex-col gap-2.5">
