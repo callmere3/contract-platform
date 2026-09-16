@@ -163,8 +163,12 @@ export function NomenclaturePage() {
                   <th className={th}>ISRC / UPC</th>
                   <th className={th}>Наименование</th>
                   <th className={th}>Исполнитель</th>
-                  <th className={th}>Смежные права</th>
-                  <th className={th}>Авторские права</th>
+                  {/* Обе колонки прав — с одинаковой минимальной шириной:
+                      иначе браузер делит остаток между ними как придётся, и
+                      одно и то же имя в соседних столбцах выглядит
+                      по-разному. */}
+                  <th className={`${th} min-w-[190px]`}>Смежные права</th>
+                  <th className={`${th} min-w-[190px]`}>Авторские права</th>
                 </tr>
               </thead>
               <tbody>
@@ -258,7 +262,12 @@ function RightsCell({ owners }) {
     <div className="flex flex-col gap-1.5">
       {owners.map((o, i) => (
         <span key={`${o.owner}-${i}`}>
-          <span className="block text-text leading-snug">{o.owner}</span>
+          {/* Имя — В ОДНУ СТРОКУ. Без этого «Иванов А.Ю. (ИП)» разрывался
+              по пробелу, и форма собственности уезжала на следующую строку:
+              две соседние колонки прав показывали одного и того же человека
+              по-разному, в зависимости от того, какой из них досталось
+              больше места. */}
+          <span className="block text-text leading-snug whitespace-nowrap">{o.owner}</span>
           {/* Доля и роялти — КАЖДОЕ СВОЕЙ СТРОКОЙ. Одной строкой «доля 100% ·
               роялти 70%» в узкую колонку не влезало, и перенос отрывал от неё
               хвост: «70%» оставалось болтаться отдельной строчкой без
