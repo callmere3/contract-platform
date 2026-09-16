@@ -153,11 +153,24 @@ def _filtered_tracks(
     catalog: str | None,
     include_archived: bool,
     contragent_id: uuid.UUID | None = None,
+    case_sensitive: bool = False,
 ):
     """
     Общий сбор фильтров для списка и выгрузки: экспорт обязан отдавать ровно
     то, что человек видит на экране, — значит, и фильтровать тем же кодом.
+
+    `case_sensitive` — галочка «учитывать регистр» на экране. По умолчанию
+    регистр не важен: человек ищет «густ», а в каталоге «ООО ГУСТ МЬЮЗИК».
+    Но регистр иногда и есть сам вопрос — в каталоге живут «ООО Густ Мьюзик»
+    и «ООО ГУСТ МЬЮЗИК» как два разных правообладателя, и различить их без
+    точного поиска нечем.
+
+    На скорости это не сказывается: триграммные индексы (pg_trgm) работают и
+    с LIKE, и с ILIKE.
     """
+    def like_of(column, pattern: str):
+        return column.like(pattern) if case_sensitive else column.ilike(pattern)
+
     query = select(Track)
     if not include_archived:
         query = query.where(Track.archived_at.is_(None))
@@ -165,10 +178,10 @@ def _filtered_tracks(
         like = f"%{q.strip()}%"
         query = query.where(
             or_(
-                Track.sku.ilike(like),
-                Track.code.ilike(like),
-                Track.title.ilike(like),
-                Track.artist.ilike(like),
+                like_of(Track.sku, like),
+                like_of(Track.code, like),
+                like_of(Track.title, like),
+                like_of(Track.artist, like),
             )
         )
     if owner and owner.strip():
@@ -179,7 +192,7 @@ def _filtered_tracks(
             select(TrackRight.id)
             .where(
                 TrackRight.track_id == Track.id,
-                TrackRight.owner.ilike(owner_like),
+                like_of(TrackRight.owner, owner_like),
             )
             .exists()
         )
@@ -206,6 +219,7 @@ def list_tracks(
     owner: str | None = None,
     catalog: str | None = None,
     contragent_id: uuid.UUID | None = None,
+    case_sensitive: bool = False,
     include_archived: bool = False,
     page: int = 1,
     page_size: int = DEFAULT_PAGE_SIZE,
@@ -236,7 +250,9 @@ def list_tracks(
     page = max(1, page)
     page_size = max(1, min(page_size, MAX_PAGE_SIZE))
 
-    query = _filtered_tracks(q, owner, catalog, include_archived, contragent_id)
+    query = _filtered_tracks(
+        q, owner, catalog, include_archived, contragent_id, case_sensitive
+    )
 
     total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
 
@@ -280,6 +296,7 @@ def export_tracks(
     owner: str | None = None,
     catalog: str | None = None,
     contragent_id: uuid.UUID | None = None,
+    case_sensitive: bool = False,
     include_archived: bool = False,
     db: Session = Depends(get_session),
 ) -> StreamingResponse:
@@ -303,7 +320,7 @@ def export_tracks(
     ws.append(list(COLUMNS))
 
     ids = _filtered_tracks(
-        q, owner, catalog, include_archived, contragent_id
+        q, owner, catalog, include_archived, contragent_id, case_sensitive
     ).with_only_columns(Track.id)
     # КОЛОНКАМИ, А НЕ ОБЪЕКТАМИ ORM. Сначала здесь было select(Track, TrackRight),
     # и выгрузка всего каталога занимала 93 секунды: на каждую из 244 тысяч

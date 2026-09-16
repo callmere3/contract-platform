@@ -47,6 +47,10 @@ const PAGE_SIZE = 50;
 export function NomenclaturePage() {
   const [q, setQ] = useState('');
   const [owner, setOwner] = useState('');
+  // По умолчанию регистр не важен: человек ищет «густ», а в каталоге
+  // «ООО ГУСТ МЬЮЗИК». Галочка нужна для обратного случая — когда два
+  // написания надо различить.
+  const [caseSensitive, setCaseSensitive] = useState(false);
   const [page, setPage] = useState(1);
   // Отбор по карточке контрагента живёт В АДРЕСЕ, а не в состоянии: на него
   // ведёт кнопка «Треки» из карточки, и такую ссылку должно быть видно и
@@ -70,7 +74,7 @@ export function NomenclaturePage() {
   // строк, останешься на «стр. 40», где пусто.
   useEffect(() => {
     setPage(1);
-  }, [q, owner, contragentId]);
+  }, [q, owner, contragentId, caseSensitive]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -80,6 +84,7 @@ export function NomenclaturePage() {
         q: q.trim(),
         owner: owner.trim(),
         contragentId,
+        caseSensitive,
         page,
         pageSize: PAGE_SIZE,
       });
@@ -91,7 +96,7 @@ export function NomenclaturePage() {
     } finally {
       setLoading(false);
     }
-  }, [q, owner, contragentId, page]);
+  }, [q, owner, contragentId, caseSensitive, page]);
 
   useEffect(() => {
     const timer = setTimeout(load, 300);
@@ -154,6 +159,19 @@ export function NomenclaturePage() {
               contragentId ? 'border-accent text-accent' : ''
             }`}
           />
+          {/* Галочка действует и на общий поиск, и на правообладателя: это
+              один и тот же вопрос — считать ли «густ» и «ГУСТ» одним словом.
+              При отборе по карточке она ни на что не влияет: там сравниваются
+              не строки, а ссылка. */}
+          <label className="flex items-center gap-2 text-[13px] text-text-secondary select-none">
+            <input
+              type="checkbox"
+              checked={caseSensitive}
+              onChange={(e) => setCaseSensitive(e.target.checked)}
+            />
+            Учитывать регистр
+          </label>
+
           {/* Импорт/экспорт стоит там же, где на «Контрагентах». Экспорт
               выгружает ровно то, что видно при текущем фильтре, — поэтому
               фильтры и передаются внутрь. */}
@@ -163,7 +181,7 @@ export function NomenclaturePage() {
               size="sm"
               onClick={() =>
                 openModal('nomenclatureImportExport', {
-                  filters: { q: q.trim(), owner: owner.trim(), contragentId },
+                  filters: { q: q.trim(), owner: owner.trim(), contragentId, caseSensitive },
                   onImported: load,
                 })
               }

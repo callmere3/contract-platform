@@ -14,7 +14,15 @@ import { API, apiFetch, apiJson } from './client';
  */
 
 /** Список: { tracks: [...], total, page, page_size }. */
-export function listTracks({ q, owner, catalog, contragentId, page, pageSize } = {}) {
+export function listTracks({
+  q,
+  owner,
+  catalog,
+  contragentId,
+  caseSensitive,
+  page,
+  pageSize,
+} = {}) {
   const params = new URLSearchParams();
   if (q) params.set('q', q);
   if (owner) params.set('owner', owner);
@@ -22,6 +30,9 @@ export function listTracks({ q, owner, catalog, contragentId, page, pageSize } =
   // Отбор по СВЯЗИ с карточкой, а не по имени: у контрагента бывает
   // несколько написаний в выгрузке, и по титлу нашлись бы не все его треки.
   if (contragentId) params.set('contragent_id', contragentId);
+  // Регистр важен не всегда, но иногда он и есть вопрос: в каталоге живут
+  // «ООО Густ Мьюзик» и «ООО ГУСТ МЬЮЗИК» как разные правообладатели.
+  if (caseSensitive) params.set('case_sensitive', 'true');
   if (page) params.set('page', String(page));
   if (pageSize) params.set('page_size', String(pageSize));
   return apiJson(`${API}/nomenclature?${params}`);
@@ -37,12 +48,15 @@ export function fetchTrackCard(trackId) {
  * текущих фильтров. Возвращает Blob: запрос требует Authorization, поэтому
  * просто перейти по ссылке нельзя.
  */
-export async function exportTracks({ q, owner, catalog, contragentId } = {}) {
+export async function exportTracks({ q, owner, catalog, contragentId, caseSensitive } = {}) {
   const params = new URLSearchParams();
   if (q) params.set('q', q);
   if (owner) params.set('owner', owner);
   if (catalog) params.set('catalog', catalog);
   if (contragentId) params.set('contragent_id', contragentId);
+  // Выгрузка обязана отдавать ровно то, что видно на экране, — значит, и
+  // галочку регистра надо передать.
+  if (caseSensitive) params.set('case_sensitive', 'true');
   const qs = params.toString();
   const r = await apiFetch(`${API}/nomenclature/export${qs ? `?${qs}` : ''}`);
   if (!r.ok) throw new Error(await r.text());
