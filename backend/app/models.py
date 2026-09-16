@@ -668,6 +668,116 @@ class UserEvent(Base):
     )
 
 
+class Track(Base):
+    """
+    Трек каталога лейбла — номенклатура ML Finance.
+
+    Поля повторяют выгрузку из Dista ОДИН В ОДИН и хранятся как есть, без
+    приведения к «правильному» виду. Причина простая: мы пока не знаем, что в
+    этих данных значит каждое поле, и догадки лучше держать в коде показа, а
+    не в схеме. Переименовать колонку потом дешевле, чем восстановить
+    значение, которое импорт округлил или «исправил».
+
+    КЛЮЧ — АРТИКУЛ (`sku`), наш внутренний код. Он уникален по построению и
+    уникален по факту: в выгрузке от 16.09.2026 на 121 529 строк ни одного
+    дубля. ISRC на эту роль не годится совсем — у него 11 643 повтора, а у
+    26 треков он и вовсе 'TBA'. Тот же выбор, что у контрагентов: свой код
+    (`dista_id`), а не чужой идентификатор.
+
+    ДОЛИ ЖИВУТ В ДВУХ МЕСТАХ, и это не дублирование:
+      - `share_author` / `share_related` — «Доля авторских прав» и «Доля
+        смежных прав» из выгрузки, то есть доля НА УРОВНЕ ТРЕКА;
+      - строки `TrackRight` — доли отдельных правообладателей.
+    Они не всегда согласованы: у 45 617 треков доля смежных равна нулю, а
+    владелец смежных прав при этом указан с долей 100%. Что из этого правда,
+    выяснится на живом отчёте (см. брейншторм по номенклатуре, §3) — до тех
+    пор храним оба числа и показываем оба.
+
+    Треки не удаляются: исчезнувший из выгрузки помечается `archived_at`.
+    Удалять позицию, по которой могли идти начисления, нельзя — та же логика,
+    что у контрагента с операциями.
+    """
+    __tablename__ = "tracks"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    # Артикул — строка, а не число: в выгрузке он строковый и ведущие нули в
+    # нём терять нельзя.
+    sku: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    code: Mapped[str | None] = mapped_column(String(64), index=True)
+    title: Mapped[str] = mapped_column(String(300), index=True)
+    artist: Mapped[str | None] = mapped_column(String(300), index=True)
+    # «Автор слов/музыки» — в выгрузке это одна строка с перечислением через
+    # запятую, а не список. Разбирать её на людей нечем: у авторов нет ни
+    # кодов, ни отдельных колонок, и «Иванов И., Петров П.» от «Иванов И.
+    # Петров» отличить можно только на глаз.
+    authors: Mapped[str | None] = mapped_column(Text)
+    share_author: Mapped[Decimal | None] = mapped_column(Numeric(6, 2))
+    share_related: Mapped[Decimal | None] = mapped_column(Numeric(6, 2))
+    catalog: Mapped[str | None] = mapped_column(String(255), index=True)
+    album: Mapped[str | None] = mapped_column(String(300))
+    genre: Mapped[str | None] = mapped_column(String(120))
+    # Колонка «Роялти» выгрузки — общая ставка по треку. НЕ производная от
+    # ставок правообладателей: в 295 строках она с ними расходится (80 против
+    # 70), поэтому хранится отдельно, а не считается на лету.
+    royalty_percent: Mapped[Decimal | None] = mapped_column(Numeric(6, 2))
+    # «Дата прав». У 116 450 треков это 01.01.2000 — очевидная заглушка
+    # Dista, но чинить её за них мы не вправе: показываем как есть.
+    rights_since: Mapped[date | None] = mapped_column(Date)
+
+    # Откуда приехала строка. Файлов будет много (импорт ежедневный), и без
+    # этого через полгода не ответить, из какой выгрузки взялась цифра.
+    source_file: Mapped[str | None] = mapped_column(String(160))
+    imported_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    rights: Mapped[list["TrackRight"]] = relationship(
+        back_populates="track", cascade="all, delete-orphan"
+    )
+
+
+class TrackRight(Base):
+    """
+    Право на трек: кто, какой вид права, какая доля и по какой ставке роялти.
+
+    СТРОКА, А НЕ КОЛОНКА. В выгрузке Dista это «Владелец авт.прав 1»,
+    «Доля(%) авт.прав 1», «Роялти(%) авт. прав 1», затем то же для второго и
+    третьего — таблица растёт вправо и обрывается на третьем месте (в файле
+    от 16.09.2026 третий слот занят у 32 треков, и ничто не обещает, что
+    завтра не появится четвёртый). У нас это строки: сколько правообладателей,
+    столько и строк, а ключ — тройка (трек, правообладатель, вид права).
+
+    `slot` хранит номер из выгрузки, чтобы карточка показывала
+    правообладателей в том же порядке, в каком их видят в Dista. Смысла,
+    кроме порядка, у него нет.
+
+    Доля и роялти — ПРОЦЕНТЫ (100.00, 80.00), хотя в выгрузке лежат долями
+    единицы (1, 0.8). Приведение делает импорт, один раз: иначе каждое место
+    показа множило бы на сто самостоятельно, и однажды кто-нибудь забыл бы.
+    """
+    __tablename__ = "track_rights"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    track_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tracks.id", ondelete="CASCADE"), index=True
+    )
+    # 'author' — авторские (на произведение), 'related' — смежные (на
+    # фонограмму). Виды независимы: у кавера фонограмма своя, а произведение
+    # чужое, поэтому доли считаются по каждому виду отдельно.
+    right_type: Mapped[str] = mapped_column(String(8))
+    slot: Mapped[int] = mapped_column(SmallInteger)
+    owner: Mapped[str] = mapped_column(String(255), index=True)
+    share: Mapped[Decimal | None] = mapped_column(Numeric(6, 2))
+    royalty: Mapped[Decimal | None] = mapped_column(Numeric(6, 2))
+
+    track: Mapped["Track"] = relationship(back_populates="rights")
+
+
 def folder_path(folder: TemplateFolder) -> list[str]:
     """
     Собирает путь от корня до папки: ['РУ', 'Договор', 'СГ-роялти'].

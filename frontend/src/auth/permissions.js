@@ -105,6 +105,12 @@ export const canUseFinance = (role) => is(role, ADMIN, DIRECTOR);
 export const canAddFinanceOperations = (role) => is(role, ADMIN, DIRECTOR);
 export const canDeleteFinanceOperations = (role) => is(role, ADMIN);
 
+// Номенклатура — каталог треков. Сейчас совпадает с canUseFinance, но живёт
+// отдельной строкой намеренно: каталог наполняет импорт, и заливать треки,
+// скорее всего, будет не тот человек, которому положено видеть суммы выплат
+// (зеркало CAN_VIEW_NOMENCLATURE в roles.py).
+export const canViewNomenclature = (role) => is(role, ADMIN, DIRECTOR);
+
 // backend: CAN_EXPORT_CONTRAGENTS = (ADMIN, DIRECTOR) — у top_manager/tester убран
 export const canExport = (role) => is(role, ADMIN, DIRECTOR);
 

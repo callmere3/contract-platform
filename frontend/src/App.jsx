@@ -9,6 +9,7 @@ import {
   canUseDistaSync,
   canViewChampionBoard,
   canUseFinance,
+  canViewNomenclature,
 } from './auth/permissions';
 import { TagsProvider } from './api/TagsContext';
 import { ModalProvider } from './modals/ModalProvider';
@@ -114,10 +115,18 @@ function AppShell() {
             по ссылке /app/finance увидел бы пустой экран с 403 вместо
             понятного возврата на поиск. Настоящая защита — на сервере, там
             право стоит на всём роутере /finance. */}
+        {/* Корень ML Finance — «Номенклатура»: первая вкладка продукта.
+            Право своё (canViewNomenclature), хоть сейчас и совпадает с
+            финансовым: каталог треков и суммы выплат — разные вещи, и
+            разойтись им предстоит на импорте. */}
         <Route
           path="/finance"
           element={
-            canUseFinance(user?.role) ? <NomenclaturePage /> : <Navigate to="/search" replace />
+            canViewNomenclature(user?.role) ? (
+              <NomenclaturePage />
+            ) : (
+              <Navigate to="/search" replace />
+            )
           }
         />
         <Route

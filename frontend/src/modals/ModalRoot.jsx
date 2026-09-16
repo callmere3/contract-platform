@@ -17,6 +17,7 @@ import { AchievementModal } from './AchievementModal';
 import { GuideModal } from './GuideModal';
 import { FinanceContragentModal } from './FinanceContragentModal';
 import { NewFinanceOperationModal } from './NewFinanceOperationModal';
+import { TrackCardModal } from './TrackCardModal';
 import { AlertModal } from './AlertModal';
 
 const REGISTRY = {
@@ -40,6 +41,7 @@ const REGISTRY = {
   guide: GuideModal,
   financeContragent: FinanceContragentModal,
   newFinanceOperation: NewFinanceOperationModal,
+  trackCard: TrackCardModal,
 };
 
 export function ModalRoot() {
