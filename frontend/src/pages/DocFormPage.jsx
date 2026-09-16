@@ -187,7 +187,7 @@ export function DocFormPage() {
   const navigate = useNavigate();
 
   const { user } = useAuth();
-  const { openModal } = useModal();
+  const { openModal, modalHistory } = useModal();
   const { draft, saveDraft, clearDraft } = useDraft();
 
   // Восстановление черновика: плашка ведёт сюда с ?restore=1. Читаем один
@@ -735,7 +735,7 @@ export function DocFormPage() {
     openModal('confirmExitDraft', {
       onSave: () => {
         persist();
-        navigate(-1);
+        leaveForm();
       },
       onDiscard: () => {
         clearDraft();
@@ -747,9 +747,23 @@ export function DocFormPage() {
         reportEvent('draft_discarded')
           .then(() => refreshAchievements())
           .catch(() => {});
-        navigate(-1);
+        leaveForm();
       },
     });
+  }
+
+  /**
+   * Уйти с формы, когда решение принято в модалке «Выйти из формы?».
+   *
+   * Шагов НАЗАД столько, сколько записей истории положили открытые модалки,
+   * плюс один — на саму форму. Модалка кладёт за собой запись, чтобы «назад»
+   * закрывал её, а не уносил со страницы (см. modalHistory); поэтому простой
+   * navigate(-1) отсюда вернул бы человека на эту же форму, только без
+   * модалки. Закрывать её перед уходом не нужно и вредно: это второй прыжок
+   * по истории вдогонку первому, а закроет её popstate от этого же перехода.
+   */
+  function leaveForm() {
+    navigate(-(1 + modalHistory.depth));
   }
 
   // Группы полей в порядке, заданном сервером (GROUP_ORDER в

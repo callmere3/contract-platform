@@ -11,6 +11,12 @@ import { useModal } from './ModalProvider';
  *
  * Логику сохранения/сброса и сам переход выполняет вызывающая сторона
  * (DocFormPage) — модалка только предлагает выбор.
+ *
+ * ДВЕ УХОДЯЩИЕ КНОПКИ НЕ ЗОВУТ closeModal, и это не забывчивость: уход с
+ * формы сам по себе прыжок по истории назад, а модалку закроет прилетевший
+ * от него popstate (см. modalHistory.js). Закрой её здесь — получилось бы два
+ * прыжка подряд, и человек уехал бы на страницу дальше, чем собирался.
+ * «Остаться» и крестик, наоборот, закрывают обычным способом.
  */
 export function ConfirmExitDraftModal({ onSave, onDiscard, level, isTop }) {
   const { closeModal } = useModal();
@@ -28,10 +34,7 @@ export function ConfirmExitDraftModal({ onSave, onDiscard, level, isTop }) {
             variant="secondary"
             size="sm"
             className="mr-auto"
-            onClick={() => {
-              closeModal();
-              onDiscard?.();
-            }}
+            onClick={() => onDiscard?.()}
           >
             Сбросить
           </Button>
@@ -41,10 +44,7 @@ export function ConfirmExitDraftModal({ onSave, onDiscard, level, isTop }) {
           <Button
             variant="primary"
             size="sm"
-            onClick={() => {
-              closeModal();
-              onSave?.();
-            }}
+            onClick={() => onSave?.()}
           >
             Сохранить черновик
           </Button>
