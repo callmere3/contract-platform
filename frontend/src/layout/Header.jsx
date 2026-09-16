@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ChampionBadge } from '../components/ui/ChampionBadge';
 import { NavLink } from 'react-router-dom';
 import { useTheme } from '../theme/ThemeContext';
@@ -18,6 +18,7 @@ import {
   unopenedCodes,
 } from '../achievements/tracker';
 import { useModal } from '../modals/ModalProvider';
+import { NotificationsPanel } from './NotificationsPanel';
 
 // Первые три вкладки видны всем ролям (см. ТЗ: "менеджер видит все вкладки").
 // Ограничения для них — не на уровне доступа к вкладке, а на уровне действий
@@ -46,6 +47,10 @@ export function Header({ companyName = 'ML Docs' }) {
   // window-событию 'notifications-changed' (его шлёт панель после прочтения и
   // вкладка админа после отправки) — иначе значок отставал бы на минуту.
   const [unread, setUnread] = useState(0);
+  // Панель уведомлений выпадает из значка, поэтому её состояние живёт здесь,
+  // а не в стеке модалок: она привязана к кнопке, из которой появилась.
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const bellRef = useRef(null);
   useEffect(() => {
     let alive = true;
     const refresh = () =>
@@ -96,7 +101,11 @@ export function Header({ companyName = 'ML Docs' }) {
   }
 
   return (
-    <header className="flex items-center justify-between px-8 h-16 bg-surface border-b border-border sticky top-0 z-10">
+    // z-[45] — не украшение: шапка задаёт слой для выпадающей панели
+    // уведомлений, а док черновика в правом нижнем углу живёт на z-40 и при
+    // прежнем z-10 накрывал бы её нижний край. Выше остаются подсказки
+    // ComboCell (z-50) и модалки (со 100): им и положено перекрывать шапку.
+    <header className="flex items-center justify-between px-8 h-16 bg-surface border-b border-border sticky top-0 z-[45]">
       <div className="flex items-center gap-9">
         <span className="font-bold text-base tracking-[-0.01em] text-text">{companyName}</span>
         <nav className="flex items-center gap-7">
@@ -145,20 +154,33 @@ export function Header({ companyName = 'ML Docs' }) {
           </button>
         )}
         {/* Значок уведомлений — у всех ролей. Счётчик рисуем только когда
-            есть что читать: пустой кружок с нулём выглядел бы поломкой. */}
-        <button
-          onClick={() => openModal('notifications')}
-          title={unread > 0 ? `Непрочитанных: ${unread}` : 'Уведомления'}
-          aria-label="Уведомления"
-          className="relative w-8 h-8 rounded-full border border-border flex items-center justify-center text-sm text-text-secondary cursor-pointer bg-transparent"
-        >
-          🔔
-          {unread > 0 && (
-            <span className="absolute -top-1 -right-1 inline-flex items-center justify-center min-w-[17px] h-[17px] px-1 rounded-full bg-danger text-white text-[10px] font-semibold leading-none">
-              {unread > 99 ? '99+' : unread}
-            </span>
+            есть что читать: пустой кружок с нулём выглядел бы поломкой.
+            Обёртка relative — якорь для выпадающей панели. */}
+        <div className="relative">
+          <button
+            ref={bellRef}
+            onClick={() => setNotificationsOpen((open) => !open)}
+            title={unread > 0 ? `Непрочитанных: ${unread}` : 'Уведомления'}
+            aria-label="Уведомления"
+            aria-expanded={notificationsOpen}
+            className="relative w-8 h-8 rounded-full border border-border flex items-center justify-center text-sm text-text-secondary cursor-pointer bg-transparent"
+          >
+            🔔
+            {unread > 0 && (
+              <span className="absolute -top-1 -right-1 inline-flex items-center justify-center min-w-[17px] h-[17px] px-1 rounded-full bg-danger text-white text-[10px] font-semibold leading-none">
+                {unread > 99 ? '99+' : unread}
+              </span>
+            )}
+          </button>
+          {/* Панель монтируется только открытой — так список запрашивается
+              при каждом открытии, а не висит с прошлого раза. */}
+          {notificationsOpen && (
+            <NotificationsPanel
+              anchorRef={bellRef}
+              onClose={() => setNotificationsOpen(false)}
+            />
           )}
-        </button>
+        </div>
         <button
           onClick={toggleTheme}
           aria-label="Переключить тему"

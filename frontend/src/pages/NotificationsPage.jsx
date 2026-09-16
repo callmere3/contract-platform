@@ -204,9 +204,10 @@ export function NotificationsPage() {
           sent.map((n) => (
             <div key={n.id} className="px-5 py-4 border-b border-border last:border-b-0">
               {/* У отправленных до 16.09.2026 заголовка нет — показываем их
-                  как раньше, одним текстом. */}
+                  как раньше, одним текстом. Отступ под заголовком — в пустую
+                  строку, как в панели у получателя. */}
               {n.title && (
-                <div className="text-[14px] font-semibold text-text leading-snug mb-1">
+                <div className="text-[14px] font-semibold text-text leading-snug mb-4">
                   {n.title}
                 </div>
               )}
