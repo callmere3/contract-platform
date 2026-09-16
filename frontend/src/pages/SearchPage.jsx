@@ -14,7 +14,7 @@ import { canCreateContragents } from '../auth/permissions';
  *
  * Выдача появляется только когда что-то введено (enabled: q не пустой) —
  * незачем грузить весь список из 200 записей на пустой строке, для этого
- * есть вкладка "База контрагентов".
+ * есть вкладка "Контрагенты".
  */
 export function SearchPage() {
   const [q, setQ] = useState('');
