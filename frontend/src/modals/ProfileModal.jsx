@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Modal } from '../components/ui/Modal';
 import { Button } from '../components/ui/Button';
 import { ChampionBadge } from '../components/ui/ChampionBadge';
@@ -46,6 +46,15 @@ export function ProfileModal({ level, isTop }) {
   // revealSecret его не трогает.
   const asShown = (a) => (demo.includes(a.code) ? { ...revealSecret(a), earned: true } : a);
 
+  // Только что полученные — первыми. Иначе на длинной сетке анимация может
+  // проиграться там, куда человек даже не смотрит: достижений уже пятнадцать,
+  // а кубков со временем станет больше. Порядок сервера внутри групп
+  // сохраняем — sort у массивов стабильная.
+  const ordered = useMemo(
+    () => [...achievements].sort((a, b) => fresh.includes(b.code) - fresh.includes(a.code)),
+    [achievements, fresh],
+  );
+
   useEffect(() => {
     let alive = true;
     fetchMyAchievements()
@@ -63,7 +72,7 @@ export function ProfileModal({ level, isTop }) {
   }, []);
 
   return (
-    <Modal title="Профиль" onClose={closeModal} level={level} isTop={isTop} width={480}>
+    <Modal title="Профиль" onClose={closeModal} level={level} isTop={isTop} width={640}>
       <div className="flex flex-col gap-5">
         {/* Кто я. Роль не подписываем: человек и так знает, кто он, а на
             своей же карточке это выглядит как служебная пометка. */}
@@ -74,13 +83,16 @@ export function ProfileModal({ level, isTop }) {
           <ChampionBadge champion={user?.champion} isMe />
         </div>
 
-        <div className="flex flex-col gap-2.5">
-          {/* Инструкция первой: она нужна новичку, а смена пароля — раз в
-              полгода. */}
+        {/* Кнопки в ряд, а не в столбик: столбик съедал около сотни
+            пикселей высоты, и раздел достижений уходил под прокрутку — а
+            тогда человек не видел ни новых значков, ни их анимации.
+            Инструкция первой: она нужна новичку, а смена пароля — раз в
+            полгода. */}
+        <div className="flex gap-2">
           <Button
             variant="secondary"
             size="sm"
-            className="w-full"
+            className="flex-1"
             onClick={() => openModal('guide')}
           >
             Инструкция
@@ -88,14 +100,14 @@ export function ProfileModal({ level, isTop }) {
           <Button
             variant="secondary"
             size="sm"
-            className="w-full"
+            className="flex-1"
             onClick={() => openModal('changePassword')}
           >
             Сменить пароль
           </Button>
           {/* Выход не закрывает окно руками: со сбросом сессии размонтируется
               всё приложение вместе со стеком модалок. */}
-          <Button variant="secondary" size="sm" className="w-full" onClick={logout}>
+          <Button variant="secondary" size="sm" className="flex-1" onClick={logout}>
             Выйти
           </Button>
         </div>
@@ -109,8 +121,8 @@ export function ProfileModal({ level, isTop }) {
           {error && <div className="text-[13px] text-danger">{error}</div>}
 
           {!loading && !error && (
-            <div className="grid grid-cols-3 gap-2">
-              {achievements.map((a) => (
+            <div className="grid grid-cols-4 gap-2">
+              {ordered.map((a) => (
                 <AchievementCard
                   key={a.code}
                   achievement={asShown(a)}
@@ -144,7 +156,7 @@ function AchievementCard({ achievement, onOpen, isFresh = false, revealIndex = 0
       type="button"
       onClick={onOpen}
       title={hint}
-      className={`flex flex-col items-center text-center gap-1.5 px-2 py-3 rounded-input border cursor-pointer min-h-[86px] justify-center ${
+      className={`flex flex-col items-center text-center gap-1 px-1.5 py-2.5 rounded-input border cursor-pointer min-h-[80px] justify-center ${
         earned
           ? 'border-border bg-surface'
           : 'border-dashed border-border bg-transparent'
@@ -154,7 +166,7 @@ function AchievementCard({ achievement, onOpen, isFresh = false, revealIndex = 0
       <span
         role="img"
         aria-hidden="true"
-        className={`text-[26px] leading-none ${earned ? '' : 'grayscale opacity-40'} ${
+        className={`text-[24px] leading-none ${earned ? '' : 'grayscale opacity-40'} ${
           isFresh ? 'achievement-reveal' : ''
         }`}
         // Несколько новых значков зажигаются по очереди, а не разом.
@@ -163,7 +175,7 @@ function AchievementCard({ achievement, onOpen, isFresh = false, revealIndex = 0
         {icon}
       </span>
       <span
-        className={`text-[11.5px] font-semibold leading-tight ${
+        className={`text-[10.5px] font-semibold leading-[1.2] ${
           earned ? 'text-text' : 'text-text-muted'
         }`}
       >
