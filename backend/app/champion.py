@@ -12,11 +12,15 @@ docx) по той же причине не добавляет счётчику �
 по документам, и десяток приложений одному контрагенту с разными данными
 за месяц — нормальная работа, а не накрутка.
 
-КТО УЧАСТВУЕТ. Все роли, кроме admin (NOT_COMPETING): админская учётка
-служебная, ею заводят и проверяют, а не работают. Ничья не разрешается в
-пользу кого-то одного — кубок получают все, у кого одинаковый максимум.
-Если за месяц не сгенерировано ничего, чемпиона нет, и значок не
-показывается ни у кого.
+КТО УЧАСТВУЕТ. Только manager и top_manager (COMPETING_ROLES): кубок — про
+рабочую выработку, а admin и director смотрят и администрируют, tester
+обкатывает шаблоны, и их документы соревнованием не являются. Список
+ПЕРЕЧИСЛИТЕЛЬНЫЙ, а не «все, кроме…», намеренно: новая роль не должна
+попадать в зачёт сама собой — её добавят сюда, если понадобится.
+
+Ничья не разрешается в пользу кого-то одного — кубок получают все, у кого
+одинаковый максимум. Если за месяц не сгенерировано ничего, чемпиона нет, и
+значок не показывается ни у кого.
 
 ПОЧЕМУ НЕ ХРАНИМ В БАЗЕ. Итог месяца однозначно выводится из
 generated_documents, поэтому ни таблицы наград, ни задачи по расписанию не
@@ -36,16 +40,17 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 
 from app.models import GeneratedDocument, User
-from app.roles import ADMIN
+from app.roles import MANAGER, TOP_MANAGER
 
 # Москва: UTC+3 круглый год — перевод часов в России отменён в 2014-м.
 # Фиксированное смещение вместо ZoneInfo намеренно: не тянем tzdata ради
 # зоны, которая не меняется (на Windows её пришлось бы ставить пакетом).
 MSK = timezone(timedelta(hours=3))
 
-# Роли вне конкурса. Вынесено отдельной константой: добавить/убрать роль —
-# одна строка, без правки логики.
-NOT_COMPETING = (ADMIN,)
+# Роли, участвующие в кубке. Добавить/убрать — одна строка, без правки
+# логики. Перечислением, а не исключением: роль попадает в соревнование
+# только явно (см. «КТО УЧАСТВУЕТ» выше).
+COMPETING_ROLES = (TOP_MANAGER, MANAGER)
 
 # НАЧАЛО ЗАЧЁТА. Всё, что сделано раньше, в кубках и достижениях не
 # участвует: 16.09.2026 счёт обнулили по просьбе владельца, чтобы команда
@@ -193,12 +198,12 @@ def champion_history(db: Session, now: datetime | None = None) -> dict:
     now_msk = (now or datetime.now(timezone.utc)).astimezone(MSK)
     current_month = (now_msk.year, now_msk.month)
 
-    out_of_contest = {u.id for u in db.query(User).filter(User.role.in_(NOT_COMPETING)).all()}
+    in_contest = {u.id for u in db.query(User).filter(User.role.in_(COMPETING_ROLES)).all()}
 
     since = scoring_month_start()
     per_month: dict = {}
     for row in db.query(GeneratedDocument).all():
-        if row.user_id is None or row.user_id in out_of_contest:
+        if row.user_id is None or row.user_id not in in_contest:
             continue
         if as_utc(row.created_at) < since:
             continue          # сделано до сброса — в зачёт не идёт
@@ -246,11 +251,11 @@ def unique_counts(db: Session, start: datetime, end: datetime) -> dict:
         .filter(GeneratedDocument.created_at >= since, GeneratedDocument.created_at < end)
         .all()
     )
-    out_of_contest = {u.id for u in db.query(User).filter(User.role.in_(NOT_COMPETING)).all()}
+    in_contest = {u.id for u in db.query(User).filter(User.role.in_(COMPETING_ROLES)).all()}
 
     per_user: dict = {}
     for row in rows:
-        if row.user_id is None or row.user_id in out_of_contest:
+        if row.user_id is None or row.user_id not in in_contest:
             continue
         per_user.setdefault(row.user_id, set()).add(_document_key(row))
     return {user_id: len(keys) for user_id, keys in per_user.items()}

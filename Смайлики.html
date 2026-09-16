@@ -1,0 +1,390 @@
+<title>Смайлики для достижений — Медиа Лэнд</title>
+
+<style>
+  /* Токены те же, что в Роли.html (из frontend/src/index.css): светлая
+     палитра базовая, тёмная переопределяет, акцент меняет тон. */
+  :root {
+    --bg: #fafaf9;
+    --surface: #ffffff;
+    --surface-2: #f5f5f4;
+    --border: #e7e5e4;
+    --border-strong: #d6d3d1;
+    --text: #111113;
+    --text-secondary: #57534e;
+    --text-muted: #a8a29e;
+    --accent: #6366f1;
+    --accent-soft: rgba(99, 102, 241, 0.1);
+    --yes: #16a34a;
+    --yes-soft: rgba(22, 163, 74, 0.1);
+    --warn: #b45309;
+    --warn-soft: rgba(180, 83, 9, 0.1);
+    --shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+    --r-card: 14px;
+    --r-badge: 6px;
+    --font: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    --mono: ui-monospace, 'JetBrains Mono', 'Cascadia Code', Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) {
+      --bg: #151515; --surface: #1d1d1d; --surface-2: #262626;
+      --border: rgba(255,255,255,0.09); --border-strong: rgba(255,255,255,0.18);
+      --text: #f2f2f2; --text-secondary: #b8b3ad; --text-muted: #7c7772;
+      --accent: #f59e0b; --accent-soft: rgba(245,158,11,0.16);
+      --yes: #22c55e; --yes-soft: rgba(34,197,94,0.14);
+      --warn: #fbbf24; --warn-soft: rgba(251,191,36,0.14);
+      --shadow: 0 8px 24px rgba(0,0,0,0.4);
+    }
+  }
+  :root[data-theme='dark'] {
+    --bg: #151515; --surface: #1d1d1d; --surface-2: #262626;
+    --border: rgba(255,255,255,0.09); --border-strong: rgba(255,255,255,0.18);
+    --text: #f2f2f2; --text-secondary: #b8b3ad; --text-muted: #7c7772;
+    --accent: #f59e0b; --accent-soft: rgba(245,158,11,0.16);
+    --yes: #22c55e; --yes-soft: rgba(34,197,94,0.14);
+    --warn: #fbbf24; --warn-soft: rgba(251,191,36,0.14);
+    --shadow: 0 8px 24px rgba(0,0,0,0.4);
+  }
+  :root[data-theme='light'] {
+    --bg: #fafaf9; --surface: #ffffff; --surface-2: #f5f5f4;
+    --border: #e7e5e4; --border-strong: #d6d3d1;
+    --text: #111113; --text-secondary: #57534e; --text-muted: #a8a29e;
+    --accent: #6366f1; --accent-soft: rgba(99,102,241,0.1);
+    --yes: #16a34a; --yes-soft: rgba(22,163,74,0.1);
+    --warn: #b45309; --warn-soft: rgba(180,83,9,0.1);
+    --shadow: 0 8px 24px rgba(0,0,0,0.06);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: var(--font); font-size: 15px; line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .page { max-width: 1080px; margin: 0 auto; padding: clamp(32px, 6vw, 72px) clamp(18px, 5vw, 48px) 72px; }
+
+  header.top { display: flex; align-items: flex-start; gap: 20px; margin-bottom: 8px; }
+  .eyebrow { font-size: 11px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-muted); margin: 0 0 10px; }
+  h1 { margin: 0; font-size: clamp(26px, 4.5vw, 38px); line-height: 1.1; font-weight: 800; letter-spacing: -0.03em; }
+  .lead { margin: 12px 0 0; max-width: 64ch; color: var(--text-secondary); }
+  .source { margin: 14px 0 0; font-size: 12.5px; color: var(--text-muted); max-width: 70ch; }
+  .source code { font-family: var(--mono); font-size: 12px; background: var(--surface-2); padding: 1px 6px; border-radius: 5px; color: var(--text-secondary); }
+
+  .toggle {
+    margin-left: auto; flex-shrink: 0; cursor: pointer; font-family: var(--font); font-size: 12.5px;
+    background: var(--surface); color: var(--text-secondary); border: 1px solid var(--border);
+    border-radius: 999px; padding: 7px 13px; display: inline-flex; align-items: center; gap: 7px;
+  }
+  .toggle:hover { color: var(--text); }
+
+  h2 { font-size: 13px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); margin: 44px 0 6px; }
+  .about { margin: 0 0 16px; font-size: 13.5px; color: var(--text-secondary); max-width: 72ch; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 10px; }
+
+  .emo {
+    position: relative; cursor: pointer; font-family: var(--font);
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card);
+    padding: 14px 8px 11px; display: flex; flex-direction: column; align-items: center; gap: 7px;
+    text-align: center; color: var(--text); transition: border-color .12s, transform .12s;
+  }
+  .emo:hover { border-color: var(--border-strong); transform: translateY(-1px); }
+  .emo:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .emo .glyph { font-size: 30px; line-height: 1; }
+  .emo .cap { font-size: 11.5px; line-height: 1.25; color: var(--text-secondary); }
+
+  /* Уже используется в сервисе — чтобы не занять значок дважды. */
+  .emo.taken { background: var(--accent-soft); border-color: transparent; }
+  .emo.taken .cap { color: var(--accent); font-weight: 600; }
+  .emo .used { font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--accent); }
+
+  .note { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--warn); border-radius: 10px; padding: 15px 17px; margin: 16px 0 0; }
+  .note b { font-size: 13.5px; }
+  .note p { margin: 6px 0 0; font-size: 13px; color: var(--text-secondary); line-height: 1.5; }
+  .note code { font-family: var(--mono); font-size: 11.5px; background: var(--surface-2); padding: 1px 5px; border-radius: 5px; }
+
+  .ideas { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 12px; margin-top: 14px; }
+  .idea { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); padding: 14px 16px; }
+  .idea .head { display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: 14px; }
+  .idea .head span.g { font-size: 20px; }
+  .idea p { margin: 6px 0 0; font-size: 13px; color: var(--text-secondary); line-height: 1.5; }
+
+  footer { margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--border); font-size: 12.5px; color: var(--text-muted); }
+
+  /* Всплывашка «скопировано» */
+  #toast {
+    position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%) translateY(12px);
+    background: var(--text); color: var(--bg); font-size: 13px; font-weight: 600;
+    padding: 9px 16px; border-radius: 999px; opacity: 0; pointer-events: none;
+    transition: opacity .18s, transform .18s;
+  }
+  #toast.on { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+
+<div class="page">
+  <header class="top">
+    <div>
+      <p class="eyebrow">Медиа Лэнд · Генератор договоров</p>
+      <h1>Смайлики для достижений</h1>
+      <p class="lead">
+        Палитра для новых значков: нажмите на любой — он скопируется в буфер.
+        Подпись под смайликом — не название, а подсказка, к какому достижению
+        он просится.
+      </p>
+      <p class="source">
+        Значки задаются в <code>backend/app/achievements.py</code> — одна строка
+        на достижение. Восемь уже занятых помечены и подсвечены, чтобы не
+        выдать один символ дважды.
+      </p>
+    </div>
+    <button class="toggle" id="themeToggle" aria-label="Переключить тему">
+      <span id="themeIcon">☾</span><span id="themeText">Тёмная</span>
+    </button>
+  </header>
+
+  <h2>Уже заняты</h2>
+  <p class="about">Эти восемь работают в профиле прямо сейчас.</p>
+  <div class="grid">
+    <button class="emo taken" data-e="🏆"><span class="glyph">🏆</span><span class="cap">Кубок месяца</span><span class="used">занят</span></button>
+    <button class="emo taken" data-e="📄"><span class="glyph">📄</span><span class="cap">Первый документ</span><span class="used">занят</span></button>
+    <button class="emo taken" data-e="📚"><span class="glyph">📚</span><span class="cap">10 документов</span><span class="used">занят</span></button>
+    <button class="emo taken" data-e="🗄️"><span class="glyph">🗄️</span><span class="cap">25 документов</span><span class="used">занят</span></button>
+    <button class="emo taken" data-e="⭐"><span class="glyph">⭐</span><span class="cap">50 документов</span><span class="used">занят</span></button>
+    <button class="emo taken" data-e="💯"><span class="glyph">💯</span><span class="cap">100 документов</span><span class="used">занят</span></button>
+    <button class="emo taken" data-e="🚗"><span class="glyph">🚗</span><span class="cap">Машина</span><span class="used">занят</span></button>
+    <button class="emo taken" data-e="💎"><span class="glyph">💎</span><span class="cap">Алмаз (секретное)</span><span class="used">занят</span></button>
+  </div>
+
+  <h2>Награды и статус</h2>
+  <p class="about">Для вершины: победы, серии побед, звание внутри команды.</p>
+  <div class="grid">
+    <button class="emo" data-e="🥇"><span class="glyph">🥇</span><span class="cap">Первое место</span></button>
+    <button class="emo" data-e="🥈"><span class="glyph">🥈</span><span class="cap">Второе место</span></button>
+    <button class="emo" data-e="🥉"><span class="glyph">🥉</span><span class="cap">Третье место</span></button>
+    <button class="emo" data-e="🏅"><span class="glyph">🏅</span><span class="cap">Медаль за месяц</span></button>
+    <button class="emo" data-e="🎖️"><span class="glyph">🎖️</span><span class="cap">За выслугу</span></button>
+    <button class="emo" data-e="👑"><span class="glyph">👑</span><span class="cap">Три кубка подряд</span></button>
+    <button class="emo" data-e="🌟"><span class="glyph">🌟</span><span class="cap">Рекорд команды</span></button>
+    <button class="emo" data-e="✨"><span class="glyph">✨</span><span class="cap">Безупречный месяц</span></button>
+    <button class="emo" data-e="🔥"><span class="glyph">🔥</span><span class="cap">Серия дней подряд</span></button>
+    <button class="emo" data-e="🎗️"><span class="glyph">🎗️</span><span class="cap">Особая отметка</span></button>
+  </div>
+
+  <h2>Документы и объём</h2>
+  <p class="about">Вехи по количеству, разнообразию шаблонов, числу контрагентов.</p>
+  <div class="grid">
+    <button class="emo" data-e="📃"><span class="glyph">📃</span><span class="cap">Договор</span></button>
+    <button class="emo" data-e="📋"><span class="glyph">📋</span><span class="cap">Акт</span></button>
+    <button class="emo" data-e="📑"><span class="glyph">📑</span><span class="cap">Приложение</span></button>
+    <button class="emo" data-e="📦"><span class="glyph">📦</span><span class="cap">250 документов</span></button>
+    <button class="emo" data-e="🗂️"><span class="glyph">🗂️</span><span class="cap">Все типы шаблонов</span></button>
+    <button class="emo" data-e="📁"><span class="glyph">📁</span><span class="cap">Работа с папками</span></button>
+    <button class="emo" data-e="📊"><span class="glyph">📊</span><span class="cap">Экспорт базы</span></button>
+    <button class="emo" data-e="📈"><span class="glyph">📈</span><span class="cap">Рост месяц к месяцу</span></button>
+    <button class="emo" data-e="✍️"><span class="glyph">✍️</span><span class="cap">Первая карточка</span></button>
+    <button class="emo" data-e="📝"><span class="glyph">📝</span><span class="cap">50 карточек</span></button>
+    <button class="emo" data-e="🖨️"><span class="glyph">🖨️</span><span class="cap">Выгрузка в PDF</span></button>
+    <button class="emo" data-e="✅"><span class="glyph">✅</span><span class="cap">Карточка заполнена</span></button>
+  </div>
+
+  <h2>Темп и скорость</h2>
+  <p class="about">Про интенсивность: много за день, быстро, без простоев.</p>
+  <div class="grid">
+    <button class="emo" data-e="🚀"><span class="glyph">🚀</span><span class="cap">20 за день</span></button>
+    <button class="emo" data-e="⚡"><span class="glyph">⚡</span><span class="cap">5 за час</span></button>
+    <button class="emo" data-e="🏎️"><span class="glyph">🏎️</span><span class="cap">Быстрее всех</span></button>
+    <button class="emo" data-e="🏃"><span class="glyph">🏃</span><span class="cap">Неделя без пауз</span></button>
+    <button class="emo" data-e="💨"><span class="glyph">💨</span><span class="cap">Рывок</span></button>
+    <button class="emo" data-e="⏱️"><span class="glyph">⏱️</span><span class="cap">Документ за минуту</span></button>
+    <button class="emo" data-e="🌅"><span class="glyph">🌅</span><span class="cap">Раньше девяти</span></button>
+    <button class="emo" data-e="🌙"><span class="glyph">🌙</span><span class="cap">Поздний вечер</span></button>
+    <button class="emo" data-e="🦉"><span class="glyph">🦉</span><span class="cap">Ночная смена</span></button>
+    <button class="emo" data-e="🔂"><span class="glyph">🔂</span><span class="cap">Каждый рабочий день</span></button>
+  </div>
+
+  <h2>Точность и качество</h2>
+  <p class="about">Про аккуратность, а не про количество, — противовес гонке за объёмом.</p>
+  <div class="grid">
+    <button class="emo" data-e="🎯"><span class="glyph">🎯</span><span class="cap">Без переделок</span></button>
+    <button class="emo" data-e="🔍"><span class="glyph">🔍</span><span class="cap">Нашёл дубль</span></button>
+    <button class="emo" data-e="🧩"><span class="glyph">🧩</span><span class="cap">Дозаполнил карточку</span></button>
+    <button class="emo" data-e="🧹"><span class="glyph">🧹</span><span class="cap">Навёл порядок</span></button>
+    <button class="emo" data-e="🛡️"><span class="glyph">🛡️</span><span class="cap">Ни одной ошибки</span></button>
+    <button class="emo" data-e="🧠"><span class="glyph">🧠</span><span class="cap">Знает все шаблоны</span></button>
+    <button class="emo" data-e="⚖️"><span class="glyph">⚖️</span><span class="cap">Юридическая точность</span></button>
+    <button class="emo" data-e="🔖"><span class="glyph">🔖</span><span class="cap">Реквизиты в порядке</span></button>
+  </div>
+
+  <h2>Стаж и постоянство</h2>
+  <p class="about">Про время в сервисе: сколько месяцев, как давно, насколько ровно.</p>
+  <div class="grid">
+    <button class="emo" data-e="📅"><span class="glyph">📅</span><span class="cap">Месяц в сервисе</span></button>
+    <button class="emo" data-e="🗓️"><span class="glyph">🗓️</span><span class="cap">Полгода подряд</span></button>
+    <button class="emo" data-e="⏳"><span class="glyph">⏳</span><span class="cap">Год работы</span></button>
+    <button class="emo" data-e="🌱"><span class="glyph">🌱</span><span class="cap">Первая неделя</span></button>
+    <button class="emo" data-e="🌳"><span class="glyph">🌳</span><span class="cap">Старожил</span></button>
+    <button class="emo" data-e="🎂"><span class="glyph">🎂</span><span class="cap">Годовщина</span></button>
+    <button class="emo" data-e="🧭"><span class="glyph">🧭</span><span class="cap">С самого начала</span></button>
+    <button class="emo" data-e="🕰️"><span class="glyph">🕰️</span><span class="cap">Ветеран</span></button>
+  </div>
+
+  <h2>Редкие и секретные</h2>
+  <p class="about">
+    Для сюрпризов вроде «Алмаза»: пока не получены, в интерфейсе видны только
+    замком, без условия.
+  </p>
+  <div class="grid">
+    <button class="emo" data-e="🔒"><span class="glyph">🔒</span><span class="cap">Замок (закрытое)</span></button>
+    <button class="emo" data-e="🗝️"><span class="glyph">🗝️</span><span class="cap">Разгадал секрет</span></button>
+    <button class="emo" data-e="🕵️"><span class="glyph">🕵️</span><span class="cap">Тайное условие</span></button>
+    <button class="emo" data-e="🦄"><span class="glyph">🦄</span><span class="cap">Почти невозможное</span></button>
+    <button class="emo" data-e="🐉"><span class="glyph">🐉</span><span class="cap">Легенда</span></button>
+    <button class="emo" data-e="👻"><span class="glyph">👻</span><span class="cap">Долго не появлялся</span></button>
+    <button class="emo" data-e="☄️"><span class="glyph">☄️</span><span class="cap">Внезапный рывок</span></button>
+    <button class="emo" data-e="🎲"><span class="glyph">🎲</span><span class="cap">Случайная удача</span></button>
+    <button class="emo" data-e="🃏"><span class="glyph">🃏</span><span class="cap">Джокер</span></button>
+    <button class="emo" data-e="🧿"><span class="glyph">🧿</span><span class="cap">Оберег</span></button>
+  </div>
+
+  <h2>Команда и настроение</h2>
+  <p class="about">Не про цифры: взаимопомощь, приветственные и просто тёплые.</p>
+  <div class="grid">
+    <button class="emo" data-e="🤝"><span class="glyph">🤝</span><span class="cap">Подстраховал коллегу</span></button>
+    <button class="emo" data-e="🙌"><span class="glyph">🙌</span><span class="cap">Общая цель</span></button>
+    <button class="emo" data-e="👏"><span class="glyph">👏</span><span class="cap">Признание</span></button>
+    <button class="emo" data-e="💪"><span class="glyph">💪</span><span class="cap">Тяжёлый месяц</span></button>
+    <button class="emo" data-e="🧑‍💻"><span class="glyph">🧑‍💻</span><span class="cap">Освоился</span></button>
+    <button class="emo" data-e="☕"><span class="glyph">☕</span><span class="cap">Утренний старт</span></button>
+    <button class="emo" data-e="🍀"><span class="glyph">🍀</span><span class="cap">Везение</span></button>
+    <button class="emo" data-e="🎉"><span class="glyph">🎉</span><span class="cap">Добро пожаловать</span></button>
+    <button class="emo" data-e="🏁"><span class="glyph">🏁</span><span class="cap">Закрыл долги</span></button>
+    <button class="emo" data-e="🧊"><span class="glyph">🧊</span><span class="cap">Холодный расчёт</span></button>
+  </div>
+
+  <h2>Что стоит учесть</h2>
+  <div class="note">
+    <b>Если вместо смайлика квадрат — значка на этой машине нет</b>
+    <p>
+      Смайлики рисует шрифт системы, а не сервис. Всё, что на этой странице
+      отрисовалось, отрисуется и в интерфейсе на этом же компьютере. Но у
+      менеджеров может стоять другая версия Windows, и совсем свежие символы
+      там окажутся пустым прямоугольником — поэтому в наборе выше нарочно нет
+      новинок последних лет.
+    </p>
+  </div>
+  <div class="note">
+    <b>Составные значки ведут себя хуже простых</b>
+    <p>
+      🧑‍💻 склеен из двух символов невидимой связкой, а 🗄️ 🎖️ 🗓️ 🏎️ ✍️ несут
+      «просьбу нарисовать цветным». Там, где такой просьбы не послушаются,
+      символ станет чёрно-белым. Для значка, который видно всем, надёжнее
+      простые: 🏆 🚀 🎯 🔥 🥇.
+    </p>
+  </div>
+  <div class="note">
+    <b>Значок читается в двух размерах сразу</b>
+    <p>
+      На плитке профиля он 26 пикселей, в окне достижения — 56. Мелкие детали
+      (🎗️, 🧿) на плитке сливаются в пятно. Проверяйте кандидата прищурившись:
+      если силуэт не узнаётся, значок не подойдёт.
+    </p>
+  </div>
+
+  <h2>Идеи, которые уже считаются из имеющихся данных</h2>
+  <p class="about">
+    Всё это можно добавить без новых таблиц — сервис уже хранит нужное.
+  </p>
+  <div class="ideas">
+    <div class="idea">
+      <div class="head"><span class="g">🔥</span>Серия дней</div>
+      <p>Документы N рабочих дней подряд. Считается по датам из истории генерации.</p>
+    </div>
+    <div class="idea">
+      <div class="head"><span class="g">👑</span>Три кубка</div>
+      <p>Чемпион трёх месяцев — подряд или всего. История кубков уже считается целиком.</p>
+    </div>
+    <div class="idea">
+      <div class="head"><span class="g">🗂️</span>Все виды документов</div>
+      <p>Хотя бы один договор, акт и приложение. В истории есть тип каждого шаблона.</p>
+    </div>
+    <div class="idea">
+      <div class="head"><span class="g">🤝</span>Двадцать контрагентов</div>
+      <p>Документы для N разных контрагентов — не объём, а широта охвата.</p>
+    </div>
+    <div class="idea">
+      <div class="head"><span class="g">🌅</span>Ранняя пташка</div>
+      <p>Документ до девяти утра. Время генерации хранится с точностью до секунды.</p>
+    </div>
+    <div class="idea">
+      <div class="head"><span class="g">🧩</span>Дозаполнил карточку</div>
+      <p>Данные, вписанные в форме, админ перенёс в карточку — это видно во вкладке «Уведомления».</p>
+    </div>
+    <div class="idea">
+      <div class="head"><span class="g">🌱</span>Первая неделя</div>
+      <p>Документ в первые семь дней после заведения учётки. Дата создания есть у каждой.</p>
+    </div>
+    <div class="idea">
+      <div class="head"><span class="g">📈</span>Рост</div>
+      <p>Месяц лучше предыдущего. Помесячные итоги уже собираются для кубка.</p>
+    </div>
+  </div>
+
+  <footer>
+    Нажатие копирует смайлик в буфер обмена. Значки задаются в
+    <code>backend/app/achievements.py</code>; после правки — пересборка фронта
+    не нужна, они приходят с сервера.
+  </footer>
+</div>
+
+<div id="toast">скопировано</div>
+
+<script>
+  (function () {
+    var root = document.documentElement, btn = document.getElementById('themeToggle');
+    var icon = document.getElementById('themeIcon'), text = document.getElementById('themeText');
+    function apply(t) {
+      root.setAttribute('data-theme', t);
+      icon.textContent = t === 'dark' ? '☀' : '☾';
+      text.textContent = t === 'dark' ? 'Светлая' : 'Тёмная';
+    }
+    var saved;
+    try { saved = localStorage.getItem('ml_theme'); } catch (e) { saved = null; }
+    apply(saved === 'dark' || saved === 'light' ? saved : 'light');
+    btn.addEventListener('click', function () {
+      var next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      apply(next);
+      try { localStorage.setItem('ml_theme', next); } catch (e) {}
+    });
+
+    var toast = document.getElementById('toast'), timer = null;
+    function show(msg) {
+      toast.textContent = msg;
+      toast.classList.add('on');
+      clearTimeout(timer);
+      timer = setTimeout(function () { toast.classList.remove('on'); }, 1100);
+    }
+    document.addEventListener('click', function (e) {
+      var btn = e.target.closest ? e.target.closest('.emo') : null;
+      if (!btn) return;
+      var glyph = btn.getAttribute('data-e');
+      // clipboard API есть не везде (например, при открытии файла с диска в
+      // старом браузере) — тогда откатываемся на скрытое поле и execCommand.
+      var done = function () { show(glyph + '  скопировано'); };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(glyph).then(done, function () { fallback(glyph, done); });
+      } else {
+        fallback(glyph, done);
+      }
+    });
+    function fallback(value, done) {
+      var field = document.createElement('textarea');
+      field.value = value;
+      field.setAttribute('readonly', '');
+      field.style.position = 'fixed';
+      field.style.opacity = '0';
+      document.body.appendChild(field);
+      field.select();
+      try { document.execCommand('copy'); done(); } catch (err) { show('скопировать не вышло'); }
+      document.body.removeChild(field);
+    }
+  })();
+</script>

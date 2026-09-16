@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import require_role
 from app.champion import (
-    NOT_COMPETING,
+    COMPETING_ROLES,
     current_month_bounds,
     days_left_in_month,
     month_champions,
@@ -54,10 +54,11 @@ def champion_board(db: Session = Depends(get_session)) -> dict:
     documents=0, и они видны в конце списка. Смысл в том, чтобы доска
     показывала состав целиком, а не появлялась по мере работы.
 
-    Кто попадает в rows: действующие учётки всех ролей, кроме админских
-    (NOT_COMPETING), плюс — отдельно — те, кто в этом месяце уже что-то
-    сформировал, даже если учётку с тех пор отключили: молча вычесть
-    сделанную работу из-за отключения было бы неверно.
+    Кто попадает в rows: действующие учётки участвующих ролей
+    (COMPETING_ROLES — менеджеры и топ-менеджеры), плюс — отдельно — те, кто
+    в этом месяце уже что-то сформировал, даже если учётку с тех пор
+    отключили: молча вычесть сделанную работу из-за отключения было бы
+    неверно.
     """
     users = {u.id: u for u in db.query(User).all()}
 
@@ -79,7 +80,7 @@ def champion_board(db: Session = Depends(get_session)) -> dict:
     counts = unique_counts(db, start, end)
     in_contest = [
         u for u in users.values()
-        if u.role not in NOT_COMPETING and (u.is_active or u.id in counts)
+        if u.role in COMPETING_ROLES and (u.is_active or u.id in counts)
     ]
     rows = [_person(u, counts.get(u.id, 0)) for u in in_contest]
     # По убыванию документов, при равенстве — по имени, чтобы порядок не
