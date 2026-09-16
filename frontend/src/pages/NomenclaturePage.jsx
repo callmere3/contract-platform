@@ -259,8 +259,15 @@ function RightsCell({ owners }) {
       {owners.map((o, i) => (
         <span key={`${o.owner}-${i}`}>
           <span className="block text-text leading-snug">{o.owner}</span>
-          <span className="block text-[12px] text-text-muted tabular-nums">
-            доля {o.share ?? '—'}% · роялти {o.royalty ?? '—'}%
+          {/* Доля и роялти — КАЖДОЕ СВОЕЙ СТРОКОЙ. Одной строкой «доля 100% ·
+              роялти 70%» в узкую колонку не влезало, и перенос отрывал от неё
+              хвост: «70%» оставалось болтаться отдельной строчкой без
+              подписи. nowrap не даёт разорвать уже сами пары. */}
+          <span className="block text-[12px] text-text-muted tabular-nums whitespace-nowrap">
+            доля {o.share ?? '—'}%
+          </span>
+          <span className="block text-[12px] text-text-muted tabular-nums whitespace-nowrap">
+            роялти {o.royalty ?? '—'}%
           </span>
         </span>
       ))}
