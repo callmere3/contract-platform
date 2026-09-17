@@ -179,6 +179,42 @@ def _apply_manual(rows: list, manual: dict) -> None:
             row.sku = manual[row.row_num]
 
 
+def _partner_for(db: Session, partner_id: str, content: bytes, filename: str) -> Partner:
+    """
+    Партнёр запроса — выбранный человеком или узнанный по самому файлу.
+
+    Второе нужно, чтобы отчёт можно было просто бросить в окно: если колонки
+    совпали с готовым правилом площадки, мы уже знаем, чей это файл, и
+    спрашивать об этом — лишний шаг ради того, что и так известно.
+
+    Имя площадки из правила ищем ТОЧНОЕ: в справочнике рядом живут «МТС»,
+    «МТС Авторские» и «МТС Беларусь».
+    """
+    if str(partner_id or "").strip():
+        try:
+            chosen = db.get(Partner, uuid.UUID(str(partner_id)))
+        except ValueError:
+            raise HTTPException(400, "partner_id: это не идентификатор")
+        if chosen is None:
+            raise HTTPException(404, "Партнёр не найден")
+        return chosen
+
+    columns, _ = read_columns(content, filename)
+    builtin = match_builtin(columns)
+    names = [n.casefold() for n in (builtin or {}).get("partner_names", ())]
+    if names:
+        rows = db.execute(select(Partner)).scalars().all()
+        for row in rows:
+            if " ".join((row.name or "").split()).casefold() in names:
+                return row
+        raise HTTPException(
+            400,
+            f"Похоже на отчёт «{builtin['name']}», но такой площадки нет "
+            "в справочнике партнёров — выберите её сами",
+        )
+    raise HTTPException(400, "Не удалось определить площадку по файлу — выберите партнёра")
+
+
 def _preview_row(row, resolved: dict) -> dict:
     """Строка для предпросмотра."""
     return {
@@ -435,7 +471,7 @@ def find_track_by_sku(sku: str = "", db: Session = Depends(get_session)) -> dict
     "/preview", dependencies=[Depends(require_role(*CAN_MANAGE_PARTNER_REPORTS))]
 )
 def preview(
-    partner_id: uuid.UUID = Form(...),
+    partner_id: str = Form(""),
     file: UploadFile = File(...),
     mapping: str = Form(""),
     vat_rate: str = Form(""),
@@ -451,13 +487,15 @@ def preview(
     описание на несколько строк, и число этих строк меняется от файла к файлу
     (в Dista его приходилось вбивать руками — «пропустить строк сверху»).
     """
-    partner = db.get(Partner, partner_id)
-    if partner is None:
-        raise HTTPException(404, "Партнёр не найден")
-
     content = _read_upload(file)
+    # ПАРТНЁРА МОЖНО НЕ ВЫБИРАТЬ: если файл узнан по колонкам, площадка
+    # определяется из самого правила (просьба владельца 18.09.2026 — «я могу
+    # перетянуть отчёт МТС, и он должен выбраться сам»). Не узнан — тогда да,
+    # выбирать: по чужому формату гадать не о чем.
+    partner = _partner_for(db, partner_id, content, file.filename)
+
     rule = db.scalar(
-        select(PartnerReportRule).where(PartnerReportRule.partner_id == partner_id)
+        select(PartnerReportRule).where(PartnerReportRule.partner_id == partner.id)
     )
     sheets = sheet_names(content, file.filename)
     chosen_sheet = sheet.strip() or (rule.sheet if rule else None)

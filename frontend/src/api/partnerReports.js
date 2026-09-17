@@ -58,7 +58,9 @@ export function checkTrack(sku) {
 
 function uploadBody({ partnerId, file, mapping, vatRate, sheet, manualSkus }) {
   const body = new FormData();
-  body.append('partner_id', partnerId);
+  // Партнёр может быть не выбран: предпросмотр узнаёт площадку по колонкам
+  // файла и возвращает её. При сохранении он, наоборот, обязателен.
+  body.append('partner_id', partnerId || '');
   body.append('file', file);
   // Пустое правило означает «возьми сохранённое у партнёра или догадайся»:
   // первый файл нового партнёра читается и без настройки.

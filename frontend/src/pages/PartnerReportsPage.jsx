@@ -251,14 +251,19 @@ export function PartnerReportsPage() {
     }
   }
 
-  async function runPreview(nextFile = file, nextMapping = mapping, nextVat = vatRate) {
-    if (!nextFile || !partnerId) return;
+  async function runPreview(
+    nextFile = file,
+    nextMapping = mapping,
+    nextVat = vatRate,
+    nextPartner = partnerId,
+  ) {
+    if (!nextFile) return;
     setBusy(true);
     setError('');
     setNotice('');
     try {
       const data = await previewReport({
-        partnerId,
+        partnerId: nextPartner,
         file: nextFile,
         // Пустое правило = «возьми готовое правило площадки, сохранённое у
         // партнёра или догадайся по названиям колонок».
@@ -269,6 +274,12 @@ export function PartnerReportsPage() {
       setPreview(data);
       setMapping(data.mapping ?? {});
       setVatRate(data.vat_rate ?? '');
+      // Площадку мог определить сам файл — тогда ставим её в поле: человек
+      // должен видеть, за кого будет засчитан отчёт, и вправе это поменять.
+      if (data.partner?.id && data.partner.id !== partnerId) {
+        setPartnerId(data.partner.id);
+        setNotice(`Площадка определена по файлу: ${data.partner.name}.`);
+      }
     } catch (e) {
       setError(e.message);
       setPreview(null);
@@ -278,6 +289,7 @@ export function PartnerReportsPage() {
   }
 
   function takeFile(next) {
+    // Партнёра спрашивать не обязательно: знакомый отчёт называет площадку сам.
     setFile(next);
     setPreview(null);
     setMapping({});
@@ -287,7 +299,7 @@ export function PartnerReportsPage() {
     setSkuInfo({});
     setOnlyUnmatched(false);
     setShowMapping(false);
-    if (next && partnerId) runPreview(next, {}, vatRate);
+    if (next) runPreview(next, {}, vatRate);
   }
 
   async function save() {
@@ -369,8 +381,11 @@ export function PartnerReportsPage() {
                 inputClass={inputClass}
                 onChange={(id) => {
                   setPartnerId(id);
-                  setPreview(null);
                   setMapping({});
+                  // Файл уже перетащили, а партнёра выбрали после — разбираем
+                  // заново: у нового партнёра может быть своё правило.
+                  if (file) runPreview(file, {}, vatRate, id);
+                  else setPreview(null);
                 }}
               />
             </label>
@@ -488,8 +503,12 @@ export function PartnerReportsPage() {
                 ? 'Можно перетащить другой файл или нажать, чтобы выбрать'
                 : 'или нажмите, чтобы выбрать: .xlsx, .csv, .tsv'}
             </div>
-            {!partnerId && (
-              <div className="text-[12.5px] text-danger mt-2">Сначала выберите партнёра</div>
+            {/* Про партнёра здесь больше не спрашиваем: знакомый отчёт
+                называет площадку сам, а незнакомый скажет об этом при разборе. */}
+            {!partnerId && !file && (
+              <div className="text-[12.5px] text-text-muted mt-2">
+                Площадка определится по файлу — а если формат незнакомый, выберите её сами
+              </div>
             )}
           </div>
 
