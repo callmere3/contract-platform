@@ -31,7 +31,7 @@
 """
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -53,6 +53,7 @@ from app.partner_reports import (
     FIELDS,
     FIELD_LABELS,
     parse_report,
+    period_label,
     read_columns,
     sheet_names,
     suggest_mapping,
@@ -71,6 +72,14 @@ PREVIEW_ROWS = 100
 # Предел на файл. Квартальный отчёт площадки — это десятки тысяч строк;
 # миллион означает, что прислали что-то другое или файл склеен из года.
 MAX_ROWS = 300_000
+
+
+def _date(value: str, label: str) -> date:
+    """ISO-дата из формы. Календарь на фронте шлёт «2026-07-01»."""
+    try:
+        return date.fromisoformat(str(value).strip())
+    except ValueError:
+        raise HTTPException(400, f"{label}: «{value}» — это не дата")
 
 
 def _money(value) -> str | None:
@@ -96,12 +105,16 @@ def _report_out(report: PartnerReport, partner_name: str) -> dict:
         "id": str(report.id),
         "partner_id": str(report.partner_id),
         "partner": partner_name,
-        "period": {"year": report.period_year, "quarter": report.period_quarter},
-        "period_label": f"{'I II III IV'.split()[report.period_quarter - 1]} кв. {report.period_year}",
+        "period": {
+            "from": report.period_from.isoformat(),
+            "to": report.period_to.isoformat(),
+        },
+        "period_label": period_label(report.period_from, report.period_to),
         "file_name": report.file_name,
         "sheet": report.sheet,
         "rows_count": report.rows_count,
         "unmatched_count": report.unmatched_count,
+        "problem_count": report.problem_count,
         "total_quantity": _money(report.total_quantity),
         "total_author": _money(report.total_author),
         "total_related": _money(report.total_related),
@@ -114,20 +127,26 @@ def _report_out(report: PartnerReport, partner_name: str) -> dict:
 @partner_reports_router.get("")
 def list_reports(
     partner_id: uuid.UUID | None = None,
-    year: int | None = None,
-    quarter: int | None = None,
+    period_from: str | None = None,
+    period_to: str | None = None,
     db: Session = Depends(get_session),
 ) -> dict:
-    """Загруженные отчёты, свежие сверху. Фильтры — партнёр и квартал."""
+    """
+    Загруженные отчёты, свежие сверху.
+
+    Фильтр по периоду — ПЕРЕСЕЧЕНИЕ, а не точное совпадение: у площадок
+    периоды разные (месяц, квартал), и «покажи всё за третий квартал» должно
+    находить и июльский отчёт МТС.
+    """
     query = select(PartnerReport, Partner.name).join(
         Partner, Partner.id == PartnerReport.partner_id
     )
     if partner_id is not None:
         query = query.where(PartnerReport.partner_id == partner_id)
-    if year:
-        query = query.where(PartnerReport.period_year == year)
-    if quarter:
-        query = query.where(PartnerReport.period_quarter == quarter)
+    if period_from:
+        query = query.where(PartnerReport.period_to >= _date(period_from, "period_from"))
+    if period_to:
+        query = query.where(PartnerReport.period_from <= _date(period_to, "period_to"))
 
     rows = db.execute(query.order_by(PartnerReport.uploaded_at.desc()).limit(200)).all()
     reports = [_report_out(r, name) for r, name in rows]
@@ -335,6 +354,11 @@ def preview(
         "totals": {
             "rows": totals["rows"],
             "ok_rows": totals["ok_rows"],
+            # Строки без артикула и строки с непонятными суммами показываем
+            # ЧИСЛОМ до загрузки: по первым деньги придут «ничьи», а вторые
+            # лягут нулями, и узнать об этом человек должен заранее.
+            "no_sku": totals["no_sku"],
+            "problem_rows": totals["problem_rows"],
             "quantity": _money(totals["quantity"]),
             "amount_author": _money(totals["amount_author"]),
             "amount_related": _money(totals["amount_related"]),
@@ -348,8 +372,8 @@ def preview(
 )
 def create_report(
     partner_id: uuid.UUID = Form(...),
-    year: int = Form(...),
-    quarter: int = Form(...),
+    period_from: str = Form(...),
+    period_to: str = Form(...),
     file: UploadFile = File(...),
     mapping: str = Form(""),
     vat_rate: str = Form(""),
@@ -368,14 +392,23 @@ def create_report(
     `save_rule` — заодно запомнить правило партнёру: обычный сценарий первой
     загрузки, когда файл и есть образец.
 
-    Строки с ошибками НЕ ПРОПУСКАЮТСЯ молча: отчёт площадки — это деньги, и
-    строка, которую не разобрали, должна быть видна. Поэтому загрузка с
-    ошибками отклоняется целиком, а не «частично сохранено».
+    ПОЛИТИКА ПО ПРОБЛЕМНЫМ СТРОКАМ (правка 18.09.2026, после первых настоящих
+    отчётов): загрузка не отклоняется из-за отдельных строк. В отчёте МТС два
+    десятка строк без кода объекта и три итоговые строки в конце — файл,
+    который нельзя загрузить из-за них, бесполезен. Поэтому:
+      - итоговые строки («Итого», «НДС 22%») отсекаются при разборе;
+      - строка без артикула грузится и считается неразнесённой;
+      - строка, где сумма не прочиталась, грузится с нулями и считается
+        проблемной.
+    Все три числа человек видит в предпросмотре ДО загрузки. Отказ остаётся
+    только там, где грузить нечего: нет нужных колонок или ни одной строки.
     """
-    if quarter not in (1, 2, 3, 4):
-        raise HTTPException(400, "Квартал — число от 1 до 4")
-    if year < 2000 or year > 2100:
-        raise HTTPException(400, "Год выглядит неправдоподобно")
+    start = _date(period_from, "Начало периода")
+    end = _date(period_to, "Конец периода")
+    if end < start:
+        raise HTTPException(400, "Конец периода раньше начала")
+    if (end - start).days > 400:
+        raise HTTPException(400, "Период длиннее года — похоже, ошибка в датах")
 
     partner = db.get(Partner, partner_id)
     if partner is None:
@@ -404,15 +437,6 @@ def create_report(
             f"В отчёте {len(result.rows)} строк — это больше {MAX_ROWS}. "
             "Похоже, в файл попал не один квартал.",
         )
-    bad = [r for r in result.rows if not r.ok]
-    if bad:
-        first = "; ".join(f"строка {r.row_num}: {r.problems[0]}" for r in bad[:5])
-        raise HTTPException(
-            400,
-            f"Не разобрались {len(bad)} строк из {len(result.rows)}. {first}"
-            + ("…" if len(bad) > 5 else ""),
-        )
-
     # Сопоставление с каталогом — по артикулу, одним запросом.
     skus = {r.sku for r in result.rows if r.sku}
     track_by_sku = {
@@ -426,12 +450,13 @@ def create_report(
     report = PartnerReport(
         id=uuid.uuid4(),
         partner_id=partner_id,
-        period_year=year,
-        period_quarter=quarter,
+        period_from=start,
+        period_to=end,
         file_name=file.filename,
         sheet=chosen_sheet,
         rows_count=len(result.rows),
-        unmatched_count=sum(1 for r in result.rows if r.sku not in track_by_sku),
+        unmatched_count=sum(1 for r in result.rows if not r.sku or r.sku not in track_by_sku),
+        problem_count=sum(1 for r in result.rows if r.problems),
         total_quantity=totals["quantity"],
         total_author=totals["amount_author"],
         total_related=totals["amount_related"],
@@ -451,7 +476,7 @@ def create_report(
             quantity=r.quantity,
             amount_author=r.amount_author,
             amount_related=r.amount_related,
-            track_id=track_by_sku.get(r.sku),
+            track_id=track_by_sku.get(r.sku) if r.sku else None,
         )
         for r in result.rows
     ])
@@ -472,7 +497,7 @@ def create_report(
         entity_id=report.id,
         meta={
             "partner": partner.name,
-            "period": f"{quarter} кв. {year}",
+            "period": period_label(start, end),
             "file": file.filename,
             "rows": report.rows_count,
             "unmatched": report.unmatched_count,
@@ -556,7 +581,7 @@ def delete_report(
         entity_id=report_id,
         meta={
             "partner": partner.name if partner else None,
-            "period": f"{report.period_quarter} кв. {report.period_year}",
+            "period": period_label(report.period_from, report.period_to),
             "file": report.file_name,
         },
     )

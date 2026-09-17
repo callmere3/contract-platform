@@ -12,12 +12,17 @@ import { API, apiJson } from './client';
  * 1234.10 превращается в 1234.0999999999999.
  */
 
-/** Загруженные отчёты: { reports: [...], totals }. */
-export function listReports({ partnerId, year, quarter } = {}) {
+/**
+ * Загруженные отчёты: { reports: [...], totals }.
+ *
+ * Фильтр по периоду — ПЕРЕСЕЧЕНИЕ: у площадок периоды разные (месяц, квартал),
+ * и «покажи всё за третий квартал» должно находить и июльский отчёт.
+ */
+export function listReports({ partnerId, periodFrom, periodTo } = {}) {
   const params = new URLSearchParams();
   if (partnerId) params.set('partner_id', partnerId);
-  if (year) params.set('year', String(year));
-  if (quarter) params.set('quarter', String(quarter));
+  if (periodFrom) params.set('period_from', periodFrom);
+  if (periodTo) params.set('period_to', periodTo);
   return apiJson(`${API}/partner-reports?${params}`);
 }
 
@@ -66,11 +71,15 @@ export function previewReport(source) {
   });
 }
 
-/** Сохранить отчёт. saveRuleToo — заодно запомнить правило партнёру. */
-export function createReport({ year, quarter, saveRuleToo = false, ...source }) {
+/**
+ * Сохранить отчёт. Период — пара дат: площадки отчитываются то за месяц, то за
+ * квартал, а «месяц» и «квартал» в форме лишь заполняют эти две даты.
+ * saveRuleToo — заодно запомнить правило партнёру.
+ */
+export function createReport({ periodFrom, periodTo, saveRuleToo = false, ...source }) {
   const body = uploadBody(source);
-  body.append('year', String(year));
-  body.append('quarter', String(quarter));
+  body.append('period_from', periodFrom);
+  body.append('period_to', periodTo);
   body.append('save_rule', saveRuleToo ? 'true' : 'false');
   return apiJson(`${API}/partner-reports`, { method: 'POST', body });
 }

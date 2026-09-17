@@ -61,11 +61,25 @@ FIELD_LABELS = {
 # необязательно: количество есть не во всех отчётах, название — тем более.
 REQUIRED_FIELDS = ("sku",)
 
+# Слова, по которым узнаётся ИТОГОВАЯ строка в конце отчёта. У МТС это
+# «Итого:», «НДС 22%:», «Итого с НДС:» — строки без кода объекта, но с суммой в
+# колонке денег. Не отсечь их значит посчитать выручку дважды и получить
+# «строку без артикула» на весь отчёт.
+#
+# Признак — ВМЕСТЕ: нет артикула И где-то в строке стоит одно из этих слов.
+# По одному слову нельзя: «Итого» законно встречается и в названии трека.
+TOTALS_MARKERS = ("итого", "всего", "total", "ндс", "vat")
+
 # Сколько первых строк просматриваем в поисках шапки. У площадок сверху бывает
 # шапка-описание на несколько строк (в отчёте МТС, например, данные начинаются
 # с восьмой), но не на полсотни.
 MAX_HEADER_SCAN = 30
 
+# ТОЧНОСТЬ СТРОКИ — ЧЕТЫРЕ ЗНАКА, а не копейки. Площадки считают дробно (у МТС
+# строка «147.0456»), и округление каждой строки до копеек увело итог отчёта на
+# 84 копейки от их же «Итого» — на 668 строках набежало. Округляем ОДИН РАЗ, на
+# итогах: сверять с платежом человек будет именно их.
+PRECISION = Decimal("0.0001")
 CENTS = Decimal("0.01")
 
 
@@ -75,6 +89,9 @@ class ReportRow:
 
     row_num: int
     sku: str | None = None
+    # Строка без артикула НЕ ошибка разбора: в отчёте МТС таких два десятка —
+    # у площадки не проставлен код объекта. Деньги по ним пришли, и молча
+    # выкинуть их нельзя; они грузятся и видны отдельным счётчиком.
     title: str | None = None
     quantity: Decimal | None = None
     amount_author: Decimal = Decimal(0)
@@ -97,13 +114,17 @@ class ParseResult:
 
     @property
     def totals(self) -> dict:
-        good = [r for r in self.rows if r.ok]
+        # Суммы — по ВСЕМ строкам, а не только по беспроблемным: деньги в
+        # отчёте есть, даже если у строки нет артикула, и итог должен сходиться
+        # с платежом площадки.
         return {
             "rows": len(self.rows),
-            "ok_rows": len(good),
-            "quantity": sum((r.quantity or Decimal(0) for r in good), Decimal(0)),
-            "amount_author": sum((r.amount_author for r in good), Decimal(0)),
-            "amount_related": sum((r.amount_related for r in good), Decimal(0)),
+            "ok_rows": sum(1 for r in self.rows if r.ok),
+            "no_sku": sum(1 for r in self.rows if not r.sku),
+            "problem_rows": sum(1 for r in self.rows if r.problems),
+            "quantity": sum((r.quantity or Decimal(0) for r in self.rows), Decimal(0)),
+            "amount_author": rubles(sum((r.amount_author for r in self.rows), Decimal(0))),
+            "amount_related": rubles(sum((r.amount_related for r in self.rows), Decimal(0))),
         }
 
 
@@ -284,7 +305,12 @@ def eval_formula(expr: str, values: dict):
 
 
 def money(value) -> Decimal:
-    """Деньги — до копейки, округление арифметическое."""
+    """Сумма строки — до четвёртого знака (см. PRECISION)."""
+    return (value or Decimal(0)).quantize(PRECISION, rounding=ROUND_HALF_UP)
+
+
+def rubles(value) -> Decimal:
+    """Итог — до копейки: столько и переводят."""
     return (value or Decimal(0)).quantize(CENTS, rounding=ROUND_HALF_UP)
 
 
@@ -391,8 +417,12 @@ def parse_report(
                 )
             setattr(row, money_key, money((value or Decimal(0)) / divisor))
 
+        # Итоговая строка в конце файла — не данные: пропускаем целиком, иначе
+        # её сумма удвоит отчёт.
         if not row.sku:
-            row.problems.append("не заполнен артикул")
+            text = " ".join(_clean(c).lower() for c in raw)
+            if any(marker in text for marker in TOTALS_MARKERS):
+                continue
         result.rows.append(row)
 
     return result
@@ -407,6 +437,37 @@ def _apply_formula(expr: str, numbers: dict, row: ReportRow, label: str):
     if value is None:
         row.problems.append(f"{label}: в формуле пустое значение")
     return value
+
+
+MONTHS_RU = (
+    "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+    "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
+)
+QUARTERS_RU = ("I", "II", "III", "IV")
+
+
+def period_label(start, end) -> str:
+    """
+    Подпись периода отчёта: «Июль 2026», «III кв. 2026» или «01.06.2026 —
+    15.07.2026».
+
+    Собирает СЕРВЕР, как и подпись периода у поступлений: формат — правило, и
+    разъезжаться ему между экраном, списком и будущей выгрузкой незачем.
+    Месяц и квартал узнаются по датам, а не хранятся отдельным признаком:
+    признак пришлось бы поддерживать в согласии с датами, а даты и так всё
+    говорят.
+    """
+    if start is None or end is None:
+        return ""
+    import calendar
+
+    last_day = calendar.monthrange(end.year, end.month)[1]
+    whole_months = start.day == 1 and end.day == last_day and start.year == end.year
+    if whole_months and start.month == end.month:
+        return f"{MONTHS_RU[start.month - 1]} {start.year}"
+    if whole_months and (start.month - 1) % 3 == 0 and end.month == start.month + 2:
+        return f"{QUARTERS_RU[(start.month - 1) // 3]} кв. {start.year}"
+    return f"{start:%d.%m.%Y} — {end:%d.%m.%Y}"
 
 
 def suggest_mapping(columns: list) -> dict:

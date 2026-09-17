@@ -881,8 +881,12 @@ class PartnerReport(Base):
     """
     Загруженный отчёт площадки за квартал: заголовок и итоги.
 
-    ПЕРИОД — ГОД И КВАРТАЛ, как у поступлений в ML Finance, и по той же
-    причине: отчёт относится к кварталу, а не к дате файла.
+    ПЕРИОД — ПАРА ДАТ, а не «год и квартал» (правка 18.09.2026). Площадки
+    отчитываются по-разному: МТС присылает месяц («за период с 1 июля 2026 по
+    31 июля 2026»), кто-то квартал, а бывает и произвольный отрезок. Пара дат
+    вмещает всё это, а месяц и квартал в интерфейсе — просто кнопки, которые
+    её заполняют. Обратное — хранить квартал и «как-нибудь» приписывать к нему
+    месяцы — потребовало бы гадать при первом же нестандартном отчёте.
 
     Итоги хранятся СНИМКОМ (`total_*`), а не считаются на лету из строк: по
     ним сверяют деньги, и цифра в сверке должна остаться той, какой её
@@ -899,14 +903,19 @@ class PartnerReport(Base):
     partner_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("partners.id", ondelete="RESTRICT"), index=True
     )
-    period_year: Mapped[int] = mapped_column(SmallInteger)
-    period_quarter: Mapped[int] = mapped_column(SmallInteger)
+    period_from: Mapped[date] = mapped_column(Date)
+    period_to: Mapped[date] = mapped_column(Date)
     file_name: Mapped[str] = mapped_column(String(255))
     sheet: Mapped[str | None] = mapped_column(String(120))
     rows_count: Mapped[int] = mapped_column(Integer, default=0)
-    # Строк, у которых артикул не нашёлся в каталоге. Не ошибка загрузки, а
-    # работа на потом: по таким строкам роялти не посчитается.
+    # Строк, у которых артикул не нашёлся в каталоге ИЛИ его нет в отчёте
+    # вовсе. Не ошибка загрузки, а работа на потом: по таким строкам роялти не
+    # посчитается, и они должны быть видны числом, а не потеряться.
     unmatched_count: Mapped[int] = mapped_column(Integer, default=0)
+    # Строк, где сумма не прочиталась или формула дала пустоту. Такие строки
+    # грузятся с нулями: терять из-за них весь квартальный отчёт нельзя, но и
+    # молчать о них — тоже.
+    problem_count: Mapped[int] = mapped_column(Integer, default=0)
     total_quantity: Mapped[Decimal | None] = mapped_column(Numeric(16, 2))
     total_author: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
     total_related: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
@@ -947,11 +956,18 @@ class PartnerReportRow(Base):
         ForeignKey("partner_reports.id", ondelete="CASCADE"), index=True
     )
     row_num: Mapped[int] = mapped_column(Integer)
-    sku: Mapped[str] = mapped_column(String(32), index=True)
+    # Артикул НЕОБЯЗАТЕЛЕН: у площадки он бывает не проставлен (в отчёте МТС
+    # таких строк два десятка). Деньги по ним пришли, и выкидывать их нельзя —
+    # они лежат без ссылки на трек и попадают в счётчик неразнесённых.
+    sku: Mapped[str | None] = mapped_column(String(32), index=True)
     title: Mapped[str | None] = mapped_column(String(300))
     quantity: Mapped[Decimal | None] = mapped_column(Numeric(16, 2))
-    amount_author: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
-    amount_related: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
+    # ЧЕТЫРЕ ЗНАКА, а не копейки: площадки считают дробно (у МТС строка
+    # «147.0456»), и округление каждой строки уводит итог отчёта от их же
+    # «Итого» — на 668 строках набежало 84 копейки. Округляем один раз, в
+    # итогах отчёта.
+    amount_author: Mapped[Decimal] = mapped_column(Numeric(16, 4), default=0)
+    amount_related: Mapped[Decimal] = mapped_column(Numeric(16, 4), default=0)
     track_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("tracks.id", ondelete="SET NULL"), index=True
     )

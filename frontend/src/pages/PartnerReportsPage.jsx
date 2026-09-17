@@ -14,32 +14,38 @@ import {
 } from '../api/partnerReports';
 
 /**
- * ML Finance → «Отчёты»: загрузка квартальных отчётов площадок.
+ * ML Finance → «Отчёты»: загрузка отчётов площадок.
  *
- * ФАЙЛ ПЕРЕТАСКИВАЮТ В ОКНО, а не указывают путь к нему (просьба владельца
- * 18.09.2026 — в Dista путь вбивается строкой, и файл обязан лежать на диске
- * сервера). Поле выбора файла осталось рядом: перетаскивание удобно, когда
- * файл уже открыт в проводнике, и бесполезно, когда его ищут.
+ * ФАЙЛ ПЕРЕТАСКИВАЮТ В ОКНО, а не указывают путь к нему (в Dista путь вбивают
+ * строкой, и файл обязан лежать на диске машины). Поле выбора осталось рядом:
+ * перетаскивание удобно, когда файл уже открыт в проводнике, и бесполезно,
+ * когда его ищут.
  *
  * ПРАВИЛО РАЗБОРА НАСТРАИВАЕТСЯ ЗДЕСЬ ЖЕ, на предпросмотре: колонки выбираются
- * ПО НАЗВАНИЮ из списка, который сервер прочитал в шапке файла. Это и есть
- * «загрузить образец и сделать по нему правило»: первый файл партнёра и есть
- * образец, а галочка «запомнить правило» превращает разовую настройку в
- * постоянную.
+ * ПО НАЗВАНИЮ из списка, который сервер прочитал в шапке файла. Первый файл
+ * партнёра и есть образец, а галочка «запомнить правило» превращает разовую
+ * настройку в постоянную.
  *
- * Сумм в отчёте бывает не две, а одна — тогда вместо колонки выбирается
- * «формула», и сервер считает, например, `[Сумма всего] - [Сумма авт.]`.
- * Раньше эту формулу владелец писал руками в Dista на каждый отчёт.
+ * ФОРМУЛА — для случая, когда нужной суммы в отчёте нет отдельной колонкой. В
+ * отчёте МТС, например, есть только общая сумма вознаграждения и две ставки, а
+ * авторские и смежные считаются из них:
  *
- * ЧТО НА ВЫХОДЕ У ВСЕХ ПАРТНЁРОВ ОДИНАКОВО: артикул, количество, сумма
- * авторских, сумма смежных. Дальше по этим числам считается роялти, и расчёту
- * незачем знать, как выглядел исходный файл.
+ *     [Сумма вознаграждения…] * [Ставка…авторские] / ([Ставка…авторские] + [Ставка…смежные])
+ *
+ * Названия колонок там длиной в строку, поэтому рядом с полем формулы стоит
+ * список «+ колонка»: ссылка вставляется выбором, а не перепечатыванием.
+ *
+ * ПЕРИОД — ПАРА ДАТ. Площадки отчитываются по-разному: МТС присылает месяц,
+ * кто-то квартал, изредка попадается произвольный отрезок. Кнопки «Месяц» и
+ * «Квартал» — просто быстрый способ заполнить эти две даты.
  */
-const QUARTERS = [1, 2, 3, 4];
+const MONTHS = [
+  'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
+  'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь',
+];
 const ROMAN = ['I', 'II', 'III', 'IV'];
 
-// Поля единого формата: имя на сервере → подпись в форме. Список короткий и
-// закрытый — это и есть тот самый общий формат, к которому сводятся все отчёты.
+// Поля единого формата: к ним сводится любой отчёт площадки.
 const FIELDS = [
   { name: 'sku', label: 'Артикул', required: true },
   { name: 'title', label: 'Наименование' },
@@ -48,15 +54,29 @@ const FIELDS = [
   { name: 'amount_related', label: 'Сумма смежных' },
 ];
 
+const iso = (d) => d.toISOString().slice(0, 10);
+const monthRange = (year, month) => ({
+  from: iso(new Date(Date.UTC(year, month, 1))),
+  to: iso(new Date(Date.UTC(year, month + 1, 0))),
+});
+const quarterRange = (year, quarter) => ({
+  from: iso(new Date(Date.UTC(year, (quarter - 1) * 3, 1))),
+  to: iso(new Date(Date.UTC(year, quarter * 3, 0))),
+});
+
 export function PartnerReportsPage() {
   const { role } = useAuth();
   const manage = canManagePartnerReports(role);
 
   const [partners, setPartners] = useState([]);
   const [partnerId, setPartnerId] = useState('');
-  const now = new Date();
-  const [year, setYear] = useState(now.getFullYear());
-  const [quarter, setQuarter] = useState(Math.floor(now.getMonth() / 3) + 1);
+
+  const today = new Date();
+  const [mode, setMode] = useState('month');
+  const [year, setYear] = useState(today.getFullYear());
+  const [month, setMonth] = useState(Math.max(0, today.getMonth() - 1));
+  const [quarter, setQuarter] = useState(Math.floor(today.getMonth() / 3) + 1);
+  const [range, setRange] = useState(monthRange(today.getFullYear(), Math.max(0, today.getMonth() - 1)));
 
   const [file, setFile] = useState(null);
   const [dragOver, setDragOver] = useState(false);
@@ -71,6 +91,12 @@ export function PartnerReportsPage() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const fileInput = useRef(null);
+
+  // Период пересобирается из выбранного режима; «произвольный» правят руками.
+  useEffect(() => {
+    if (mode === 'month') setRange(monthRange(year, month));
+    if (mode === 'quarter') setRange(quarterRange(year, quarter));
+  }, [mode, year, month, quarter]);
 
   useEffect(() => {
     listPartners({ pageSize: 500 })
@@ -132,13 +158,14 @@ export function PartnerReportsPage() {
         file,
         mapping,
         vatRate,
-        year,
-        quarter,
+        periodFrom: range.from,
+        periodTo: range.to,
         saveRuleToo: rememberRule,
       });
       setNotice(
-        `Отчёт «${report.file_name}» загружен: ${report.rows_count} строк, ` +
-          `авторские ${report.total_author} ₽, смежные ${report.total_related} ₽.`,
+        `Отчёт «${report.file_name}» загружен за ${report.period_label}: ` +
+          `${report.rows_count} строк, авторские ${report.total_author} ₽, ` +
+          `смежные ${report.total_related} ₽.`,
       );
       setFile(null);
       setPreview(null);
@@ -166,17 +193,21 @@ export function PartnerReportsPage() {
   const th =
     'text-left font-semibold text-[11px] uppercase tracking-[0.04em] text-text-muted px-3 py-2 whitespace-nowrap';
   const td = 'px-3 py-2 align-top border-t border-border text-[12.5px]';
+  const tab = (active) =>
+    `px-3 py-1.5 text-[12.5px] rounded-input border cursor-pointer bg-transparent font-sans ${
+      active ? 'border-accent text-accent' : 'border-border text-text-secondary'
+    }`;
 
   return (
     <div className="max-w-[1180px] mx-auto px-8 pt-12 pb-20">
       <PageHeader title="Отчёты партнёров">
-        Квартальные отчёты площадок. Перетащите файл, проверьте, что колонки поняты верно, — и он
-        ляжет в единый вид: артикул, количество, суммы авторских и смежных.
+        Отчёты площадок за месяц или квартал. Перетащите файл, проверьте, что колонки поняты
+        верно, — и он ляжет в единый вид: артикул, количество, суммы авторских и смежных.
       </PageHeader>
 
       {manage && (
         <Card className="mb-6">
-          <div className="p-5 flex flex-wrap gap-3 items-end border-b border-border">
+          <div className="p-5 flex flex-wrap gap-4 items-end border-b border-border">
             <label className="block">
               <span className="block text-[12px] text-text-secondary mb-1">Партнёр</span>
               <select
@@ -196,28 +227,75 @@ export function PartnerReportsPage() {
                 ))}
               </select>
             </label>
-            <label className="block">
-              <span className="block text-[12px] text-text-secondary mb-1">Квартал</span>
-              <select
-                value={quarter}
-                onChange={(e) => setQuarter(Number(e.target.value))}
-                className={inputClass}
-              >
-                {QUARTERS.map((q) => (
-                  <option key={q} value={q}>
-                    {ROMAN[q - 1]} квартал
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="block">
-              <span className="block text-[12px] text-text-secondary mb-1">Год</span>
-              <input
-                value={year}
-                onChange={(e) => setYear(Number(e.target.value.replace(/\D/g, '')) || '')}
-                className={`${inputClass} w-[90px] tabular-nums`}
-              />
-            </label>
+
+            {/* ПЕРИОД. Месяц и квартал — кнопки, заполняющие пару дат; «свой»
+                оставляет их править руками. Отдельного признака «это месяц» не
+                храним: даты и так всё говорят. */}
+            <div>
+              <span className="block text-[12px] text-text-secondary mb-1">Период отчёта</span>
+              <div className="flex flex-wrap items-center gap-2">
+                <button type="button" className={tab(mode === 'month')} onClick={() => setMode('month')}>
+                  Месяц
+                </button>
+                <button type="button" className={tab(mode === 'quarter')} onClick={() => setMode('quarter')}>
+                  Квартал
+                </button>
+                <button type="button" className={tab(mode === 'custom')} onClick={() => setMode('custom')}>
+                  Свой
+                </button>
+
+                {mode === 'month' && (
+                  <select
+                    value={month}
+                    onChange={(e) => setMonth(Number(e.target.value))}
+                    className={inputClass}
+                  >
+                    {MONTHS.map((m, i) => (
+                      <option key={m} value={i}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {mode === 'quarter' && (
+                  <select
+                    value={quarter}
+                    onChange={(e) => setQuarter(Number(e.target.value))}
+                    className={inputClass}
+                  >
+                    {[1, 2, 3, 4].map((q) => (
+                      <option key={q} value={q}>
+                        {ROMAN[q - 1]} квартал
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {mode !== 'custom' ? (
+                  <input
+                    value={year}
+                    onChange={(e) => setYear(Number(e.target.value.replace(/\D/g, '')) || '')}
+                    className={`${inputClass} w-[86px] tabular-nums`}
+                  />
+                ) : (
+                  <>
+                    <input
+                      type="date"
+                      value={range.from}
+                      onChange={(e) => setRange((r) => ({ ...r, from: e.target.value }))}
+                      className={inputClass}
+                    />
+                    <span className="text-[12.5px] text-text-muted">—</span>
+                    <input
+                      type="date"
+                      value={range.to}
+                      onChange={(e) => setRange((r) => ({ ...r, to: e.target.value }))}
+                      className={inputClass}
+                    />
+                  </>
+                )}
+              </div>
+            </div>
+
             <label className="block">
               <span className="block text-[12px] text-text-secondary mb-1">НДС в суммах, %</span>
               <input
@@ -225,14 +303,12 @@ export function PartnerReportsPage() {
                 onChange={(e) => setVatRate(e.target.value)}
                 onBlur={() => preview && runPreview()}
                 placeholder="нет"
-                title="Если суммы в отчёте с НДС — укажите ставку, и она будет вычтена"
+                title="Если суммы в отчёте С НДС — укажите ставку (сейчас 22), и она будет вычтена. В отчётах «без НДС» поле оставляют пустым."
                 className={`${inputClass} w-[110px] tabular-nums`}
               />
             </label>
           </div>
 
-          {/* ПЕРЕТАСКИВАНИЕ. Зона большая и отвечает на наведение: иначе
-              непонятно, что сюда вообще можно бросить файл. */}
           <div
             onDragOver={(e) => {
               e.preventDefault();
@@ -282,24 +358,23 @@ export function PartnerReportsPage() {
                   : 'Правила у партнёра ещё нет — соответствие предложено по названиям колонок.'}
               </div>
 
-              {/* НАСТРОЙКА ПРАВИЛА. Колонка выбирается ИЗ СПИСКА имён, а не
-                  вводится номером: переставит площадка столбцы — правило
-                  переживёт. «Формула» — для случая, когда отдельной колонки в
-                  отчёте нет вовсе. */}
-              <div className="grid grid-cols-2 gap-x-5 gap-y-3 mb-4">
+              <div className="flex flex-col gap-3 mb-4">
                 {FIELDS.map((f) => {
                   const spec = mapping[f.name] ?? {};
-                  const isFormula = Boolean(spec.formula);
+                  // Режим определяется НАЛИЧИЕМ ключа, а не его значением:
+                  // у пустой формулы значение пустое, и по нему поле
+                  // переключалось обратно на список (ошибка первого дня).
+                  const isFormula = Object.prototype.hasOwnProperty.call(spec, 'formula');
                   return (
-                    <div key={f.name} className="flex items-end gap-2">
-                      <label className="block flex-1 min-w-0">
+                    <div key={f.name} className="flex items-end gap-2 flex-wrap">
+                      <label className="block flex-1 min-w-[320px]">
                         <span className="block text-[12px] text-text-secondary mb-1">
                           {f.label}
                           {f.required && ' *'}
                         </span>
                         {isFormula ? (
                           <input
-                            value={spec.formula}
+                            value={spec.formula ?? ''}
                             onChange={(e) =>
                               setMapping((m) => ({ ...m, [f.name]: { formula: e.target.value } }))
                             }
@@ -328,17 +403,44 @@ export function PartnerReportsPage() {
                           </select>
                         )}
                       </label>
+
+                      {/* Вставка ссылки на колонку: названия у площадок длиной
+                          в строку, и перепечатывать их руками — гарантированная
+                          опечатка. */}
+                      {isFormula && (
+                        <select
+                          value=""
+                          onChange={(e) => {
+                            if (!e.target.value) return;
+                            const ref = `[${e.target.value}]`;
+                            setMapping((m) => ({
+                              ...m,
+                              [f.name]: { formula: `${m[f.name]?.formula ?? ''}${ref}` },
+                            }));
+                          }}
+                          className={`${inputClass} max-w-[210px]`}
+                        >
+                          <option value="">+ колонка</option>
+                          {preview.columns.filter(Boolean).map((c) => (
+                            <option key={c} value={c}>
+                              {c}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+
                       <button
                         type="button"
                         onClick={() =>
-                          setMapping((m) => ({
-                            ...m,
-                            [f.name]: isFormula ? { column: '' } : { formula: '' },
-                          }))
+                          setMapping((m) => {
+                            const next = { ...m };
+                            next[f.name] = isFormula ? { column: '' } : { formula: '' };
+                            return next;
+                          })
                         }
                         className="text-[12px] text-accent bg-transparent border-0 p-0 pb-2 cursor-pointer font-sans whitespace-nowrap"
                       >
-                        {isFormula ? 'колонкой' : 'формулой'}
+                        {isFormula ? 'выбрать колонкой' : 'задать формулой'}
                       </button>
                     </div>
                   );
@@ -386,24 +488,46 @@ export function PartnerReportsPage() {
                     </table>
                   </div>
 
-                  <div className="mt-4 flex flex-wrap items-center gap-4">
-                    <div className="text-[13px] text-text">
-                      Всего строк: <b className="tabular-nums">{preview.totals.rows}</b> · авторские{' '}
-                      <b className="tabular-nums">{preview.totals.amount_author} ₽</b> · смежные{' '}
-                      <b className="tabular-nums">{preview.totals.amount_related} ₽</b> · итого{' '}
-                      <b className="tabular-nums">{preview.totals.total} ₽</b>
-                    </div>
-                    {preview.preview_limited && (
-                      <div className="text-[12px] text-text-muted">
-                        В таблице первые {preview.preview.length} строк, итоги — по всему файлу.
-                      </div>
-                    )}
+                  <div className="mt-4 text-[13px] text-text">
+                    Всего строк: <b className="tabular-nums">{preview.totals.rows}</b> · авторские{' '}
+                    <b className="tabular-nums">{preview.totals.amount_author} ₽</b> · смежные{' '}
+                    <b className="tabular-nums">{preview.totals.amount_related} ₽</b> · итого{' '}
+                    <b className="tabular-nums">{preview.totals.total} ₽</b>
                   </div>
+
+                  {/* Эти два числа — главное, что нужно увидеть ДО загрузки:
+                      по строкам без артикула деньги придут «ничьи», а строки с
+                      непрочитанной суммой лягут нулями. */}
+                  {(preview.totals.no_sku > 0 || preview.totals.problem_rows > 0) && (
+                    <div className="mt-2 text-[12.5px] text-danger">
+                      {preview.totals.no_sku > 0 && (
+                        <div>
+                          Без артикула: {preview.totals.no_sku} строк — они загрузятся, но к трекам
+                          привязаны не будут.
+                        </div>
+                      )}
+                      {preview.totals.problem_rows > 0 && (
+                        <div>
+                          С непонятными суммами: {preview.totals.problem_rows} строк — они
+                          загрузятся с нулями.
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {preview.preview_limited && (
+                    <div className="mt-1 text-[12px] text-text-muted">
+                      В таблице первые {preview.preview.length} строк, итоги — по всему файлу.
+                    </div>
+                  )}
 
                   <div className="mt-4 flex flex-wrap items-center gap-4">
                     <Button variant="accent" size="sm" onClick={save} disabled={busy}>
-                      {busy ? 'Загружаем…' : `Загрузить за ${ROMAN[quarter - 1]} кв. ${year}`}
+                      {busy ? 'Загружаем…' : 'Загрузить отчёт'}
                     </Button>
+                    <span className="text-[12.5px] text-text-muted">
+                      период: {range.from} — {range.to}
+                    </span>
                     <label className="flex items-center gap-2 text-[13px] text-text-secondary select-none">
                       <input
                         type="checkbox"
@@ -448,7 +572,7 @@ export function PartnerReportsPage() {
                   <th className={th}>Период</th>
                   <th className={th}>Файл</th>
                   <th className={th}>Строк</th>
-                  <th className={th}>Не опознано</th>
+                  <th className={th}>Не разнесено</th>
                   <th className={th}>Авторские, ₽</th>
                   <th className={th}>Смежные, ₽</th>
                   <th className={th}></th>
@@ -461,9 +585,12 @@ export function PartnerReportsPage() {
                     <td className={td}>{r.period_label}</td>
                     <td className={`${td} text-text-secondary`}>{r.file_name}</td>
                     <td className={`${td} tabular-nums`}>{r.rows_count}</td>
-                    {/* Не опознано — это не ошибка загрузки, а работа на потом:
-                        по таким строкам роялти посчитать не из чего. */}
-                    <td className={`${td} tabular-nums ${r.unmatched_count ? 'text-danger' : 'text-text-muted'}`}>
+                    <td
+                      className={`${td} tabular-nums ${
+                        r.unmatched_count ? 'text-danger' : 'text-text-muted'
+                      }`}
+                      title="Строки без артикула или с артикулом, которого нет в каталоге"
+                    >
                       {r.unmatched_count || '—'}
                     </td>
                     <td className={`${td} tabular-nums`}>{r.total_author}</td>
