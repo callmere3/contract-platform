@@ -127,6 +127,13 @@ export const canEditNomenclature = (role) => is(role, ADMIN, DIRECTOR);
 export const canViewPartners = (role) => is(role, ADMIN, DIRECTOR);
 export const canManagePartners = (role) => is(role, ADMIN, DIRECTOR);
 
+// backend: CAN_VIEW_PARTNER_REPORTS / CAN_MANAGE_PARTNER_REPORTS. Отчёты
+// площадок: смотреть и загружать. Право заведено отдельно от финансов — отчёт
+// это деньги площадки ДО дележа, и однажды его может грузить человек, которому
+// не положено видеть балансы правообладателей.
+export const canViewPartnerReports = (role) => is(role, ADMIN, DIRECTOR);
+export const canManagePartnerReports = (role) => is(role, ADMIN, DIRECTOR);
+
 // backend: CAN_EXPORT_CONTRAGENTS = (ADMIN, DIRECTOR) — у top_manager/tester убран
 export const canExport = (role) => is(role, ADMIN, DIRECTOR);
 

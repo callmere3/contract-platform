@@ -10,6 +10,7 @@ import {
   canViewChampionBoard,
   canUseFinance,
   canViewNomenclature,
+  canViewPartnerReports,
   canViewPartners,
 } from './auth/permissions';
 import { TagsProvider } from './api/TagsContext';
@@ -31,6 +32,7 @@ import { NotificationsPage } from './pages/NotificationsPage';
 import { DistaConnectPage } from './pages/DistaConnectPage';
 import { FinancePage } from './pages/FinancePage';
 import { NomenclaturePage } from './pages/NomenclaturePage';
+import { PartnerReportsPage } from './pages/PartnerReportsPage';
 import { PartnersPage } from './pages/PartnersPage';
 import { ChampionPage } from './pages/ChampionPage';
 
@@ -139,6 +141,14 @@ function AppShell() {
         <Route
           path="/finance/partners"
           element={canViewPartners(user?.role) ? <PartnersPage /> : <Navigate to="/search" replace />}
+        />
+        {/* Отчёты площадок — та же защита от прямого захода по адресу, что и
+            у остальных вкладок ML Finance. */}
+        <Route
+          path="/finance/reports"
+          element={
+            canViewPartnerReports(user?.role) ? <PartnerReportsPage /> : <Navigate to="/search" replace />
+          }
         />
         {/* Dista Connect — только admin, та же защита от прямого захода по
             адресу. Вкладка переехала в меню ML Finance, но маршрут прежний:

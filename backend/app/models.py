@@ -35,6 +35,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Integer,
     Numeric,
     SmallInteger,
     String,
@@ -830,6 +831,132 @@ class TrackRight(Base):
     royalty: Mapped[Decimal | None] = mapped_column(Numeric(6, 2))
 
     track: Mapped["Track"] = relationship(back_populates="rights")
+
+
+class PartnerReportRule(Base):
+    """
+    ПРАВИЛО РАЗБОРА ОТЧЁТА ПАРТНЁРА — то самое «настроить по образцу»
+    (18.09.2026). У каждой площадки свой файл, и правило говорит, какой
+    столбец чем является.
+
+    КОЛОНКИ ХРАНЯТСЯ ИМЕНАМИ, А НЕ НОМЕРАМИ. В Dista это была строка вида
+    `-;-;АРТИКУЛ;-;-;КОЛИЧЕСТВО;…`: позиции с пропусками. Площадка меняет
+    порядок столбцов — формула молча начинает читать соседние данные, и
+    заметить это можно только по итогам. По имени такого не бывает: колонка
+    либо есть, либо разбор честно говорит, что её нет.
+
+    `mapping` — JSON: {поле: {"column": "Имя"} | {"formula": "[A] - [B]"}}.
+    Формула нужна там, где отдельной колонки нет вовсе: у части площадок есть
+    только общая сумма, а авторские и смежные надо посчитать (просьба
+    владельца: «сейчас я пишу формулу руками»).
+
+    `vat_rate` — ставка НДС, которую надо ВЫЧЕСТЬ из сумм отчёта. Свойство
+    файла целиком, а не колонки: в одном отчёте суммы либо с налогом, либо
+    без, и повторять `/1.2` в каждой колонке значит однажды поправить одну и
+    забыть вторую.
+
+    Правило ОДНО НА ПАРТНЁРА (unique): у площадки один формат отчёта. Начнут
+    присылать два — здесь появится имя варианта, а не вторая таблица.
+    """
+    __tablename__ = "partner_report_rules"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    partner_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("partners.id", ondelete="CASCADE"), unique=True, index=True
+    )
+    # Имя файла-образца: по нему собирали правило, и через полгода это
+    # единственный способ понять, какой отчёт имелся в виду.
+    sample_file: Mapped[str | None] = mapped_column(String(255))
+    sheet: Mapped[str | None] = mapped_column(String(120))
+    mapping: Mapped[dict] = mapped_column(JSONB, default=dict)
+    vat_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class PartnerReport(Base):
+    """
+    Загруженный отчёт площадки за квартал: заголовок и итоги.
+
+    ПЕРИОД — ГОД И КВАРТАЛ, как у поступлений в ML Finance, и по той же
+    причине: отчёт относится к кварталу, а не к дате файла.
+
+    Итоги хранятся СНИМКОМ (`total_*`), а не считаются на лету из строк: по
+    ним сверяют деньги, и цифра в сверке должна остаться той, какой её
+    увидели при загрузке, даже если завтра строки пересчитают.
+
+    `vat_rate` — тоже снимок правила на момент загрузки: ставка меняется
+    (20% стала 22%), а уже загруженный отчёт обязан объяснять свои числа.
+    """
+    __tablename__ = "partner_reports"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    partner_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("partners.id", ondelete="RESTRICT"), index=True
+    )
+    period_year: Mapped[int] = mapped_column(SmallInteger)
+    period_quarter: Mapped[int] = mapped_column(SmallInteger)
+    file_name: Mapped[str] = mapped_column(String(255))
+    sheet: Mapped[str | None] = mapped_column(String(120))
+    rows_count: Mapped[int] = mapped_column(Integer, default=0)
+    # Строк, у которых артикул не нашёлся в каталоге. Не ошибка загрузки, а
+    # работа на потом: по таким строкам роялти не посчитается.
+    unmatched_count: Mapped[int] = mapped_column(Integer, default=0)
+    total_quantity: Mapped[Decimal | None] = mapped_column(Numeric(16, 2))
+    total_author: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
+    total_related: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
+    vat_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
+    uploaded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    uploaded_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+
+    partner: Mapped["Partner"] = relationship()
+    rows: Mapped[list["PartnerReportRow"]] = relationship(
+        back_populates="report", cascade="all, delete-orphan"
+    )
+
+
+class PartnerReportRow(Base):
+    """
+    Строка отчёта в ЕДИНОМ ФОРМАТЕ: артикул, количество, сумма авторских,
+    сумма смежных (просьба владельца: «свести все отчёты к одному виду»).
+
+    Исходная строка файла здесь НЕ хранится: она весит больше самих чисел, а
+    вернуться к ней всё равно можно — файл лежит у владельца, а имя файла и
+    номер строки записаны. `title` оставлен ровно для одного: понять, что за
+    трек, когда артикул не опознан.
+
+    `track_id` проставляется при загрузке по артикулу. Не нашлось — строка
+    остаётся без ссылки и попадает в счётчик `unmatched_count`: деньги по ней
+    пришли, а кому их делить, неизвестно, и молчать об этом нельзя.
+    """
+    __tablename__ = "partner_report_rows"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    report_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("partner_reports.id", ondelete="CASCADE"), index=True
+    )
+    row_num: Mapped[int] = mapped_column(Integer)
+    sku: Mapped[str] = mapped_column(String(32), index=True)
+    title: Mapped[str | None] = mapped_column(String(300))
+    quantity: Mapped[Decimal | None] = mapped_column(Numeric(16, 2))
+    amount_author: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
+    amount_related: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
+    track_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("tracks.id", ondelete="SET NULL"), index=True
+    )
+
+    report: Mapped["PartnerReport"] = relationship(back_populates="rows")
 
 
 def folder_path(folder: TemplateFolder) -> list[str]:
