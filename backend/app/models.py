@@ -961,6 +961,10 @@ class PartnerReportRow(Base):
     # они лежат без ссылки на трек и попадают в счётчик неразнесённых.
     sku: Mapped[str | None] = mapped_column(String(32), index=True)
     title: Mapped[str | None] = mapped_column(String(300))
+    # Исполнитель нужен не для расчёта, а для ПОДБОРА артикула по названию,
+    # когда площадка код не проставила, и чтобы человек в списке «не
+    # разнесено» понимал, о каком треке речь.
+    artist: Mapped[str | None] = mapped_column(String(300))
     quantity: Mapped[Decimal | None] = mapped_column(Numeric(16, 2))
     # ЧЕТЫРЕ ЗНАКА, а не копейки: площадки считают дробно (у МТС строка
     # «147.0456»), и округление каждой строки уводит итог отчёта от их же

@@ -49,10 +49,11 @@ import openpyxl
 # Поля единого формата. `title` необязателен и нужен только человеку — чтобы в
 # предпросмотре было видно, что за трек, если артикул не опознан.
 MONEY_FIELDS = ("amount_author", "amount_related")
-FIELDS = ("sku", "title", "quantity", *MONEY_FIELDS)
+FIELDS = ("sku", "title", "artist", "quantity", *MONEY_FIELDS)
 FIELD_LABELS = {
     "sku": "Артикул",
     "title": "Наименование",
+    "artist": "Исполнитель",
     "quantity": "Количество",
     "amount_author": "Сумма авторских",
     "amount_related": "Сумма смежных",
@@ -91,8 +92,12 @@ class ReportRow:
     sku: str | None = None
     # Строка без артикула НЕ ошибка разбора: в отчёте МТС таких два десятка —
     # у площадки не проставлен код объекта. Деньги по ним пришли, и молча
-    # выкинуть их нельзя; они грузятся и видны отдельным счётчиком.
+    # выкинуть их нельзя; они грузятся, а артикул подбирается по названию и
+    # исполнителю (см. find_track_by_name).
     title: str | None = None
+    artist: str | None = None
+    # Как нашёлся трек: по артикулу из файла или подобран по названию.
+    matched_by: str | None = None
     quantity: Decimal | None = None
     amount_author: Decimal = Decimal(0)
     amount_related: Decimal = Decimal(0)
@@ -389,9 +394,14 @@ def parse_report(
 
         row = ReportRow(row_num=row_num)
         row.sku = _clean(values.get(normalize_header(mapping["sku"].get("column", "")))) or None
-        title_spec = (mapping or {}).get("title") or {}
-        if title_spec.get("column"):
-            row.title = _clean(values.get(normalize_header(title_spec["column"]))) or None
+        for text_field in ("title", "artist"):
+            spec = (mapping or {}).get(text_field) or {}
+            if spec.get("column"):
+                setattr(
+                    row,
+                    text_field,
+                    _clean(values.get(normalize_header(spec["column"]))) or None,
+                )
 
         numbers = {k: parse_number(v) for k, v in values.items()}
 
@@ -461,6 +471,103 @@ def _apply_formula(expr: str, numbers: dict, row: ReportRow, label: str):
     return value
 
 
+# ------------------------------------------------- подбор трека по названию
+
+# Служебные слова в поле исполнителя: они не различают артистов, а только
+# связывают их («ОСОБОВ feat. TRUEтень»). Сравнивать по ним нельзя, иначе
+# «Slim & Константа» и «Slim, Константа» окажутся разными, а это один дуэт.
+ARTIST_STOPWORDS = {"feat", "ft", "featuring", "prod", "vs", "and", "x"}
+
+
+def normalize_name(value) -> str:
+    """
+    Ключ сравнения названий: регистр, «ё», знаки препинания и лишние пробелы
+    значения не имеют. «Тмстс!» и «тмстс» — одно и то же название.
+    """
+    text = str(value or "").lower().replace("ё", "е")
+    text = re.sub(r"[^0-9a-zа-я]+", " ", text)
+    return " ".join(text.split())
+
+
+def artist_tokens(value) -> list:
+    """
+    Исполнитель → набор значимых слов. Разделители («&», «,», «feat.») и
+    регистр отброшены: в отчёте пишут «Slim & Константа», в каталоге —
+    «Slim, Константа», и это один и тот же дуэт.
+    """
+    words = normalize_name(value).split()
+    return sorted(w for w in words if w not in ARTIST_STOPWORDS)
+
+
+def artists_match(left, right) -> bool:
+    """
+    Совпадают ли исполнители — СТРОГО, но с поправкой на то, как их пишут.
+
+    Разрешены: другой регистр, другой разделитель, сокращение имени до
+    инициала («Ю. Шатунов» против «Юрий Шатунов»). Всё остальное — разные
+    артисты: «SLIMUS, Константа» и «Slim, Константа» на одном названии
+    «Азимут» — это два РАЗНЫХ трека в каталоге, и подставить наугад любой из
+    них значит отправить чужие деньги.
+
+    Поэтому наборы слов должны совпасть ПОЛНОСТЬЮ (по одному слову на слово),
+    а не «одно входит в другое»: «ОСОБОВ» и «ОСОБОВ feat. TRUEтень» —
+    разные исполнители, хоть первый и содержится во втором.
+    """
+    a, b = artist_tokens(left), artist_tokens(right)
+    if not a or not b or len(a) != len(b):
+        return False
+    rest = list(b)
+    for word in a:
+        pair = None
+        for candidate in rest:
+            if candidate == word:
+                pair = candidate
+                break
+            # инициал против полного слова: «ю» и «юрий»
+            if len(word) == 1 and candidate.startswith(word):
+                pair = candidate
+                break
+            if len(candidate) == 1 and word.startswith(candidate):
+                pair = candidate
+                break
+        if pair is None:
+            return False
+        rest.remove(pair)
+    return True
+
+
+def search_word(title) -> str:
+    """
+    Самое длинное слово названия — по нему ищем кандидатов в каталоге.
+
+    Искать по всему названию нельзя: в отчёте оно бывает со знаком вопроса, в
+    каталоге без, — и точное сравнение промахнётся. Слово даёт короткий список
+    кандидатов, а решает уже строгое сравнение целиком.
+    """
+    words = [w for w in normalize_name(title).split() if len(w) >= 3]
+    return max(words, key=len, default="")
+
+
+def pick_track(title, artist, candidates) -> object | None:
+    """
+    Единственный сильный кандидат — или ничего.
+
+    `candidates` — записи каталога (объекты с title и artist). Совпасть должны
+    ОБА поля; если подошли несколько разных треков, не выбираем ни одного:
+    угаданный артикул хуже пустого, потому что деньги уедут молча и не туда.
+    """
+    key = normalize_name(title)
+    if not key or not str(artist or "").strip():
+        return None
+    hits = [
+        c
+        for c in candidates
+        if normalize_name(c.title) == key and artists_match(artist, c.artist)
+    ]
+    unique = {c.id for c in hits}
+    return hits[0] if len(unique) == 1 else None
+
+
 MONTHS_RU = (
     "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
     "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
@@ -508,6 +615,7 @@ def suggest_mapping(columns: list) -> dict:
     hints = {
         "sku": ("код объекта", "артикул", "код товара", "sku", "код", "номер", "№"),
         "title": ("название объекта", "наименование", "название", "трек", "title", "track"),
+        "artist": ("исполнитель", "артист", "artist", "performer"),
         "quantity": ("кол-во продаж", "количество", "кол-во", "прослушивания", "quantity", "streams"),
         "amount_author": ("сумма авт", "авторские", "сумма авторских", "author"),
         "amount_related": ("сумма смж", "смежные", "сумма смежных", "related", "master"),

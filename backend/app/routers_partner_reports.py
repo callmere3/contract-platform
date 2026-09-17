@@ -54,7 +54,9 @@ from app.partner_reports import (
     FIELD_LABELS,
     parse_report,
     period_label,
+    pick_track,
     read_columns,
+    search_word,
     sheet_names,
     suggest_mapping,
 )
@@ -72,6 +74,65 @@ PREVIEW_ROWS = 100
 # Предел на файл. Квартальный отчёт площадки — это десятки тысяч строк;
 # миллион означает, что прислали что-то другое или файл склеен из года.
 MAX_ROWS = 300_000
+
+
+def _resolve_tracks(db: Session, rows: list) -> dict:
+    """
+    Привязать строки отчёта к каталогу: сначала по артикулу, а СТРОКИ БЕЗ
+    АРТИКУЛА — по названию и исполнителю (просьба владельца 18.09.2026).
+
+    Зачем второй способ: у площадки код объекта проставлен не всегда. В отчёте
+    МТС таких строк шесть, и все шесть на самом деле есть в каталоге — просто
+    исполнитель записан иначе («ПОШЛАЯ МОЛЛИ» против «Пошлая Молли», «Slim &
+    Константа» против «Slim, Константа»).
+
+    ПОДБИРАЕМ ТОЛЬКО ПРИ СИЛЬНОМ СОВПАДЕНИИ: название сходится целиком (с
+    точностью до регистра и знаков препинания), исполнитель — по словам, с
+    поправкой на инициалы и разделители, и подошёл РОВНО ОДИН трек. На
+    названии «Азимут» в каталоге пять разных треков разных артистов —
+    подставить любой из них наугад значит отправить чужие деньги.
+
+    Кандидатов ищем по самому длинному слову названия: искать по названию
+    целиком нельзя (в отчёте «Тмстс!», в каталоге «Тмстс»), а слово сужает
+    список до десятков, дальше решает строгое сравнение.
+    """
+    skus = {r.sku for r in rows if r.sku}
+    by_sku = {
+        sku: track_id
+        for sku, track_id in db.execute(
+            select(Track.sku, Track.id).where(Track.sku.in_(skus))
+        )
+    } if skus else {}
+
+    resolved: dict = {}
+    for row in rows:
+        if row.sku and row.sku in by_sku:
+            row.matched_by = "sku"
+            resolved[row.row_num] = by_sku[row.sku]
+
+    # Строки без артикула — по названию. Одинаковые пары «название +
+    # исполнитель» ищем один раз: в отчёте они повторяются по нескольку строк.
+    pending = [r for r in rows if not r.sku and r.title]
+    cache: dict = {}
+    for row in pending:
+        key = (row.title.lower(), (row.artist or "").lower())
+        if key not in cache:
+            word = search_word(row.title)
+            candidates = []
+            if word:
+                pattern = "%" + word.replace("%", "").replace("_", "") + "%"
+                candidates = db.execute(
+                    select(Track.id, Track.sku, Track.title, Track.artist)
+                    .where(Track.title.ilike(pattern))
+                    .limit(200)
+                ).all()
+            cache[key] = pick_track(row.title, row.artist, candidates)
+        track = cache[key]
+        if track is not None:
+            row.sku = track.sku
+            row.matched_by = "name"
+            resolved[row.row_num] = track.id
+    return resolved
 
 
 def _date(value: str, label: str) -> date:
@@ -318,6 +379,10 @@ def preview(
         content, file.filename, active_mapping,
         vat_rate=rate or None, sheet=chosen_sheet, limit=PREVIEW_ROWS,
     )
+    # Привязку показываем уже в предпросмотре: человек должен видеть, что
+    # артикул подобран по названию, ДО того, как отчёт ляжет в базу.
+    if not result.problems:
+        _resolve_tracks(db, result.rows)
     # Итоги считаем по ВСЕМУ файлу, а не по показанным ста строкам: человек
     # сверяет сумму отчёта с платежом, и «итог первых ста строк» тут хуже, чем
     # никакого.
@@ -343,6 +408,8 @@ def preview(
                 "row": r.row_num,
                 "sku": r.sku,
                 "title": r.title,
+                "artist": r.artist,
+                "matched_by": r.matched_by,
                 "quantity": _money(r.quantity),
                 "amount_author": _money(r.amount_author),
                 "amount_related": _money(r.amount_related),
@@ -437,14 +504,9 @@ def create_report(
             f"В отчёте {len(result.rows)} строк — это больше {MAX_ROWS}. "
             "Похоже, в файл попал не один квартал.",
         )
-    # Сопоставление с каталогом — по артикулу, одним запросом.
-    skus = {r.sku for r in result.rows if r.sku}
-    track_by_sku = {
-        sku: track_id
-        for sku, track_id in db.execute(
-            select(Track.sku, Track.id).where(Track.sku.in_(skus))
-        )
-    } if skus else {}
+    # Привязка к каталогу: по артикулу, а строки без него — по названию и
+    # исполнителю (см. _resolve_tracks).
+    track_by_row = _resolve_tracks(db, result.rows)
 
     totals = result.totals
     report = PartnerReport(
@@ -455,7 +517,7 @@ def create_report(
         file_name=file.filename,
         sheet=chosen_sheet,
         rows_count=len(result.rows),
-        unmatched_count=sum(1 for r in result.rows if not r.sku or r.sku not in track_by_sku),
+        unmatched_count=sum(1 for r in result.rows if r.row_num not in track_by_row),
         problem_count=sum(1 for r in result.rows if r.problems),
         total_quantity=totals["quantity"],
         total_author=totals["amount_author"],
@@ -473,10 +535,11 @@ def create_report(
             row_num=r.row_num,
             sku=r.sku,
             title=r.title,
+            artist=r.artist,
             quantity=r.quantity,
             amount_author=r.amount_author,
             amount_related=r.amount_related,
-            track_id=track_by_sku.get(r.sku) if r.sku else None,
+            track_id=track_by_row.get(r.row_num),
         )
         for r in result.rows
     ])
@@ -501,12 +564,19 @@ def create_report(
             "file": file.filename,
             "rows": report.rows_count,
             "unmatched": report.unmatched_count,
+            "matched_by_name": sum(1 for r in result.rows if r.matched_by == "name"),
             "author": str(report.total_author),
             "related": str(report.total_related),
         },
     )
     db.commit()
-    return {"report": _report_out(report, partner.name)}
+    return {
+        "report": _report_out(report, partner.name),
+        # Сколько артикулов подобрано по названию — это стоит увидеть сразу:
+        # подбор хоть и строгий, но всё-таки догадка сервиса, а не данные
+        # площадки.
+        "matched_by_name": sum(1 for r in result.rows if r.matched_by == "name"),
+    }
 
 
 @partner_reports_router.get("/{report_id}/rows")
@@ -540,6 +610,7 @@ def report_rows(
                 "row": r.row_num,
                 "sku": r.sku,
                 "title": r.title,
+                "artist": r.artist,
                 "quantity": _money(r.quantity),
                 "amount_author": _money(r.amount_author),
                 "amount_related": _money(r.amount_related),

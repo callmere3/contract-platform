@@ -49,6 +49,9 @@ const ROMAN = ['I', 'II', 'III', 'IV'];
 const FIELDS = [
   { name: 'sku', label: 'Артикул', required: true },
   { name: 'title', label: 'Наименование' },
+  // Исполнитель нужен не для расчёта, а для ПОДБОРА артикула, когда площадка
+  // код не проставила: одного названия мало — в каталоге пять «Азимутов».
+  { name: 'artist', label: 'Исполнитель' },
   { name: 'quantity', label: 'Количество' },
   { name: 'amount_author', label: 'Сумма авторских' },
   { name: 'amount_related', label: 'Сумма смежных' },
@@ -153,7 +156,7 @@ export function PartnerReportsPage() {
     setBusy(true);
     setError('');
     try {
-      const { report } = await createReport({
+      const { report, matched_by_name: matchedByName } = await createReport({
         partnerId,
         file,
         mapping,
@@ -165,7 +168,8 @@ export function PartnerReportsPage() {
       setNotice(
         `Отчёт «${report.file_name}» загружен за ${report.period_label}: ` +
           `${report.rows_count} строк, авторские ${report.total_author} ₽, ` +
-          `смежные ${report.total_related} ₽.`,
+          `смежные ${report.total_related} ₽.` +
+          (matchedByName ? ` Артикулов подобрано по названию: ${matchedByName}.` : ''),
       );
       setFile(null);
       setPreview(null);
@@ -468,6 +472,7 @@ export function PartnerReportsPage() {
                           <th className={th}>Строка</th>
                           <th className={th}>Артикул</th>
                           <th className={th}>Наименование</th>
+                          <th className={th}>Исполнитель</th>
                           <th className={th}>Количество</th>
                           <th className={th}>Авторские, ₽</th>
                           <th className={th}>Смежные, ₽</th>
@@ -477,8 +482,22 @@ export function PartnerReportsPage() {
                         {preview.preview.map((r) => (
                           <tr key={r.row} className={r.problems.length ? 'bg-danger-soft' : undefined}>
                             <td className={`${td} tabular-nums text-text-muted`}>{r.row}</td>
-                            <td className={`${td} font-mono`}>{r.sku || '—'}</td>
+                            {/* Артикул, подобранный по названию, помечен: это
+                                догадка сервиса, пусть и строгая, а не данные
+                                площадки. */}
+                            <td className={`${td} font-mono`}>
+                              {r.sku || '—'}
+                              {r.matched_by === 'name' && (
+                                <span
+                                  className="ml-1 text-[11px] text-accent font-sans"
+                                  title="Артикул подобран по названию и исполнителю — в файле его нет"
+                                >
+                                  подобран
+                                </span>
+                              )}
+                            </td>
                             <td className={td}>{r.title || '—'}</td>
+                            <td className={td}>{r.artist || '—'}</td>
                             <td className={`${td} tabular-nums`}>{r.quantity ?? '—'}</td>
                             <td className={`${td} tabular-nums`}>{r.amount_author}</td>
                             <td className={`${td} tabular-nums`}>{r.amount_related}</td>
@@ -502,8 +521,9 @@ export function PartnerReportsPage() {
                     <div className="mt-2 text-[12.5px] text-danger">
                       {preview.totals.no_sku > 0 && (
                         <div>
-                          Без артикула: {preview.totals.no_sku} строк — они загрузятся, но к трекам
-                          привязаны не будут.
+                          Без артикула в файле: {preview.totals.no_sku} строк. Там, где название и
+                          исполнитель однозначно нашлись в каталоге, артикул подобран и помечен
+                          «подобран»; остальные загрузятся неразнесёнными.
                         </div>
                       )}
                       {preview.totals.problem_rows > 0 && (
