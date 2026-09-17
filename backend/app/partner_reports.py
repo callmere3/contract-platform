@@ -395,6 +395,28 @@ def parse_report(
 
         numbers = {k: parse_number(v) for k, v in values.items()}
 
+        # СТРОКА БЕЗ ЕДИНОГО ЧИСЛА — НЕ ДАННЫЕ. В конце отчёта МТС идёт блок
+        # подписи: «ОТ ЛИЦЕНЗИАРА», «_______ /_______/», «М.П.» — они попадают
+        # в таблицу как строки с мусором вместо артикула. Пустая ячейка и ноль
+        # здесь разные вещи: ноль — это данные (площадка честно сообщает, что
+        # денег не было), пустота — оформление.
+        used_numeric = [
+            spec.get("column")
+            for key, spec in (mapping or {}).items()
+            if key in (*MONEY_FIELDS, "quantity") and isinstance(spec, dict) and spec.get("column")
+        ]
+        formula_cols = [
+            c
+            for key, spec in (mapping or {}).items()
+            if key in (*MONEY_FIELDS, "quantity") and isinstance(spec, dict)
+            for c in formula_columns(spec.get("formula", ""))
+        ]
+        if not any(
+            numbers.get(normalize_header(c)) is not None
+            for c in [*used_numeric, *formula_cols]
+        ):
+            continue
+
         qty_spec = (mapping or {}).get("quantity") or {}
         if qty_spec.get("column"):
             row.quantity = numbers.get(normalize_header(qty_spec["column"]))
