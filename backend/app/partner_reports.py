@@ -665,23 +665,6 @@ def match_builtin(columns: list) -> dict | None:
     return None
 
 
-def data_samples(table: list, header_row: int, count: int = 3) -> list:
-    """
-    Первые строки данных как есть — чтобы человек видел САМ ФАЙЛ, а не только
-    то, что из него понял сервис (просьба владельца 18.09.2026: «наглядно не
-    вижу данные столбцов, которые пытаюсь добавить в формулу»).
-    """
-    out = []
-    for raw in table[header_row + 1:]:
-        cells = [_clean(c) for c in raw]
-        if not any(cells):
-            continue
-        out.append(cells)
-        if len(out) >= count:
-            break
-    return out
-
-
 def suggest_mapping(columns: list) -> dict:
     """
     Догадка о правиле по названиям колонок — чтобы человеку не заполнять

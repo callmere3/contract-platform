@@ -52,13 +52,11 @@ from app.models import (
 from app.partner_reports import (
     FIELDS,
     FIELD_LABELS,
-    data_samples,
     match_builtin,
     parse_report,
     period_label,
     pick_track,
     read_columns,
-    read_table,
     search_word,
     sheet_names,
     suggest_mapping,
@@ -482,9 +480,6 @@ def preview(
     )
 
     totals = result.totals
-    samples = data_samples(
-        read_table(content, file.filename, chosen_sheet), result.header_row
-    )
     return {
         "partner": {"id": str(partner.id), "name": partner.name},
         "file_name": file.filename,
@@ -498,9 +493,6 @@ def preview(
         # партнёра, настроенное сейчас руками или догадка по названиям колонок.
         "rule_source": chosen["source"],
         "rule_name": chosen["name"],
-        # Первые строки файла КАК ЕСТЬ — чтобы было видно сами данные, а не
-        # только то, что из них понял сервис.
-        "sample_rows": samples,
         "vat_rate": rate or None,
         "problems": result.problems,
         "preview": [

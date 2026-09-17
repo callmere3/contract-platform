@@ -6,6 +6,9 @@ import { TrashIcon } from '../components/ui/icons';
 import { useAuth } from '../auth/AuthContext';
 import { canManagePartnerReports } from '../auth/permissions';
 import { listPartners } from '../api/partners';
+// Тот же формат сумм, что во всём ML Finance: «40 916,36 ₽». Своё
+// форматирование здесь разошлось бы с балансами и операциями.
+import { formatMoney } from '../api/finance';
 import {
   checkTrack,
   createReport,
@@ -149,13 +152,15 @@ function PartnerPicker({ partners, value, onChange, inputClass }) {
   );
 }
 
-/** Название колонки и значение из первой строки файла: «Кол-во Продаж · 16». */
-function columnHint(preview, column) {
-  const index = preview.columns.indexOf(column);
-  const value = index >= 0 ? preview.sample_rows?.[0]?.[index] : '';
-  if (!value) return column;
-  const short = String(value).length > 18 ? `${String(value).slice(0, 18)}…` : value;
-  return `${column} · ${short}`;
+/** Сумма для ячейки таблицы: те же тысячи, но без «₽» — он в шапке колонки. */
+function amount(value) {
+  return formatMoney(value).replace(' ₽', '');
+}
+
+/** Российская дата: 2026-07-01 → 01.07.2026. */
+function ru(isoDate) {
+  const [y, m, d] = String(isoDate || '').split('-');
+  return y && m && d ? `${d}.${m}.${y}` : isoDate;
 }
 
 const iso = (d) => d.toISOString().slice(0, 10);
@@ -193,7 +198,8 @@ export function PartnerReportsPage() {
   const [manualSkus, setManualSkus] = useState({});
   const [skuInfo, setSkuInfo] = useState({});
   const [onlyUnmatched, setOnlyUnmatched] = useState(false);
-  const [showSource, setShowSource] = useState(false);
+  // Какие формулы человек сейчас правит: остальные показаны словами.
+  const [editing, setEditing] = useState({});
 
   const [reports, setReports] = useState([]);
   const [totals, setTotals] = useState(null);
@@ -286,7 +292,7 @@ export function PartnerReportsPage() {
     setBusy(true);
     setError('');
     try {
-      const { report, matched_by_name: matchedByName } = await createReport({
+      const { report } = await createReport({
         partnerId,
         file,
         mapping,
@@ -298,9 +304,8 @@ export function PartnerReportsPage() {
       });
       setNotice(
         `Отчёт «${report.file_name}» загружен за ${report.period_label}: ` +
-          `${report.rows_count} строк, авторские ${report.total_author} ₽, ` +
-          `смежные ${report.total_related} ₽.` +
-          (matchedByName ? ` Артикулов подобрано по названию: ${matchedByName}.` : ''),
+          `${report.rows_count} строк, авторские ${formatMoney(report.total_author)}, ` +
+          `смежные ${formatMoney(report.total_related)}.`,
       );
       setFile(null);
       setPreview(null);
@@ -501,44 +506,7 @@ export function PartnerReportsPage() {
                 {preview.rule_source === 'form' && 'Применено правило, которое вы настроили ниже.'}
                 {preview.rule_source === 'guess' &&
                   'Готового правила для такого файла нет — колонки предложены по названиям, проверьте их.'}
-                {' '}
-                <button
-                  type="button"
-                  onClick={() => setShowSource((v) => !v)}
-                  className="text-accent bg-transparent border-0 p-0 cursor-pointer font-sans"
-                >
-                  {showSource ? 'скрыть файл' : 'показать первые строки файла'}
-                </button>
               </div>
-
-              {/* Сам файл, как он есть: без него формулу пишут вслепую — видно
-                  названия колонок, но не то, что в них лежит. */}
-              {showSource && (
-                <div className="mb-4 overflow-x-auto border border-border rounded-card">
-                  <table className="w-full border-collapse">
-                    <thead>
-                      <tr>
-                        {preview.columns.map((c, i) => (
-                          <th key={`${c}-${i}`} className={th}>
-                            {c || '—'}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(preview.sample_rows ?? []).map((row, i) => (
-                        <tr key={i}>
-                          {preview.columns.map((c, j) => (
-                            <td key={`${c}-${j}`} className={`${td} whitespace-nowrap`}>
-                              {row[j] || '—'}
-                            </td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
 
               <div className="flex flex-col gap-3 mb-4">
                 {FIELDS.map((f) => {
@@ -554,7 +522,26 @@ export function PartnerReportsPage() {
                           {f.label}
                           {f.required && ' *'}
                         </span>
-                        {isFormula ? (
+                        {/* ГОТОВУЮ ФОРМУЛУ НЕ ПОКАЗЫВАЕМ СТРОКОЙ: у площадок
+                            названия колонок длиной в предложение, и выражение
+                            всё равно не помещается — читается как мусор. Видно,
+                            что поле считается, а само выражение — в подсказке
+                            при наведении и по «изменить». */}
+                        {isFormula && spec.formula && !editing[f.name] ? (
+                          <div
+                            className={`${inputClass} w-full flex items-center justify-between gap-3`}
+                            title={spec.formula}
+                          >
+                            <span className="text-text-secondary">Рассчитано по формуле</span>
+                            <button
+                              type="button"
+                              onClick={() => setEditing((e) => ({ ...e, [f.name]: true }))}
+                              className="text-[12px] text-accent bg-transparent border-0 p-0 cursor-pointer font-sans"
+                            >
+                              изменить
+                            </button>
+                          </div>
+                        ) : isFormula ? (
                           <input
                             value={spec.formula ?? ''}
                             onChange={(e) =>
@@ -577,12 +564,9 @@ export function PartnerReportsPage() {
                             className={`${inputClass} w-full`}
                           >
                             <option value="">— нет —</option>
-                            {/* Рядом с названием — ЗНАЧЕНИЕ из первой строки
-                                файла: по одному названию не всегда понятно, что
-                                в колонке лежит. */}
                             {preview.columns.filter(Boolean).map((c) => (
                               <option key={c} value={c}>
-                                {columnHint(preview, c)}
+                                {c}
                               </option>
                             ))}
                           </select>
@@ -592,7 +576,7 @@ export function PartnerReportsPage() {
                       {/* Вставка ссылки на колонку: названия у площадок длиной
                           в строку, и перепечатывать их руками — гарантированная
                           опечатка. */}
-                      {isFormula && (
+                      {isFormula && (!spec.formula || editing[f.name]) && (
                         <select
                           value=""
                           onChange={(e) => {
@@ -608,7 +592,7 @@ export function PartnerReportsPage() {
                           <option value="">+ колонка</option>
                           {preview.columns.filter(Boolean).map((c) => (
                             <option key={c} value={c}>
-                              {columnHint(preview, c)}
+                              {c}
                             </option>
                           ))}
                         </select>
@@ -646,10 +630,10 @@ export function PartnerReportsPage() {
 
               {preview.preview.length > 0 && (
                 <>
-                  {/* СТРОКИ БЕЗ ТРЕКА — отдельным взглядом: в файле их полтора
-                      десятка на семь сотен, и искать их глазами по таблице
-                      бессмысленно. Сервер присылает их все, даже те, что лежат
-                      в середине файла. */}
+                  {/* СТРОКИ, КОТОРЫХ НЕТ В НОМЕНКЛАТУРЕ, — отдельным взглядом:
+                      в файле их полтора десятка на семь сотен, и искать их
+                      глазами бессмысленно. Это не только «нет артикула»: код
+                      может стоять, а трека с таким кодом у нас не быть. */}
                   {unmatchedRows.length > 0 && (
                     <div className="mt-4 flex flex-wrap items-center gap-3">
                       <button
@@ -659,10 +643,11 @@ export function PartnerReportsPage() {
                       >
                         {onlyUnmatched
                           ? 'Показать все строки'
-                          : `Показать строки без трека (${preview.totals.unmatched})`}
+                          : `Показать строки, которых нет в номенклатуре (${preview.totals.unmatched})`}
                       </button>
                       <span className="text-[12.5px] text-text-muted">
-                        В такие строки артикул можно вписать руками — прямо в таблице.
+                        Артикул не указан в отчёте или его нет в нашем каталоге. Можно вписать
+                        руками — прямо в таблице.
                         {unmatchedRows.length < preview.totals.unmatched &&
                           ` Показаны первые ${unmatchedRows.length}.`}
                       </span>
@@ -690,23 +675,12 @@ export function PartnerReportsPage() {
                                 по названию помечен, это догадка сервиса, а не
                                 данные площадки), у ненайденной — поле ввода. */}
                             <td className={`${td} font-mono`}>
+                              {/* Артикул, подобранный по названию, показан как
+                                  обычный: он привязан к треку и это такой же
+                                  факт, как код из файла. Пометка сбоку заставляла
+                                  бы перепроверять то, что проверять не нужно. */}
                               {r.matched ? (
-                                <>
-                                  {r.sku || '—'}
-                                  {r.matched_by === 'name' && (
-                                    <span
-                                      className="ml-1 text-[11px] text-accent font-sans"
-                                      title="Артикул подобран по названию и исполнителю — в файле его нет"
-                                    >
-                                      подобран
-                                    </span>
-                                  )}
-                                  {r.matched_by === 'manual' && (
-                                    <span className="ml-1 text-[11px] text-accent font-sans">
-                                      вписан
-                                    </span>
-                                  )}
-                                </>
+                                r.sku || '—'
                               ) : (
                                 <div className="flex flex-col gap-1">
                                   <input
@@ -734,8 +708,8 @@ export function PartnerReportsPage() {
                             <td className={td}>{r.title || '—'}</td>
                             <td className={td}>{r.artist || '—'}</td>
                             <td className={`${td} tabular-nums`}>{r.quantity ?? '—'}</td>
-                            <td className={`${td} tabular-nums`}>{r.amount_author}</td>
-                            <td className={`${td} tabular-nums`}>{r.amount_related}</td>
+                            <td className={`${td} tabular-nums`}>{amount(r.amount_author)}</td>
+                            <td className={`${td} tabular-nums`}>{amount(r.amount_related)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -744,9 +718,10 @@ export function PartnerReportsPage() {
 
                   <div className="mt-4 text-[13px] text-text">
                     Всего строк: <b className="tabular-nums">{preview.totals.rows}</b> · авторские{' '}
-                    <b className="tabular-nums">{preview.totals.amount_author} ₽</b> · смежные{' '}
-                    <b className="tabular-nums">{preview.totals.amount_related} ₽</b> · итого{' '}
-                    <b className="tabular-nums">{preview.totals.total} ₽</b>
+                    <b className="tabular-nums">{formatMoney(preview.totals.amount_author)}</b> ·
+                    смежные{' '}
+                    <b className="tabular-nums">{formatMoney(preview.totals.amount_related)}</b> ·
+                    итого <b className="tabular-nums">{formatMoney(preview.totals.total)}</b>
                   </div>
 
                   {/* Эти два числа — главное, что нужно увидеть ДО загрузки:
@@ -754,16 +729,14 @@ export function PartnerReportsPage() {
                       непрочитанной суммой лягут нулями. */}
                   {(preview.totals.no_sku > 0 || preview.totals.problem_rows > 0) && (
                     <div className="mt-2 text-[12.5px] text-danger">
-                      {preview.totals.no_sku > 0 && (
-                        <div>
-                          Без артикула в файле: {preview.totals.no_sku} строк, из них подобрано по
-                          названию и исполнителю: {preview.totals.matched_by_name}.
-                        </div>
-                      )}
+                      {/* Одно число вместо трёх: сколько строк не привязалось
+                          к номенклатуре. Подобранные считаются привязанными —
+                          проверять их человек не будет, и рассказывать о них
+                          нечего. */}
                       {preview.totals.unmatched > 0 && (
                         <div>
-                          Не нашлось трека в каталоге: {preview.totals.unmatched} строк — они
-                          загрузятся неразнесёнными.
+                          Нет в номенклатуре: {preview.totals.unmatched} строк — они загрузятся
+                          неразнесёнными.
                         </div>
                       )}
                       {preview.totals.problem_rows > 0 && (
@@ -786,7 +759,7 @@ export function PartnerReportsPage() {
                       {busy ? 'Загружаем…' : 'Загрузить отчёт'}
                     </Button>
                     <span className="text-[12.5px] text-text-muted">
-                      период: {range.from} — {range.to}
+                      период: {ru(range.from)} — {ru(range.to)}
                     </span>
                     <label className="flex items-center gap-2 text-[13px] text-text-secondary select-none">
                       <input
@@ -814,7 +787,7 @@ export function PartnerReportsPage() {
           <div className="text-sm font-semibold text-text">Загруженные отчёты</div>
           {totals && reports.length > 0 && (
             <div className="text-[12.5px] text-text-muted tabular-nums">
-              авторские {totals.author} ₽ · смежные {totals.related} ₽
+              авторские {formatMoney(totals.author)} · смежные {formatMoney(totals.related)}
             </div>
           )}
         </div>
@@ -853,8 +826,8 @@ export function PartnerReportsPage() {
                     >
                       {r.unmatched_count || '—'}
                     </td>
-                    <td className={`${td} tabular-nums`}>{r.total_author}</td>
-                    <td className={`${td} tabular-nums`}>{r.total_related}</td>
+                    <td className={`${td} tabular-nums`}>{amount(r.total_author)}</td>
+                    <td className={`${td} tabular-nums`}>{amount(r.total_related)}</td>
                     <td className={`${td} text-right`}>
                       {manage && (
                         <button
