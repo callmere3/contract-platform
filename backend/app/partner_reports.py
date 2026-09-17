@@ -501,21 +501,35 @@ def suggest_mapping(columns: list) -> dict:
     предпросмотр. Поэтому список синонимов короткий и без фантазии — то, что
     реально встречается в отчётах площадок.
     """
+    # Слова взяты из настоящих отчётов, а не придуманы: у МТС артикул зовётся
+    # «Код объекта Контента», количество — «Кол-во Продаж», название — «Название
+    # объекта Контента». «№» стоит ПОСЛЕДНИМ: в отчёте МТС это порядковый номер
+    # строки, а не артикул, и попасться на него легко.
     hints = {
-        "sku": ("артикул", "код", "sku", "код товара", "№", "номер"),
-        "title": ("наименование", "название", "трек", "title", "track"),
-        "quantity": ("количество", "прослушивания", "quantity", "streams", "кол-во"),
+        "sku": ("код объекта", "артикул", "код товара", "sku", "код", "номер", "№"),
+        "title": ("название объекта", "наименование", "название", "трек", "title", "track"),
+        "quantity": ("кол-во продаж", "количество", "кол-во", "прослушивания", "quantity", "streams"),
         "amount_author": ("сумма авт", "авторские", "сумма авторских", "author"),
         "amount_related": ("сумма смж", "смежные", "сумма смежных", "related", "master"),
     }
     mapping = {}
     used = set()
+    # Идём ПО СЛОВАМ, а не по колонкам: порядок слов — это приоритет. Иначе
+    # побеждает первый столбец файла, и в отчёте МТС артикулом становится «№»
+    # (порядковый номер строки), потому что он стоит слева от «Кода объекта».
     for field_name, words in hints.items():
-        for column in columns:
-            key = normalize_header(column)
-            if not key or column in used:
-                continue
-            if any(key == w or key.startswith(w) for w in words):
+        for word in words:
+            column = next(
+                (
+                    c
+                    for c in columns
+                    if c not in used
+                    and normalize_header(c)
+                    and (normalize_header(c) == word or normalize_header(c).startswith(word))
+                ),
+                None,
+            )
+            if column:
                 mapping[field_name] = {"column": column}
                 used.add(column)
                 break
