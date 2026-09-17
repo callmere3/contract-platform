@@ -30,6 +30,7 @@ export function PartnerCardModal({ partner, level, isTop, onChanged }) {
   const { role } = useAuth();
 
   const [name, setName] = useState(partner.name);
+  const [distaId, setDistaId] = useState(partner.dista_id ?? '');
   const [editing, setEditing] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -41,7 +42,7 @@ export function PartnerCardModal({ partner, level, isTop, onChanged }) {
     setBusy(true);
     setError('');
     try {
-      await renamePartner(partner.id, name.trim());
+      await renamePartner(partner.id, name.trim(), distaId.trim());
       onChanged?.();
       closeModal();
     } catch (e) {
@@ -108,6 +109,7 @@ export function PartnerCardModal({ partner, level, isTop, onChanged }) {
               size="sm"
               onClick={() => {
                 setName(partner.name);
+                setDistaId(partner.dista_id ?? '');
                 setEditing(false);
               }}
             >
@@ -125,12 +127,24 @@ export function PartnerCardModal({ partner, level, isTop, onChanged }) {
       }
     >
       {editing ? (
-        <NameField value={name} onChange={setName} onSubmit={save} />
-      ) : (
-        <div className="text-[13px] text-text-secondary leading-relaxed">
-          У партнёра нет других полей: он нужен, чтобы поступление было к кому отнести. Договор,
-          реквизиты и ставки живут в карточке контрагента.
+        <div className="flex flex-col gap-4">
+          <NameField value={name} onChange={setName} onSubmit={save} />
+          <DistaField value={distaId} onChange={setDistaId} onSubmit={save} />
         </div>
+      ) : (
+        <>
+          <div className="text-[13px] mb-4">
+            <span className="text-text-secondary">Код в Dista: </span>
+            <span className="text-text tabular-nums">
+              {partner.dista_id || 'не проставлен'}
+            </span>
+          </div>
+          <div className="text-[13px] text-text-secondary leading-relaxed">
+            Других полей у партнёра нет: он нужен, чтобы поступление было к кому отнести, а код —
+            чтобы сверяться с Dista по нему, а не по названию. Договор, реквизиты и ставки живут в
+            карточке контрагента.
+          </div>
+        </>
       )}
       {error && <div className="text-[13px] text-danger mt-3">{error}</div>}
     </Modal>
@@ -141,6 +155,7 @@ export function PartnerCardModal({ partner, level, isTop, onChanged }) {
 export function NewPartnerModal({ level, isTop, onSaved }) {
   const { closeModal } = useModal();
   const [name, setName] = useState('');
+  const [distaId, setDistaId] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -148,7 +163,7 @@ export function NewPartnerModal({ level, isTop, onSaved }) {
     setBusy(true);
     setError('');
     try {
-      await createPartner(name.trim());
+      await createPartner(name.trim(), distaId.trim());
       onSaved?.();
       closeModal();
     } catch (e) {
@@ -176,7 +191,12 @@ export function NewPartnerModal({ level, isTop, onSaved }) {
         </>
       }
     >
-      <NameField value={name} onChange={setName} onSubmit={save} autoFocus />
+      <div className="flex flex-col gap-4">
+        <NameField value={name} onChange={setName} onSubmit={save} autoFocus />
+        {/* Код можно не знать сейчас — проставят при сверке. Обязательным его
+            делать нельзя: часть площадок живёт у нас и без Dista. */}
+        <DistaField value={distaId} onChange={setDistaId} onSubmit={save} />
+      </div>
       {error && <div className="text-[13px] text-danger mt-3">{error}</div>}
     </Modal>
   );
@@ -251,8 +271,9 @@ export function PartnersImportExportModal({ level, isTop, onImported }) {
 
       <div className="text-sm font-semibold text-text mb-1.5">Импорт</div>
       <div className="text-[13px] text-text-secondary mb-3">
-        Одна колонка, по строке на партнёра. Шапка необязательна. Уже известные имена
-        пропускаются — задвоить справочник импортом нельзя.
+        Две колонки: название и код Dista, по строке на партнёра. Шапка необязательна, код
+        можно не заполнять. Сопоставление идёт сначала по коду, потом по названию: знакомый код
+        переименует партнёра, знакомое название получит код.
       </div>
       <label className="inline-block">
         <input
@@ -268,10 +289,16 @@ export function PartnersImportExportModal({ level, isTop, onImported }) {
 
       {report && (
         <div className="mt-4 text-[13px] text-text">
-          Добавлено: <b>{report.created}</b> · пропущено как известные: <b>{report.skipped}</b>
+          Добавлено: <b>{report.created}</b> · обновлено: <b>{report.updated}</b> · без изменений:{' '}
+          <b>{report.skipped}</b>
           {report.names.length > 0 && (
             <div className="text-[12.5px] text-text-secondary mt-1.5">
               {report.names.join(', ')}
+            </div>
+          )}
+          {report.conflicts?.length > 0 && (
+            <div className="text-[12.5px] text-danger mt-2">
+              Пропущены из-за конфликта: {report.conflicts.join('; ')}
             </div>
           )}
         </div>
@@ -280,6 +307,25 @@ export function PartnersImportExportModal({ level, isTop, onImported }) {
     </Modal>
   );
 }
+
+/** Код Dista: необязателен, проставляется при сверке. */
+function DistaField({ value, onChange, onSubmit }) {
+  return (
+    <label className="block">
+      <span className="block text-[12.5px] text-text-secondary mb-1.5">Код в Dista</span>
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') onSubmit();
+        }}
+        placeholder="необязательно"
+        className="w-full bg-input-bg border border-border rounded-input px-3.5 py-2.5 text-sm text-text outline-none font-sans tabular-nums"
+      />
+    </label>
+  );
+}
+
 
 /** Поле имени: Enter сохраняет — окно из одного поля, тянуться к кнопке незачем. */
 function NameField({ value, onChange, onSubmit, autoFocus = false }) {

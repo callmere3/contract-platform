@@ -50,10 +50,13 @@ export function Modal({
           <span className="text-[15px] font-semibold text-text min-w-0 truncate">{title}</span>
           <div className="flex items-center gap-2 flex-shrink-0">
             {actions}
+            {/* Крестик и значки рядом — 32 пикселя и жирное начертание
+                (17.09.2026, просьба владельца): в 28 пикселей и обычным весом
+                они читались как мелкие серые точки, особенно карандаш. */}
             <button
               onClick={onClose}
               aria-label="Закрыть"
-              className="w-7 h-7 rounded-full border border-border flex items-center justify-center text-sm text-text-secondary cursor-pointer bg-transparent"
+              className="w-8 h-8 rounded-full border border-border flex items-center justify-center text-[20px] leading-none font-semibold text-text-secondary cursor-pointer bg-transparent hover:text-text"
             >
               ×
             </button>
@@ -91,8 +94,8 @@ export function ModalAction({ icon, title, onClick, danger = false, disabled = f
       title={title}
       aria-label={title}
       disabled={disabled}
-      className={`w-7 h-7 rounded-full border border-border flex items-center justify-center text-[13px] cursor-pointer bg-transparent disabled:opacity-40 disabled:cursor-default ${
-        danger ? 'text-danger' : 'text-text-secondary'
+      className={`w-8 h-8 rounded-full border border-border flex items-center justify-center text-[15px] leading-none font-semibold cursor-pointer bg-transparent disabled:opacity-40 disabled:cursor-default ${
+        danger ? 'text-danger' : 'text-text-secondary hover:text-text'
       }`}
     >
       {icon}

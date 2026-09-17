@@ -693,6 +693,12 @@ class Partner(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     name: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    # Код площадки в Dista — чтобы сверяться с ней по коду, а не по имени.
+    # Имена площадок расходятся первыми («Яндекс Музыка» против «Yandex
+    # Music»), а код не меняется. Та же роль, что у dista_id контрагента, и
+    # те же свойства: связь 1:1 (unique) и nullable — у части партнёров кода
+    # не будет, пока его не проставят.
+    dista_id: Mapped[str | None] = mapped_column(String(32), unique=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

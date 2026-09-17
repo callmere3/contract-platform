@@ -9,7 +9,7 @@ import { API, apiFetch, apiJson } from './client';
  * контрагентов и в самих отчётах.
  */
 
-/** Список: { partners: [{id, name}], total, page, page_size }. */
+/** Список: { partners: [{id, name, dista_id}], total, page, page_size }. */
 export function listPartners({ q, page, pageSize } = {}) {
   const params = new URLSearchParams();
   if (q) params.set('q', q);
@@ -18,16 +18,24 @@ export function listPartners({ q, page, pageSize } = {}) {
   return apiJson(`${API}/partners?${params}`);
 }
 
-export function createPartner(name) {
+export function createPartner(name, distaId = '') {
   const body = new FormData();
   body.append('name', name);
+  if (distaId) body.append('dista_id', distaId);
   return apiJson(`${API}/partners`, { method: 'POST', body });
 }
 
-/** Переименовать — единственная правка, какая у партнёра есть. */
-export function renamePartner(id, name) {
+/**
+ * Правка партнёра: имя и код Dista — других полей у него нет.
+ *
+ * Код шлём ВСЕГДА, даже пустым: на сервере «не прислали» и «прислали пусто» —
+ * разные вещи (не трогать против очистить), а форма показывает оба поля
+ * сразу, и пустое поле здесь означает именно «кода нет».
+ */
+export function renamePartner(id, name, distaId = '') {
   const body = new FormData();
   body.append('name', name);
+  body.append('dista_id', distaId);
   return apiJson(`${API}/partners/${id}`, { method: 'PATCH', body });
 }
 

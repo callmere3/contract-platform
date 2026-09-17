@@ -30,7 +30,7 @@ import uuid
 import openpyxl
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.audit import log_action
@@ -47,7 +47,10 @@ partners_router = APIRouter(
 )
 
 MAX_NAME = 255
-EXCEL_COLUMNS = ("Партнёр",)
+MAX_DISTA_ID = 32
+# Две колонки: имя и код в Dista. Порядок тот же, в каком их отдаёт экспорт —
+# файл должен заливаться обратно без правки руками.
+EXCEL_COLUMNS = ("Партнёр", "Dista ID")
 
 
 def _normalized(name: str) -> str:
@@ -74,8 +77,38 @@ def _taken(db: Session, name: str, exclude: uuid.UUID | None = None) -> bool:
     )
 
 
+def _clean_dista_id(value) -> str | None:
+    """
+    Код в Dista из запроса или ячейки. Пусто — None: «кода нет» и «код пустая
+    строка» должны быть одним и тем же, иначе UNIQUE поймает второй пустой.
+
+    Из Excel код нередко приезжает числом (1234 → «1234.0» при наивном
+    приведении), поэтому дробную часть целого числа срезаем явно.
+    """
+    if value is None:
+        return None
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    text = " ".join(str(value).split())
+    if not text:
+        return None
+    return text[:MAX_DISTA_ID]
+
+
+def _dista_taken(db: Session, dista_id: str, exclude: uuid.UUID | None = None) -> bool:
+    """Занят ли код другим партнёром: связь с Dista — один к одному."""
+    rows = db.execute(
+        select(Partner.id).where(Partner.dista_id == dista_id)
+    ).scalars().all()
+    return any(pid != exclude for pid in rows)
+
+
 def _out(partner: Partner) -> dict:
-    return {"id": str(partner.id), "name": partner.name}
+    return {
+        "id": str(partner.id),
+        "name": partner.name,
+        "dista_id": partner.dista_id,
+    }
 
 
 @partners_router.get("")
@@ -86,7 +119,7 @@ def list_partners(
     db: Session = Depends(get_session),
 ) -> dict:
     """
-    Список с поиском по имени. Постранично — как у контрагентов, хотя
+    Список с поиском по имени и коду Dista. Постранично — как у контрагентов, хотя
     партнёров будут десятки: единообразие списков дороже пары сэкономленных
     строк, и экран не придётся переделывать, когда их станет много.
     """
@@ -95,7 +128,10 @@ def list_partners(
 
     query = select(Partner)
     if q and q.strip():
-        query = query.where(Partner.name.ilike(f"%{q.strip()}%"))
+        # Ищем и по имени, и по коду Dista: человек, у которого в руках
+        # строчка их отчёта, держит чаще код, чем название.
+        like = f"%{q.strip()}%"
+        query = query.where(or_(Partner.name.ilike(like), Partner.dista_id.ilike(like)))
 
     total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
     partners = db.scalars(
@@ -118,15 +154,22 @@ def import_partners(
     current_user: User = Depends(get_current_user),
 ) -> dict:
     """
-    Импорт из .xlsx: ОДНА КОЛОНКА — имя партнёра, по строке на партнёра.
+    Импорт из .xlsx: ДВЕ КОЛОНКИ — имя партнёра и его код в Dista, по строке
+    на партнёра. Код необязателен: часть площадок живёт у нас и без него.
 
-    Шапка необязательна и узнаётся по содержимому («Партнёр»/«Название»): файл
-    из одной колонки человек нередко собирает руками, сразу с данных, и
-    пропускать первую строку вслепую значит терять первого партнёра. Та же
-    логика, что в импорте номенклатуры.
+    Шапка необязательна и узнаётся по содержимому: файл на две колонки
+    человек нередко собирает руками, сразу с данных, и пропускать первую
+    строку вслепую значит терять первого партнёра. Та же логика, что в
+    импорте номенклатуры.
 
-    Уже известные имена пропускаются, а не задваиваются и не обновляются:
-    обновлять у партнёра нечего, кроме самого имени, а имя и есть ключ.
+    СОПОСТАВЛЯЕМ СНАЧАЛА ПО КОДУ, потом по имени. Код — то, ради чего он
+    здесь и появился: имена площадок расходятся первыми («Яндекс Музыка»
+    против «Yandex Music»), а код не меняется. Поэтому строка с известным
+    кодом ПЕРЕИМЕНОВЫВАЕТ партнёра, а строка с известным именем и новым кодом
+    этот код ему проставляет — так справочник и сверяется с Dista.
+
+    Строка, у которой код занят другим партнёром, пропускается с причиной:
+    связь 1:1, и молча перевесить её на другого нельзя.
     """
     if not (file.filename or "").endswith(".xlsx"):
         raise HTTPException(400, "Ожидается файл .xlsx")
@@ -135,26 +178,63 @@ def import_partners(
     except Exception as exc:
         raise HTTPException(400, f"Не удалось прочитать файл: {exc}")
 
-    known = {_normalized(name) for name in db.scalars(select(Partner.name))}
+    partners = db.scalars(select(Partner)).all()
+    by_name = {_normalized(p.name): p for p in partners}
+    by_code = {p.dista_id: p for p in partners if p.dista_id}
+
     created: list[str] = []
+    updated: list[str] = []
     skipped = 0
+    conflicts: list[str] = []
 
     for row in wb.active.iter_rows(values_only=True):
-        raw = row[0] if row else None
-        text = " ".join(str(raw or "").split())
-        if not text:
+        name = " ".join(str((row[0] if row else None) or "").split())
+        code = _clean_dista_id(row[1] if row and len(row) > 1 else None)
+        if not name:
             continue
-        if text.casefold() in {"партнёр", "партнер", "название", "имя"}:
+        if name.casefold() in {"партнёр", "партнер", "название", "имя"}:
             continue  # шапка, где бы она ни стояла
-        key = _normalized(text)
-        if key in known:
-            skipped += 1
-            continue
-        db.add(Partner(id=uuid.uuid4(), name=text[:MAX_NAME]))
-        known.add(key)
-        created.append(text)
 
-    if created:
+        name = name[:MAX_NAME]
+        key = _normalized(name)
+        existing = by_code.get(code) if code else None
+        if existing is None:
+            existing = by_name.get(key)
+
+        # Код уже закреплён за КЕМ-ТО ДРУГИМ — это не повод молча перевесить.
+        if code and by_code.get(code) not in (None, existing):
+            conflicts.append(f"{name}: код {code} уже у «{by_code[code].name}»")
+            continue
+        # Имя занято другим партнёром (нашли по коду, а имя чужое).
+        if existing is not None and by_name.get(key) not in (None, existing):
+            conflicts.append(f"{name}: это имя уже у другого партнёра")
+            continue
+
+        if existing is None:
+            partner = Partner(id=uuid.uuid4(), name=name, dista_id=code)
+            db.add(partner)
+            by_name[key] = partner
+            if code:
+                by_code[code] = partner
+            created.append(name)
+            continue
+
+        changed = False
+        if existing.name != name:
+            by_name.pop(_normalized(existing.name), None)
+            existing.name = name
+            by_name[key] = existing
+            changed = True
+        if code and existing.dista_id != code:
+            existing.dista_id = code
+            by_code[code] = existing
+            changed = True
+        if changed:
+            updated.append(name)
+        else:
+            skipped += 1
+
+    if created or updated:
         db.commit()
     # Одна запись на прогон, а не на партнёра: журнал недавно чистили от шума.
     log_action(
@@ -162,10 +242,22 @@ def import_partners(
         current_user,
         "partner.import",
         entity_type="partner",
-        meta={"file": file.filename, "created": len(created), "skipped": skipped},
+        meta={
+            "file": file.filename,
+            "created": len(created),
+            "updated": len(updated),
+            "skipped": skipped,
+            "conflicts": len(conflicts),
+        },
     )
     db.commit()
-    return {"created": len(created), "skipped": skipped, "names": created[:50]}
+    return {
+        "created": len(created),
+        "updated": len(updated),
+        "skipped": skipped,
+        "names": created[:50],
+        "conflicts": conflicts[:20],
+    }
 
 
 @partners_router.get("/export")
@@ -178,8 +270,10 @@ def export_partners(db: Session = Depends(get_session)) -> StreamingResponse:
     ws = wb.active
     ws.title = "Партнёры"
     ws.append(list(EXCEL_COLUMNS))
-    for name in db.scalars(select(Partner.name).order_by(Partner.name)):
-        ws.append([name])
+    for name, code in db.execute(
+        select(Partner.name, Partner.dista_id).order_by(Partner.name)
+    ):
+        ws.append([name, code or ""])
 
     buffer = io.BytesIO()
     wb.save(buffer)
@@ -194,20 +288,24 @@ def export_partners(db: Session = Depends(get_session)) -> StreamingResponse:
 @partners_router.post("", dependencies=[Depends(require_role(*CAN_MANAGE_PARTNERS))])
 def create_partner(
     name: str = Form(...),
+    dista_id: str | None = Form(None),
     db: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> dict:
-    """Завести партнёра. Повтор имени — 409, а не молчаливое согласие."""
+    """Завести партнёра. Повтор имени или кода — 409, а не молчаливое согласие."""
     clean = _clean(name)
     if _taken(db, clean):
         raise HTTPException(409, f"Партнёр «{clean}» уже есть")
+    code = _clean_dista_id(dista_id)
+    if code and _dista_taken(db, code):
+        raise HTTPException(409, f"Код Dista «{code}» уже закреплён за другим партнёром")
 
-    partner = Partner(id=uuid.uuid4(), name=clean)
+    partner = Partner(id=uuid.uuid4(), name=clean, dista_id=code)
     db.add(partner)
     db.commit()
     log_action(
         db, current_user, "partner.create", entity_type="partner",
-        entity_id=partner.id, meta={"name": clean},
+        entity_id=partner.id, meta={"name": clean, "dista_id": code},
     )
     db.commit()
     return _out(partner)
@@ -219,12 +317,17 @@ def create_partner(
 def rename_partner(
     partner_id: uuid.UUID,
     name: str = Form(...),
+    dista_id: str | None = Form(None),
     db: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> dict:
     """
-    Переименовать. Единственная правка, какая у партнёра может быть, — больше
-    у него полей нет.
+    Правка партнёра: имя и код в Dista. Больше у него полей нет.
+
+    `dista_id` не передан — код не трогаем; передана пустая строка — код
+    очищается. Та же семантика, что у правки контрагента: «не прислали» и
+    «прислали пусто» — разные вещи, иначе любое переименование стирало бы
+    связь с Dista.
     """
     partner = db.get(Partner, partner_id)
     if partner is None:
@@ -236,10 +339,18 @@ def rename_partner(
 
     was = partner.name
     partner.name = clean
+
+    if dista_id is not None:
+        code = _clean_dista_id(dista_id)
+        if code and _dista_taken(db, code, exclude=partner_id):
+            raise HTTPException(409, f"Код Dista «{code}» уже закреплён за другим партнёром")
+        partner.dista_id = code
+
     db.commit()
     log_action(
         db, current_user, "partner.rename", entity_type="partner",
-        entity_id=partner.id, meta={"was": was, "name": clean},
+        entity_id=partner.id,
+        meta={"was": was, "name": clean, "dista_id": partner.dista_id},
     )
     db.commit()
     return _out(partner)
