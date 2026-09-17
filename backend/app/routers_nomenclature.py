@@ -1,14 +1,28 @@
 """
 Номенклатура — каталог треков лейбла (ML Finance).
 
-  GET /nomenclature            — список с поиском и фильтрами
-  GET /nomenclature/{track_id} — карточка трека: все поля выгрузки
+  GET   /nomenclature            — список с поиском и фильтрами
+  GET   /nomenclature/owners     — подсказки по правообладателям
+  GET   /nomenclature/{track_id} — карточка трека: все поля выгрузки
+  PATCH /nomenclature/{track_id} — правка карточки руками
 
-ТОЛЬКО ЧТЕНИЕ. Каталог наполняется импортом выгрузки из Dista
-(`ops/import_tracks.py`), а не руками через интерфейс: в день приезжает
-несколько десятков строк, и каждая несёт полное состояние трека — доли,
-ставки, правообладателей. Ручная правка одной ячейки рядом с таким импортом
-означала бы, что следующая же выгрузка молча её затрёт.
+ОСНОВНОЙ ПУТЬ ДАННЫХ — ИМПОРТ выгрузки из Dista (`ops/import_tracks.py` и
+`/import/apply`): в день приезжает несколько десятков строк, и каждая несёт
+полное состояние трека — доли, ставки, правообладателей.
+
+РУЧНАЯ ПРАВКА КАРТОЧКИ (17.09.2026, просьба владельца) этого не отменяет и
+живёт рядом с ним с открытым глазами компромиссом: правка держится до
+следующего импорта ТОГО ЖЕ артикула — строка файла замещает состав прав
+целиком и не спрашивает, правил ли кто-то карточку руками. Иначе пришлось бы
+завести «поле правили руками, не трогать», то есть второй источник правды в
+каждой ячейке. Поэтому правка — для того, чтобы поправить одну позицию
+здесь и сейчас, а не чтобы вести каталог в обход Dista.
+
+ПРАВИЛА ПРОВЕРКИ У ПРАВКИ ТЕ ЖЕ, ЧТО У ИМПОРТА, и берутся они из того же
+модуля (`nomenclature_import.check_required` / `check_shares`): обязательные
+поля и СВЕРКА ДОЛЕЙ ПРАВООБЛАДАТЕЛЕЙ СО СПРАВОЧНЫМИ — отдельно по авторским
+и смежным. Разойдись эти две калитки, и руками заводилось бы то, что импорт
+принять отказывается.
 
 ПОИСК ПО ПОДСТРОКЕ ДЕРЖИТСЯ НА ТРИГРАММНЫХ ИНДЕКСАХ (pg_trgm, миграция
 d8c3e15a90f4). Без них `ILIKE '%текст%'` читает все 121 тысячу строк — так и
@@ -33,6 +47,7 @@ from decimal import Decimal
 import openpyxl
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, insert, or_, select, update
 from sqlalchemy.orm import Session
 
@@ -43,13 +58,20 @@ from app.models import Contragent, Track, TrackRight, User
 from app.nomenclature_import import (
     AUTHOR,
     COLUMNS,
+    MAX_LEN,
     RELATED,
+    RIGHT_LABELS,
     RIGHT_SLOTS,
     OwnerIndex,
+    check_required,
+    check_shares,
+    parse_date,
     read_pasted,
     read_rows,
+    share_percent,
 )
 from app.roles import (
+    CAN_EDIT_NOMENCLATURE,
     CAN_EXPORT_NOMENCLATURE,
     CAN_IMPORT_NOMENCLATURE,
     CAN_VIEW_NOMENCLATURE,
@@ -147,6 +169,15 @@ def _summary(track: Track, rights: dict) -> dict:
     }
 
 
+def _escape_like(value: str) -> str:
+    """
+    Экранируем подстановки LIKE. Человек, набравший «50%» или «mix_1», ищет
+    именно эти символы, а не «что угодно после 50»: в артикулах и названиях
+    и то и другое встречается.
+    """
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def _filtered_tracks(
     q: str | None,
     owner: str | None,
@@ -154,6 +185,7 @@ def _filtered_tracks(
     include_archived: bool,
     contragent_id: uuid.UUID | None = None,
     case_sensitive: bool = False,
+    exact: bool = False,
 ):
     """
     Общий сбор фильтров для списка и выгрузки: экспорт обязан отдавать ровно
@@ -165,34 +197,45 @@ def _filtered_tracks(
     и «ООО ГУСТ МЬЮЗИК» как два разных правообладателя, и различить их без
     точного поиска нечем.
 
+    `exact` — галочка «точное совпадение»: поле должно совпасть со строкой
+    поиска ЦЕЛИКОМ, а не содержать её. Нужно там же, где и регистр: «Густ» в
+    поиске правообладателя выдаёт и «ООО Густ Мьюзик», и «Густ Мьюзик KZ», а
+    свести отчёт надо по одному из них.
+
     На скорости это не сказывается: триграммные индексы (pg_trgm) работают и
-    с LIKE, и с ILIKE.
+    с LIKE, и с ILIKE. Точное совпадение сделано ТЕМ ЖЕ LIKE без подстановок,
+    а не через `lower(col) = ...`: равенство с функцией не попадает ни в один
+    наш индекс, а LIKE без «%» попадает в триграммный.
     """
-    def like_of(column, pattern: str):
-        return column.like(pattern) if case_sensitive else column.ilike(pattern)
+    def like_of(column, value: str):
+        pattern = _escape_like(value) if exact else f"%{_escape_like(value)}%"
+        return (
+            column.like(pattern, escape="\\")
+            if case_sensitive
+            else column.ilike(pattern, escape="\\")
+        )
 
     query = select(Track)
     if not include_archived:
         query = query.where(Track.archived_at.is_(None))
     if q and q.strip():
-        like = f"%{q.strip()}%"
+        needle = q.strip()
         query = query.where(
             or_(
-                like_of(Track.sku, like),
-                like_of(Track.code, like),
-                like_of(Track.title, like),
-                like_of(Track.artist, like),
+                like_of(Track.sku, needle),
+                like_of(Track.code, needle),
+                like_of(Track.title, needle),
+                like_of(Track.artist, needle),
             )
         )
     if owner and owner.strip():
         # EXISTS, а не JOIN: у трека несколько строк прав, и join размножил бы
         # его в выдаче — пришлось бы городить DISTINCT и ломать пагинацию.
-        owner_like = f"%{owner.strip()}%"
         query = query.where(
             select(TrackRight.id)
             .where(
                 TrackRight.track_id == Track.id,
-                like_of(TrackRight.owner, owner_like),
+                like_of(TrackRight.owner, owner.strip()),
             )
             .exists()
         )
@@ -220,6 +263,7 @@ def list_tracks(
     catalog: str | None = None,
     contragent_id: uuid.UUID | None = None,
     case_sensitive: bool = False,
+    exact: bool = False,
     include_archived: bool = False,
     page: int = 1,
     page_size: int = DEFAULT_PAGE_SIZE,
@@ -251,7 +295,7 @@ def list_tracks(
     page_size = max(1, min(page_size, MAX_PAGE_SIZE))
 
     query = _filtered_tracks(
-        q, owner, catalog, include_archived, contragent_id, case_sensitive
+        q, owner, catalog, include_archived, contragent_id, case_sensitive, exact
     )
 
     total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
@@ -297,6 +341,7 @@ def export_tracks(
     catalog: str | None = None,
     contragent_id: uuid.UUID | None = None,
     case_sensitive: bool = False,
+    exact: bool = False,
     include_archived: bool = False,
     db: Session = Depends(get_session),
 ) -> StreamingResponse:
@@ -320,7 +365,7 @@ def export_tracks(
     ws.append(list(COLUMNS))
 
     ids = _filtered_tracks(
-        q, owner, catalog, include_archived, contragent_id, case_sensitive
+        q, owner, catalog, include_archived, contragent_id, case_sensitive, exact
     ).with_only_columns(Track.id)
     # КОЛОНКАМИ, А НЕ ОБЪЕКТАМИ ORM. Сначала здесь было select(Track, TrackRight),
     # и выгрузка всего каталога занимала 93 секунды: на каждую из 244 тысяч
@@ -836,6 +881,51 @@ def import_apply(
     }
 
 
+@nomenclature_router.get("/owners")
+def owner_suggestions(
+    q: str | None = None, db: Session = Depends(get_session)
+) -> dict:
+    """
+    Подсказки для поля правообладателя в форме правки: титлы карточек
+    контрагентов.
+
+    ИМЕННО КАРТОЧКИ, а не имена, встречавшиеся в каталоге: смысл правки в
+    том, чтобы право получило ССЫЛКУ на карточку, а имя, которого в базе нет,
+    ссылки не даст и потребует заводить карточку. Подсказывать то, что заведомо
+    приведёт к лишнему вопросу, незачем.
+
+    Маршрут зарегистрирован ДО `/{track_id}` — иначе FastAPI попробует
+    разобрать «owners» как uuid и ответит 422 (та же грабля, что с
+    `/import` и `/export`).
+    """
+    query = select(Contragent.id, Contragent.title)
+    needle = (q or "").strip()
+    if needle:
+        query = query.where(
+            Contragent.title.ilike(f"%{_escape_like(needle)}%", escape="\\")
+        )
+    rows = db.execute(query.order_by(Contragent.title).limit(20)).all()
+    return {"owners": [{"id": str(cid), "title": title} for cid, title in rows]}
+
+
+def _card(db: Session, track: Track) -> dict:
+    """Карточка трека одним словарём — им отвечают и чтение, и правка."""
+    rights = _rights_by_track(db, [track.id]).get(track.id, {})
+    return {
+        **_summary(track, rights),
+        "authors": track.authors,
+        "album": track.album,
+        "genre": track.genre,
+        "catalog": track.catalog,
+        "share_author": percent(track.share_author),
+        "share_related": percent(track.share_related),
+        "royalty_percent": percent(track.royalty_percent),
+        "rights_since": track.rights_since.isoformat() if track.rights_since else None,
+        "source_file": track.source_file,
+        "imported_at": track.imported_at.isoformat() if track.imported_at else None,
+    }
+
+
 @nomenclature_router.get("/{track_id}")
 def track_card(track_id: uuid.UUID, db: Session = Depends(get_session)) -> dict:
     """
@@ -854,18 +944,329 @@ def track_card(track_id: uuid.UUID, db: Session = Depends(get_session)) -> dict:
     track = db.get(Track, track_id)
     if track is None:
         raise HTTPException(404, "Трек не найден")
+    return _card(db, track)
 
-    rights = _rights_by_track(db, [track.id]).get(track.id, {})
-    return {
-        **_summary(track, rights),
-        "authors": track.authors,
-        "album": track.album,
-        "genre": track.genre,
-        "catalog": track.catalog,
-        "share_author": percent(track.share_author),
-        "share_related": percent(track.share_related),
-        "royalty_percent": percent(track.royalty_percent),
-        "rights_since": track.rights_since.isoformat() if track.rights_since else None,
-        "source_file": track.source_file,
-        "imported_at": track.imported_at.isoformat() if track.imported_at else None,
+
+# ---------------------------------------------------------------------------
+# ПРАВКА КАРТОЧКИ РУКАМИ (17.09.2026)
+# ---------------------------------------------------------------------------
+
+# Подписи полей — и для отказов, и для журнала: «Наименование» понятно и
+# человеку, читающему ошибку, и тому, кто через полгода смотрит в audit_log,
+# а «title» — только нам.
+FIELD_LABELS = {
+    "sku": "Артикул",
+    "code": "Код / ISRC / UPC",
+    "title": "Наименование",
+    "artist": "Исполнитель",
+    "authors": "Автор слов/музыки",
+    "album": "Альбом",
+    "genre": "Жанр",
+    "catalog": "Каталог",
+    "share_author": "Доля авторских прав",
+    "share_related": "Доля смежных прав",
+    "royalty_percent": "Роялти",
+    "rights_since": "Дата прав",
+}
+
+# Мест под правообладателя в выгрузке Dista ТРИ на каждый вид прав, и
+# четвёртый молча не попал бы в файл: экспорт пишет фиксированные 18 ячеек
+# (см. _rights_cells). Пока формат файла такой, отказ честнее потери строки.
+MAX_RIGHTS_PER_TYPE = 3
+
+
+class RightIn(BaseModel):
+    """Строка прав из формы: вид права, имя владельца, доля и ставка."""
+
+    right_type: str
+    owner: str
+    share: str | int | float | None = None
+    royalty: str | int | float | None = None
+
+
+class TrackIn(BaseModel):
+    """
+    Карточка трека ЦЕЛИКОМ, а не изменённые поля.
+
+    Целиком — потому что правка замещает и состав прав тоже: присылай мы
+    только изменённое, сервер гадал бы, убрал человек правообладателя или
+    просто его не тронул. Тот же принцип, что у импорта, где строка файла
+    несёт полное состояние трека.
+
+    Числа и даты — СТРОКАМИ, как они и уходят наружу: доля в JSON-числе
+    превращается в 33.329999999999998, а дата — в чужой часовой пояс. Читает
+    их тот же разбор, что и файл (share_percent, parse_date), поэтому «80»,
+    «80%» и «80,5» понимаются одинаково.
+    """
+
+    sku: str
+    code: str | None = None
+    title: str
+    artist: str | None = None
+    authors: str | None = None
+    album: str | None = None
+    genre: str | None = None
+    catalog: str | None = None
+    share_author: str | int | float | None = None
+    share_related: str | int | float | None = None
+    royalty_percent: str | int | float | None = None
+    rights_since: str | None = None
+    rights: list[RightIn] = Field(default_factory=list)
+    # Заводить ли карточки контрагентов на незнакомые имена. По умолчанию НЕТ:
+    # первый ответ сервера на незнакомое имя — вопрос человеку (409 со
+    # списком и подсказками), а не тихо заведённая карточка.
+    create_missing_owners: bool = False
+
+
+def _text_in(value, label: str, field_name: str | None = None, required: bool = False):
+    """
+    Строка из формы. Длину проверяем ОТКАЗОМ, а не обрезкой, в отличие от
+    импорта: там обрезать хвост длинной подписи лучше, чем не импортировать
+    трек, а здесь человек стоит перед формой и может поправить сам — молча
+    укоротить его название значило бы подменить введённое.
+    """
+    s = str(value or "").strip()
+    if not s:
+        if required:
+            raise HTTPException(400, f"«{label}» не может быть пустым")
+        return None
+    limit = MAX_LEN.get(field_name) if field_name else None
+    if limit and len(s) > limit:
+        raise HTTPException(400, f"«{label}» длиннее {limit} символов")
+    return s
+
+
+def _percent_in(value, label: str):
+    """
+    Доля или ставка из формы — ПРОЦЕНТЫ 0–100.
+
+    Гадать по формату ячейки здесь не надо и нельзя: в форме нет ячеек, есть
+    то, что человек напечатал. «80», «80%» и «80,5» — одно и то же, а 0.8 это
+    восемь десятых процента, а не 80%: в поле, подписанном «%», иначе и быть
+    не может.
+    """
+    raw = str(value if value is not None else "").strip()
+    if not raw:
+        return None
+    parsed = share_percent(raw, False)
+    if parsed is None:
+        raise HTTPException(400, f"{label}: «{raw}» — это не число")
+    if parsed < 0:
+        raise HTTPException(400, f"{label} не может быть отрицательной")
+    if parsed > 100:
+        raise HTTPException(400, f"{label} больше 100%")
+    return parsed
+
+
+def _date_in(value):
+    """Дата прав: и ISO из <input type=date>, и «01.09.2026», набранное руками."""
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    parsed = parse_date(raw)
+    if parsed is None:
+        raise HTTPException(400, f"Дата прав: «{raw}» — это не дата")
+    return parsed
+
+
+def _rights_in(items: list) -> list[dict]:
+    """Строки прав из формы → то же представление, в каком их даёт разбор файла."""
+    rights = []
+    for item in items:
+        if item.right_type not in (AUTHOR, RELATED):
+            raise HTTPException(400, f"Неизвестный вид права: «{item.right_type}»")
+        owner = _text_in(item.owner, "Правообладатель", "owner", required=True)
+        label = RIGHT_LABELS[item.right_type]
+        rights.append(
+            {
+                "right_type": item.right_type,
+                "owner": owner,
+                "share": _percent_in(item.share, f"Доля {label} прав у «{owner}»"),
+                "royalty": _percent_in(item.royalty, f"Роялти {label} прав у «{owner}»"),
+            }
+        )
+    return rights
+
+
+def _rights_problems(rights: list) -> list[str]:
+    """Претензии к составу прав, которых у файла быть не может по построению."""
+    problems = []
+    for right_type, label in RIGHT_LABELS.items():
+        same = [r for r in rights if r["right_type"] == right_type]
+        if len(same) > MAX_RIGHTS_PER_TYPE:
+            problems.append(
+                f"{label} правообладателей больше трёх: в выгрузке Dista под них "
+                f"отведено три места, и четвёртый не попал бы в файл"
+            )
+        seen = set()
+        for right in same:
+            key = right["owner"].casefold()
+            if key in seen:
+                problems.append(
+                    f"правообладатель «{right['owner']}» указан дважды в {label} правах"
+                )
+            seen.add(key)
+    return problems
+
+
+@nomenclature_router.patch(
+    "/{track_id}", dependencies=[Depends(require_role(*CAN_EDIT_NOMENCLATURE))]
+)
+def update_track(
+    track_id: uuid.UUID,
+    payload: TrackIn,
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """
+    Правка карточки: метаданные, состав правообладателей, доли и ставки.
+
+    СВЕРКА ДОЛЕЙ СО СПРАВОЧНЫМИ ОБЯЗАТЕЛЬНА (правило владельца 17.09.2026):
+    сумма долей правообладателей должна совпадать с общей долей трека,
+    отдельно по авторским и смежным. Проверку делает `check_shares` — тот же
+    код, что проверяет файл импорта. Исторические расхождения (45 617 треков
+    с нулевой общей долей смежных при владельце со стопроцентной) сохранены
+    как есть, но СОХРАНИТЬ такую карточку теперь нельзя: если уж открыли и
+    правите — оставьте сходящейся. Поправить можно с любой стороны: и долю
+    правообладателя, и справочную долю трека — оба поля в той же форме.
+
+    СОСТАВ ПРАВ ЗАМЕЩАЕТСЯ ЦЕЛИКОМ, как при импорте: пришедший список и есть
+    новое состояние. Слоты нумеруются заново по порядку — номер из выгрузки
+    не значит ничего, кроме порядка показа.
+
+    НЕЗНАКОМОЕ ИМЯ ПРАВООБЛАДАТЕЛЯ — не ошибка, а вопрос: сервер отвечает 409
+    со списком и подсказками («может быть, это…»), а `create_missing_owners`
+    в повторном запросе означает «да, заведите карточки». Молча заводить
+    нельзя: опечатка в имени тогда превращалась бы в новую пустую карточку,
+    и деньги ушли бы мимо настоящей.
+
+    `source_file` и `imported_at` правка НЕ ТРОГАЕТ: они отвечают на вопрос
+    «из какой выгрузки приехала строка», и ручная правка этого не меняет. Кто
+    и что поправил руками, отвечает журнал — там и поля перечислены.
+    """
+    track = db.get(Track, track_id)
+    if track is None:
+        raise HTTPException(404, "Трек не найден")
+
+    fields = {
+        "sku": _text_in(payload.sku, FIELD_LABELS["sku"], "sku", required=True),
+        "code": _text_in(payload.code, FIELD_LABELS["code"], "code"),
+        "title": _text_in(payload.title, FIELD_LABELS["title"], "title", required=True),
+        "artist": _text_in(payload.artist, FIELD_LABELS["artist"], "artist"),
+        # У авторов слов и музыки в базе Text без предела: в выгрузке это одна
+        # строка с перечислением через запятую, и она бывает длинной.
+        "authors": _text_in(payload.authors, FIELD_LABELS["authors"]),
+        "album": _text_in(payload.album, FIELD_LABELS["album"], "album"),
+        "genre": _text_in(payload.genre, FIELD_LABELS["genre"], "genre"),
+        "catalog": _text_in(payload.catalog, FIELD_LABELS["catalog"], "catalog"),
+        "share_author": _percent_in(payload.share_author, FIELD_LABELS["share_author"]),
+        "share_related": _percent_in(payload.share_related, FIELD_LABELS["share_related"]),
+        "royalty_percent": _percent_in(payload.royalty_percent, FIELD_LABELS["royalty_percent"]),
+        "rights_since": _date_in(payload.rights_since),
     }
+    rights = _rights_in(payload.rights)
+
+    # Правила — общие с импортом (см. nomenclature_import).
+    problems = check_required(fields)
+    no_share = [
+        f"у правообладателя «{r['owner']}» не указана доля"
+        for r in rights
+        if r["share"] is None
+    ]
+    problems += no_share + _rights_problems(rights)
+    # Пока у кого-то доля пуста, сумма не значит ничего, и второе сообщение
+    # про несходящиеся доли только сбивало бы с толку.
+    if not no_share:
+        problems += check_shares(fields, rights)
+    if problems:
+        raise HTTPException(400, "; ".join(problems))
+
+    taken = db.scalar(
+        select(Track.sku).where(Track.sku == fields["sku"], Track.id != track_id)
+    )
+    if taken:
+        raise HTTPException(
+            409,
+            f"Артикул «{fields['sku']}» уже занят другим треком: артикул — ключ "
+            "каталога, двух позиций с одним номером быть не может",
+        )
+
+    index = _owner_index(db)
+    unknown = []
+    for name in sorted({r["owner"] for r in rights}):
+        if index.contragent_for(name) is not None:
+            continue
+        verdict, suggestion = index.match(name)
+        unknown.append({"name": name, "suggestion": suggestion if verdict == "similar" else None})
+    if unknown and not payload.create_missing_owners:
+        raise HTTPException(
+            409,
+            detail={
+                "code": "unknown_owners",
+                "message": "В базе нет карточек: "
+                + ", ".join(item["name"] for item in unknown),
+                "owners": unknown,
+            },
+        )
+
+    created_ids: dict[str, uuid.UUID] = {}
+    for item in unknown:
+        card_id = uuid.uuid4()
+        # Карточка пустая, с одним титлом — ровно как заводит импорт: страну,
+        # тип и реквизиты заполняют в ML Docs, до тех пор она честно красная.
+        db.add(Contragent(id=card_id, title=item["name"]))
+        created_ids[item["name"]] = card_id
+    if created_ids:
+        db.flush()
+
+    # Что поменялось — считаем ДО записи, пока объект держит прежние значения.
+    changed = [FIELD_LABELS[key] for key, value in fields.items() if getattr(track, key) != value]
+    before = {
+        (r.right_type, r.owner, r.share, r.royalty)
+        for r in db.scalars(
+            select(TrackRight).where(TrackRight.track_id == track_id)
+        ).all()
+    }
+    after = {(r["right_type"], r["owner"], r["share"], r["royalty"]) for r in rights}
+
+    db.execute(update(Track).where(Track.id == track_id).values(**fields))
+    db.execute(delete(TrackRight).where(TrackRight.track_id == track_id))
+
+    rows = []
+    slots = {AUTHOR: 0, RELATED: 0}
+    for right in rights:
+        slots[right["right_type"]] += 1
+        owner = right["owner"]
+        rows.append(
+            {
+                "id": uuid.uuid4(),
+                "track_id": track_id,
+                "contragent_id": created_ids.get(owner) or index.contragent_for(owner),
+                "slot": slots[right["right_type"]],
+                **right,
+            }
+        )
+    if rows:
+        db.execute(insert(TrackRight), rows)
+
+    log_action(
+        db,
+        current_user,
+        "nomenclature.track.update",
+        entity_type="track",
+        entity_id=track_id,
+        meta={
+            "sku": fields["sku"],
+            "title": fields["title"],
+            # Поля перечисляем поимённо: журнал должен отвечать на вопрос
+            # «что именно правили», а не только «правили».
+            "fields": changed,
+            "rights_changed": before != after,
+            "rights": len(rows),
+            "owners_created": sorted(created_ids),
+        },
+    )
+    db.commit()
+
+    fresh = db.get(Track, track_id)
+    return _card(db, fresh)

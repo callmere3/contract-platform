@@ -29,6 +29,11 @@
     считается это отдельно по каждому виду прав: смежные и авторские
     независимы.
 
+ЭТИ ЖЕ ПРАВИЛА ПРОВЕРЯЮТ РУЧНУЮ ПРАВКУ КАРТОЧКИ (`check_required` и
+`check_shares`, вызываются из `routers_nomenclature.update_track`). Разойдись
+они — и трек, который импорт принять отказывается, спокойно заводился бы
+руками, чтобы назавтра быть затёртым тем же импортом.
+
 Каталог и жанр в обязательные НЕ ВКЛЮЧЕНЫ намеренно, хотя формально стоят в
 файле до правообладателей: в боевой выгрузке от 16.09.2026 жанр пуст у 95.6%
 строк, общая ставка роялти — у 75.4%, каталог — у 22.5%. Требовать их значило
@@ -262,31 +267,66 @@ def _parse_rights(raw: tuple, percent_cols: set, row: Row) -> None:
         )
 
 
-def _check_shares(row: Row) -> None:
+# Обязательные поля трека. Код/ISRC, автор слов и музыки и альбом сюда НЕ
+# входят: у альбома, заведённого отдельным артикулом, ни кода, ни авторов нет,
+# а сингл не входит ни в какой альбом. Каталог, жанр и общая ставка роялти —
+# тоже: в боевой выгрузке они пусты у 22.5%, 95.6% и 75.4% строк.
+REQUIRED_TRACK_FIELDS = (
+    ("rights_since", "дата прав"),
+    ("sku", "артикул"),
+    ("title", "наименование"),
+    ("artist", "исполнитель"),
+    ("share_author", "доля авторских прав"),
+    ("share_related", "доля смежных прав"),
+)
+
+
+def check_required(track: dict) -> list[str]:
     """
-    Сумма долей правообладателей обязана совпадать с общей долей трека —
-    отдельно по авторским и отдельно по смежным (владелец, 17.09.2026).
+    Обязательные поля трека — ОДИН СПИСОК НА ДВА ВХОДА: файл и ручная правка
+    карточки (17.09.2026).
+
+    Разойдись они, и трек, который импорт отказывается принять, спокойно
+    заводился бы руками, — а через день его снова затирал бы тот же импорт.
+    """
+    return [
+        f"не заполнено обязательное поле: {label}"
+        for key, label in REQUIRED_TRACK_FIELDS
+        if track.get(key) is None
+    ]
+
+
+def check_shares(track: dict, rights: list) -> list[str]:
+    """
+    СВЕРКА ДОЛЕЙ СО СПРАВОЧНЫМИ: сумма долей правообладателей обязана
+    совпадать с общей долей трека — отдельно по авторским и отдельно по
+    смежным (правило владельца 17.09.2026).
 
     Виды прав независимы: у кавера фонограмма своя, а произведение чужое,
     поэтому складывать их доли между собой нельзя.
+
+    Правило одно и то же для файла и для правки карточки руками — потому и
+    живёт здесь, рядом с разбором файла, а не в роутере.
     """
     declared = {
-        AUTHOR: row.track.get("share_author"),
-        RELATED: row.track.get("share_related"),
+        AUTHOR: track.get("share_author"),
+        RELATED: track.get("share_related"),
     }
+    problems = []
     for right_type, label in RIGHT_LABELS.items():
         total = sum(
-            (r["share"] for r in row.rights if r["right_type"] == right_type),
+            (r["share"] for r in rights if r["right_type"] == right_type),
             Decimal(0),
         )
         want = declared[right_type]
         if want is None:
             continue  # про пустую общую долю уже сказано в обязательных полях
         if total != want:
-            row.errors.append(
+            problems.append(
                 f"доли {label} прав не сходятся: общая {_num(want)}%, "
                 f"у правообладателей {_num(total)}%"
             )
+    return problems
 
 
 def _num(value: Decimal) -> str:
@@ -337,24 +377,16 @@ def parse_row(raw: tuple, row_num: int, percent_cols: set | None = None) -> Row 
         "rights_since": rights_since,
     }
 
-    # Обязательные поля. Код/ISRC, автор слов и музыки и альбом сюда не
-    # входят: у альбома, заведённого отдельным артикулом, кода и авторов нет,
-    # а сингл не входит ни в какой альбом.
-    required = (
-        ("sku", "артикул"),
-        ("title", "наименование"),
-        ("artist", "исполнитель"),
-        ("share_author", "доля авторских прав"),
-        ("share_related", "доля смежных прав"),
-    )
-    for key, label in required:
-        if row.track.get(key) is None:
-            row.errors.append(f"не заполнено обязательное поле: {label}")
-    if rights_since is None and raw_date is None:
-        row.errors.append("не заполнено обязательное поле: дата прав")
+    # Обязательные поля — общим списком (check_required): тот же, по которому
+    # проверяется правка карточки руками.
+    required_errors = check_required(row.track)
+    if raw_date is not None and rights_since is None:
+        # Про дату уже сказано точнее — «не прочиталась», а не «не заполнена».
+        required_errors = [e for e in required_errors if "дата прав" not in e]
+    row.errors.extend(required_errors)
 
     _parse_rights(raw, percent_cols, row)
-    _check_shares(row)
+    row.errors.extend(check_shares(row.track, row.rights))
 
     # Артикула нет — строку не на что записать, и все прочие претензии к ней
     # бессмысленны.

@@ -51,6 +51,10 @@ export function NomenclaturePage() {
   // «ООО ГУСТ МЬЮЗИК». Галочка нужна для обратного случая — когда два
   // написания надо различить.
   const [caseSensitive, setCaseSensitive] = useState(false);
+  // «Точное совпадение» — про другое, чем регистр: не как сравнивать буквы, а
+  // сравнивать ли строку целиком. По умолчанию выключено: обычно ищут кусок
+  // названия, а не весь его.
+  const [exact, setExact] = useState(false);
   const [page, setPage] = useState(1);
   // Отбор по карточке контрагента живёт В АДРЕСЕ, а не в состоянии: на него
   // ведёт кнопка «Треки» из карточки, и такую ссылку должно быть видно и
@@ -74,7 +78,7 @@ export function NomenclaturePage() {
   // строк, останешься на «стр. 40», где пусто.
   useEffect(() => {
     setPage(1);
-  }, [q, owner, contragentId, caseSensitive]);
+  }, [q, owner, contragentId, caseSensitive, exact]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -85,6 +89,7 @@ export function NomenclaturePage() {
         owner: owner.trim(),
         contragentId,
         caseSensitive,
+        exact,
         page,
         pageSize: PAGE_SIZE,
       });
@@ -96,7 +101,7 @@ export function NomenclaturePage() {
     } finally {
       setLoading(false);
     }
-  }, [q, owner, contragentId, caseSensitive, page]);
+  }, [q, owner, contragentId, caseSensitive, exact, page]);
 
   useEffect(() => {
     const timer = setTimeout(load, 300);
@@ -171,6 +176,20 @@ export function NomenclaturePage() {
             />
             Учитывать регистр
           </label>
+          {/* Вторая галочка рядом с первой и намеренно: вопросы соседние —
+              как сравнивать буквы и сравнивать ли строку целиком. Вместе они
+              и дают способ отличить «ООО Густ Мьюзик» от «ООО ГУСТ МЬЮЗИК»
+              и от «Густ Мьюзик KZ», то есть ровно то, ради чего их просили.
+              При отборе по карточке обе ни на что не влияют: там сравнивается
+              ссылка, а не строки. */}
+          <label className="flex items-center gap-2 text-[13px] text-text-secondary select-none">
+            <input
+              type="checkbox"
+              checked={exact}
+              onChange={(e) => setExact(e.target.checked)}
+            />
+            Точное совпадение
+          </label>
 
           {/* Импорт/экспорт стоит там же, где на «Контрагентах». Экспорт
               выгружает ровно то, что видно при текущем фильтре, — поэтому
@@ -181,7 +200,13 @@ export function NomenclaturePage() {
               size="sm"
               onClick={() =>
                 openModal('nomenclatureImportExport', {
-                  filters: { q: q.trim(), owner: owner.trim(), contragentId, caseSensitive },
+                  filters: {
+                    q: q.trim(),
+                    owner: owner.trim(),
+                    contragentId,
+                    caseSensitive,
+                    exact,
+                  },
                   onImported: load,
                 })
               }
@@ -213,19 +238,27 @@ export function NomenclaturePage() {
                   <th className={th}>ISRC / UPC</th>
                   <th className={th}>Наименование</th>
                   <th className={th}>Исполнитель</th>
-                  {/* Обе колонки прав — с одинаковой минимальной шириной:
-                      иначе браузер делит остаток между ними как придётся, и
-                      одно и то же имя в соседних столбцах выглядит
-                      по-разному. */}
-                  <th className={`${th} min-w-[190px]`}>Смежные права</th>
+                  {/* АВТОРСКИЕ ПЕРВЫМИ, смежные вторыми (просьба владельца
+                      17.09.2026) — и здесь, и в карточке трека. Порядок один
+                      и тот же везде: человек, переходящий из таблицы в
+                      карточку, не должен каждый раз перечитывать подписи,
+                      чтобы понять, где чьи доли.
+
+                      Обе колонки — с одинаковой минимальной шириной: иначе
+                      браузер делит остаток между ними как придётся, и одно и
+                      то же имя в соседних столбцах выглядит по-разному. */}
                   <th className={`${th} min-w-[190px]`}>Авторские права</th>
+                  <th className={`${th} min-w-[190px]`}>Смежные права</th>
                 </tr>
               </thead>
               <tbody>
                 {items.map((t) => (
                   <tr
                     key={t.id}
-                    onClick={() => openModal('trackCard', { trackId: t.id })}
+                    // onChanged — правка карточки меняет и строку списка
+                    // (название, исполнитель, права), поэтому список
+                    // перечитывается, а не остаётся с прежними данными.
+                    onClick={() => openModal('trackCard', { trackId: t.id, onChanged: load })}
                     className="cursor-pointer hover:bg-surface-hover"
                   >
                     <td className={`${td} tabular-nums text-text-secondary whitespace-nowrap`}>
@@ -243,10 +276,10 @@ export function NomenclaturePage() {
                     <td className={`${td} font-semibold text-text`}>{t.title}</td>
                     <td className={`${td} font-semibold text-text`}>{t.artist || '—'}</td>
                     <td className={td}>
-                      <RightsCell owners={t.rights?.related ?? []} />
+                      <RightsCell owners={t.rights?.author ?? []} />
                     </td>
                     <td className={td}>
-                      <RightsCell owners={t.rights?.author ?? []} />
+                      <RightsCell owners={t.rights?.related ?? []} />
                     </td>
                   </tr>
                 ))}

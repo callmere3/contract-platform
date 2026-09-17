@@ -117,6 +117,11 @@ export const canViewNomenclature = (role) => is(role, ADMIN, DIRECTOR);
 export const canExportNomenclature = (role) => is(role, ADMIN, DIRECTOR);
 export const canImportNomenclature = (role) => is(role, ADMIN);
 
+// backend: CAN_EDIT_NOMENCLATURE. Правка карточки трека руками — шире
+// импорта: файл переписывает сотни треков вслепую, а карточку правят по
+// одной, глядя на неё, и сверка долей не даст сохранить несходящееся.
+export const canEditNomenclature = (role) => is(role, ADMIN, DIRECTOR);
+
 // backend: CAN_VIEW_PARTNERS / CAN_MANAGE_PARTNERS. Справочник площадок, от
 // которых приходят деньги: смотрят и ведут те же, кто видит ML Finance.
 export const canViewPartners = (role) => is(role, ADMIN, DIRECTOR);
