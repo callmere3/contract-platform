@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
+import { PageHeader } from '../components/ui/PageHeader';
 import { ContragentRow } from '../components/ui/ContragentRow';
 import { useContragentSearch } from '../hooks/useContragentSearch';
 import { useTags } from '../api/TagsContext';
@@ -55,6 +56,11 @@ export function DatabasePage() {
 
   return (
     <div className="max-w-[980px] mx-auto px-8 pt-12 pb-20">
+      <PageHeader title="Контрагенты">
+        Карточки, из которых данные подставляются в документы. Красным выделены неполные — в них
+        не хватает полей, и подстановка выйдет с пропусками.
+      </PageHeader>
+
       <Card>
         <div className="flex gap-3 p-5 border-b border-border">
           <input

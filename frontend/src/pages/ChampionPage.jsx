@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Card } from '../components/ui/Card';
+import { PageHeader } from '../components/ui/PageHeader';
 import { fetchChampionBoard } from '../api/champion';
 
 const MEDALS = ['🥇', '🥈', '🥉'];
@@ -122,6 +123,12 @@ export function ChampionPage() {
 
   return (
     <div className="max-w-[880px] mx-auto px-8 pt-12 pb-20 flex flex-col gap-6">
+      {/* spaced={false}: расстояние здесь задаёт gap-6 контейнера. */}
+      <PageHeader title="Кубок" spaced={false}>
+        Обладатель кубка месяца и рейтинг текущего. В зачёте менеджеры и топ-менеджеры: кубок про
+        рабочую выработку.
+      </PageHeader>
+
       {error && (
         <Card>
           <div className="p-5 text-[13px] text-danger">{error}</div>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card } from '../components/ui/Card';
+import { PageHeader } from '../components/ui/PageHeader';
 import { Button } from '../components/ui/Button';
 import {
   deleteGenerationEntry,
@@ -136,6 +137,11 @@ export function GenerationHistoryPage() {
 
   return (
     <div className="max-w-[980px] mx-auto px-8 pt-12 pb-20">
+      <PageHeader title="История генерации">
+        Кто и какие документы сформировал. Документ можно скачать заново — он собирается по
+        сохранённым данным формы, а не хранится файлом.
+      </PageHeader>
+
       <Card>
         <div className="flex items-center gap-3 p-5 border-b border-border">
           <span className="text-sm font-semibold text-text mr-auto">

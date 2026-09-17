@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
+import { PageHeader } from '../components/ui/PageHeader';
 import { useModal } from '../modals/ModalProvider';
 import { useAuth } from '../auth/AuthContext';
 import { canExportNomenclature, canImportNomenclature } from '../auth/permissions';
@@ -120,13 +121,10 @@ export function NomenclaturePage() {
 
   return (
     <div className="max-w-[1180px] mx-auto px-8 pt-12 pb-20">
-      <h1 className="text-[26px] font-extrabold tracking-[-0.02em] text-text mb-1.5">
-        Номенклатура
-      </h1>
-      <p className="text-[13.5px] text-text-secondary mb-6 max-w-[620px] leading-relaxed">
+      <PageHeader title="Номенклатура">
         Треки и их правообладатели: у кого какая доля и по какой ставке роялти. Нажмите на
         строку — откроется карточка трека со всеми полями выгрузки.
-      </p>
+      </PageHeader>
 
       <Card>
         <div className="flex flex-wrap gap-3 p-5 border-b border-border">

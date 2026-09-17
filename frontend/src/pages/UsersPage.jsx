@@ -3,6 +3,7 @@ import { Badge } from '../components/ui/Badge';
 import { ChampionBadge } from '../components/ui/ChampionBadge';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
+import { PageHeader } from '../components/ui/PageHeader';
 import { listUsers, updateUser } from '../api/users';
 import { useTags } from '../api/TagsContext';
 import { useAuth } from '../auth/AuthContext';
@@ -114,6 +115,11 @@ export function UsersPage() {
 
   return (
     <div className="max-w-[980px] mx-auto px-8 pt-12 pb-20">
+      <PageHeader title="Пользователи">
+        Сотрудники, их роли и доступ к сервису. Нажатие на имя открывает карточку: когда заходил
+        и какие достижения собрал.
+      </PageHeader>
+
       <Card>
         <div className="flex items-center justify-between p-5 border-b border-border">
           <span className="text-sm font-semibold text-text">Пользователи</span>

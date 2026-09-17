@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Card } from '../components/ui/Card';
+import { PageHeader } from '../components/ui/PageHeader';
 import { Button } from '../components/ui/Button';
 import { useTags } from '../api/TagsContext';
 import { useModal } from '../modals/ModalProvider';
@@ -78,6 +79,11 @@ export function FinancePage() {
 
   return (
     <div className="max-w-[980px] mx-auto px-8 pt-12 pb-20">
+      <PageHeader title="Контрагенты">
+        Баланс по каждому: поступления минус расходы. Нажмите на строку — карточка с операциями,
+        связкой с Dista и его треками.
+      </PageHeader>
+
       <Card>
         <div className="flex gap-3 p-5 border-b border-border">
           <input

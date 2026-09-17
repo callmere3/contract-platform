@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
+import { PageHeader } from '../components/ui/PageHeader';
 import { browseFolder, setTemplateVisibility } from '../api/templates';
 import { useModal } from '../modals/ModalProvider';
 import { useAuth } from '../auth/AuthContext';
@@ -118,6 +119,11 @@ export function FoldersPage() {
 
   return (
     <div className="max-w-[980px] mx-auto px-8 pt-12 pb-20">
+      <PageHeader title="Шаблоны">
+        Папки с шаблонами документов. Поля формы генерации приходят из самого .docx: добавили в
+        шаблон метку — поле появилось само.
+      </PageHeader>
+
       <Card>
         <div className="flex items-center justify-between p-5 border-b border-border gap-4">
           <div className="flex items-center gap-1.5 text-sm min-w-0">

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
+import { PageHeader } from '../components/ui/PageHeader';
 import {
   distaExport,
   distaOnlyOurs,
@@ -197,14 +198,21 @@ export function DistaConnectPage() {
 
   return (
     <div className="max-w-[980px] mx-auto px-8 pt-12 pb-20">
-      <h1 className="text-2xl font-bold text-text">Dista Connect</h1>
-      <p className="text-sm text-text-secondary mt-2 leading-relaxed max-w-[70ch]">
+      {/* Та же шапка, что на остальных вкладках (17.09.2026): раньше здесь
+          был свой заголовок другого размера — экран выглядел из другого
+          приложения. Текст оставлен длиннее одной фразы намеренно: это
+          единственная вкладка, где человек грузит файл, меняющий базу, и
+          порядок действий лучше держать перед глазами.
+
+          spaced={false}: отступ снизу здесь уже несёт mt-6 у следующей
+          карточки, и свой дал бы двойной. */}
+      <PageHeader title="Dista Connect" spaced={false}>
         Сверка базы контрагентов с выгрузкой из Dista Music. Загрузите Excel из Dista (колонки{' '}
         <b>id</b> и <b>Название</b>). Сначала «Проверить» покажет план — что свяжется, что
         создастся, что нужно завести в Dista вручную. Записывается только после «Применить», и
         только связка <b>dista_id</b>: реквизиты, номер договора и прочие поля существующих карточек
         не затрагиваются.
-      </p>
+      </PageHeader>
 
       {/* Сводка связки + выгрузка «Нет в Dista» (Этап 2). Доступна всегда, без
           загрузки файла: это standing-список карточек без dista_id — тех, кого

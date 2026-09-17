@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
+import { PageHeader } from '../components/ui/PageHeader';
 import { listUsers } from '../api/users';
 import {
   deleteNotification,
@@ -106,6 +107,12 @@ export function NotificationsPage() {
 
   return (
     <div className="max-w-[880px] mx-auto px-8 pt-12 pb-20 flex flex-col gap-6">
+      {/* spaced={false}: расстояние здесь задаёт gap-6 контейнера. */}
+      <PageHeader title="Уведомления" spaced={false}>
+        Объявления команде. Видно, кому отправлено и кто уже прочитал; получатели фиксируются в
+        момент отправки.
+      </PageHeader>
+
       {error && (
         <Card>
           <div className="p-4 text-[13px] text-danger">{error}</div>

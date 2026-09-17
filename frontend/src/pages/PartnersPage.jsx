@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
+import { PageHeader } from '../components/ui/PageHeader';
 import { useModal } from '../modals/ModalProvider';
 import { useAuth } from '../auth/AuthContext';
 import { canManagePartners } from '../auth/permissions';
@@ -62,11 +63,10 @@ export function PartnersPage() {
 
   return (
     <div className="max-w-[980px] mx-auto px-8 pt-12 pb-20">
-      <h1 className="text-[26px] font-extrabold tracking-[-0.02em] text-text mb-1.5">Партнёры</h1>
-      <p className="text-[13.5px] text-text-secondary mb-6 max-w-[620px] leading-relaxed">
+      <PageHeader title="Партнёры">
         Площадки и агрегаторы, от которых приходят деньги. Нажмите на строку, чтобы посмотреть
         код Dista, поправить или удалить.
-      </p>
+      </PageHeader>
 
       <Card>
         <div className="flex flex-wrap gap-3 p-5 border-b border-border">
