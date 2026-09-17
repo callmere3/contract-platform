@@ -43,6 +43,7 @@ from app.auth import get_current_user, require_role
 from app.config import settings
 from app.context_builder import (
     ADVANCE_PARTS,
+    advance_parts_problem,
     build_context,
     build_document_filename,
     find_missing_variables,
@@ -846,6 +847,14 @@ def build_document_response(
             status_code=400,
             detail=f"Не заполнены обязательные поля: {', '.join(labels)}",
         )
+
+    # Части аванса обязаны сходиться с общей суммой — проверяем ПОСЛЕ
+    # обязательных полей: пока сумма аванса не заполнена, говорить о том,
+    # что части с ней не сходятся, бессмысленно.
+    if "advance_first" in template_vars:
+        problem = advance_parts_problem(data)
+        if problem:
+            raise HTTPException(status_code=400, detail=problem)
 
     result_bytes = render_document(docx_bytes, context)
 

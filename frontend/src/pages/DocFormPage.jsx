@@ -192,12 +192,17 @@ function computeCountMiddle(countRaw) {
   return String(Math.ceil(count / 2));
 }
 
-/** Живой пересчёт "Штраф за непереданный трек" — зеркало resolve_penalty_raw() на бэкенде: сумма аванса / количество треков. */
+// Во сколько раз штраф за непереданный трек больше его «стоимости» — зеркало
+// PENALTY_RATE на бэкенде (context_builder). 150%: штраф, равный стоимости
+// трека, нарушителю ничего не стоит (решение владельца 17.09.2026).
+const PENALTY_RATE = 1.5;
+
+/** Живой пересчёт "Штраф за непереданный трек" — зеркало resolve_penalty_raw() на бэкенде: 150% от «стоимости» трека (аванс / количество треков). */
 function computePenalty(advanceRaw, countRaw) {
   const advance = parseFormAmount(advanceRaw);
   const count = parseFormAmount(countRaw);
   if (advance === null || !count) return '';
-  return String(Math.round(advance / count));
+  return String(Math.round((advance / count) * PENALTY_RATE));
 }
 
 /**
