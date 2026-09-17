@@ -1126,9 +1126,36 @@ def update_contragent(
             detail="Не удалось сохранить изменения (конфликт данных в базе).",
         )
 
+    # КАКИЕ ПОЛЯ ПРИШЛИ В ЗАПРОС — в журнал (17.09.2026). Раньше в meta лежал
+    # один титл карточки, и отличить дозаполнение ИНН от переименования по
+    # журналу было нельзя. На этом споткнулось достижение «Сбор данных»: оно
+    # засчитывало любое касание карточки, и у админа появилось за две правки
+    # титла. Пишем именно ПЕРЕДАННЫЕ поля, а не изменившиеся значения:
+    # «прислал то же самое» — всё равно работа с этим полем, а сравнивать со
+    # старым значением пришлось бы до правки и по каждому полю отдельно.
+    changed_fields = sorted(
+        key
+        for key, value in (
+            ("title", title),
+            ("name", name),
+            ("country", country),
+            # Ключ «type», а не «contragent_type»: так поле зовётся в карточке
+            # и в проверке полноты, а журнал читают по ней.
+            ("type", contragent_type),
+            ("contract_family", contract_family),
+            ("contract_date", contract_date),
+            ("contract_number", contract_number),
+            ("royalty_percent", royalty_percent),
+            ("reg_number", reg_number),
+            ("nicknames", nicknames),
+            ("requisites", requisites),
+        )
+        if value is not None
+    )
+
     log_action(
         db, current_user, "contragent.update", entity_type="contragent", entity_id=contragent.id,
-        meta={"title": contragent.title},
+        meta={"title": contragent.title, "fields": changed_fields},
     )
 
     return {
