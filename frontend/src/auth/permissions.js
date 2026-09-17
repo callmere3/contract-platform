@@ -117,6 +117,11 @@ export const canViewNomenclature = (role) => is(role, ADMIN, DIRECTOR);
 export const canExportNomenclature = (role) => is(role, ADMIN, DIRECTOR);
 export const canImportNomenclature = (role) => is(role, ADMIN);
 
+// backend: CAN_VIEW_PARTNERS / CAN_MANAGE_PARTNERS. Справочник площадок, от
+// которых приходят деньги: смотрят и ведут те же, кто видит ML Finance.
+export const canViewPartners = (role) => is(role, ADMIN, DIRECTOR);
+export const canManagePartners = (role) => is(role, ADMIN, DIRECTOR);
+
 // backend: CAN_EXPORT_CONTRAGENTS = (ADMIN, DIRECTOR) — у top_manager/tester убран
 export const canExport = (role) => is(role, ADMIN, DIRECTOR);
 

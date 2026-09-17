@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Modal } from '../components/ui/Modal';
+import { Modal, ModalAction } from '../components/ui/Modal';
 import { Button } from '../components/ui/Button';
 import { useModal } from './ModalProvider';
 import { useTags } from '../api/TagsContext';
@@ -99,39 +99,49 @@ export function ContragentCardModal({ contragentId, level, isTop, onChanged }) {
       level={level}
       isTop={isTop}
       width={520}
+      actions={
+        data && (
+          <>
+            {/* Карандаш — для всех, кто может править хоть что-то: полноправным
+                вся карточка, менеджеру только тип договора (модалка сама
+                определяет режим по роли, см. EditContragentModal.restricted). */}
+            {(canEditContragents(role) || canEditContractFamily(role)) && (
+              <ModalAction
+                icon="✎"
+                title="Редактировать"
+                onClick={() => openModal('editContragent', { contragent: data, onSaved: onChanged })}
+              />
+            )}
+            {canDeleteContragents(role) && (
+              <ModalAction
+                icon="🗑"
+                title="Удалить"
+                danger
+                disabled={confirmDelete}
+                onClick={() => setConfirmDelete(true)}
+              />
+            )}
+          </>
+        )
+      }
       footer={
         data && (
           <>
-            {canDeleteContragents(role) &&
-              (confirmDelete ? (
-                <>
-                  <span className="text-[13px] text-text-muted mr-auto">Удалить безвозвратно?</span>
-                  <Button variant="secondary" size="sm" onClick={() => setConfirmDelete(false)}>
-                    Отмена
-                  </Button>
-                  <Button variant="accent" size="sm" onClick={handleDelete} disabled={busy}>
-                    {busy ? 'Удаляем…' : 'Удалить'}
-                  </Button>
-                </>
-              ) : (
-                <Button variant="secondary" size="sm" onClick={() => setConfirmDelete(true)}>
-                  Удалить
+            {/* Подтверждение удаления осталось ВНИЗУ, хотя сама кнопка уехала
+                в шапку: вопрос «удалить безвозвратно?» требует ответа, и
+                прятать его в ряд значков — самый верный способ получить
+                случайное «да». */}
+            {confirmDelete ? (
+              <>
+                <span className="text-[13px] text-text-muted mr-auto">Удалить безвозвратно?</span>
+                <Button variant="secondary" size="sm" onClick={() => setConfirmDelete(false)}>
+                  Отмена
                 </Button>
-              ))}
-            {/* Кнопка «Редактировать» для всех, кто может править хоть что-то:
-                полноправным — вся карточка, менеджеру — только тип договора
-                (та же модалка сама определяет режим по роли, см.
-                EditContragentModal.restricted). */}
-            {!confirmDelete && (canEditContragents(role) || canEditContractFamily(role)) && (
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => openModal('editContragent', { contragent: data, onSaved: onChanged })}
-              >
-                Редактировать
-              </Button>
-            )}
-            {!confirmDelete && (
+                <Button variant="accent" size="sm" onClick={handleDelete} disabled={busy}>
+                  {busy ? 'Удаляем…' : 'Удалить'}
+                </Button>
+              </>
+            ) : (
               <Button
                 variant="primary"
                 size="sm"

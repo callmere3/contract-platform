@@ -10,6 +10,7 @@ import {
   canViewChampionBoard,
   canUseFinance,
   canViewNomenclature,
+  canViewPartners,
 } from './auth/permissions';
 import { TagsProvider } from './api/TagsContext';
 import { ModalProvider } from './modals/ModalProvider';
@@ -29,9 +30,8 @@ import { GenerationHistoryPage } from './pages/GenerationHistoryPage';
 import { NotificationsPage } from './pages/NotificationsPage';
 import { DistaConnectPage } from './pages/DistaConnectPage';
 import { FinancePage } from './pages/FinancePage';
-import { FinanceReportsPage } from './pages/FinanceReportsPage';
-import { RightholderReportsPage } from './pages/RightholderReportsPage';
 import { NomenclaturePage } from './pages/NomenclaturePage';
+import { PartnersPage } from './pages/PartnersPage';
 import { ChampionPage } from './pages/ChampionPage';
 
 /**
@@ -130,24 +130,15 @@ function AppShell() {
           }
         />
         <Route
-          path="/finance/reports"
-          element={
-            canUseFinance(user?.role) ? <FinanceReportsPage /> : <Navigate to="/search" replace />
-          }
-        />
-        <Route
-          path="/finance/rightholders"
-          element={
-            canUseFinance(user?.role) ? (
-              <RightholderReportsPage />
-            ) : (
-              <Navigate to="/search" replace />
-            )
-          }
-        />
-        <Route
           path="/finance/contragents"
           element={canUseFinance(user?.role) ? <FinancePage /> : <Navigate to="/search" replace />}
+        />
+        {/* Партнёры — площадки, от которых приходят деньги. Право своё
+            (canViewPartners), хоть и совпадает с финансовым: справочник
+            площадок и суммы выплат — разные вещи. */}
+        <Route
+          path="/finance/partners"
+          element={canViewPartners(user?.role) ? <PartnersPage /> : <Navigate to="/search" replace />}
         />
         {/* Dista Connect — только admin, та же защита от прямого захода по
             адресу. Вкладка переехала в меню ML Finance, но маршрут прежний:

@@ -138,8 +138,7 @@ export function Header({ companyName = 'ML Docs' }) {
   let financeTabs = [
     { to: '/finance', label: 'Номенклатура', end: true },
     { to: '/finance/contragents', label: 'Контрагенты' },
-    { to: '/finance/reports', label: 'Загрузка отчётов' },
-    { to: '/finance/rightholders', label: 'Отчёты правообладателям' },
+    { to: '/finance/partners', label: 'Партнёры' },
   ];
   if (canUseDistaSync(user?.role)) {
     financeTabs = [...financeTabs, { to: '/dista', label: 'Dista Connect' }];

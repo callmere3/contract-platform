@@ -19,6 +19,11 @@ import { FinanceContragentModal } from './FinanceContragentModal';
 import { NewFinanceOperationModal } from './NewFinanceOperationModal';
 import { TrackCardModal } from './TrackCardModal';
 import { NomenclatureImportExportModal } from './NomenclatureImportExportModal';
+import {
+  NewPartnerModal,
+  PartnerCardModal,
+  PartnersImportExportModal,
+} from './PartnerModals';
 import { AlertModal } from './AlertModal';
 
 const REGISTRY = {
@@ -44,6 +49,9 @@ const REGISTRY = {
   newFinanceOperation: NewFinanceOperationModal,
   trackCard: TrackCardModal,
   nomenclatureImportExport: NomenclatureImportExportModal,
+  partnerCard: PartnerCardModal,
+  newPartner: NewPartnerModal,
+  partnersImportExport: PartnersImportExportModal,
 };
 
 export function ModalRoot() {

@@ -1,13 +1,20 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Modal } from '../components/ui/Modal';
+import { Modal, ModalAction } from '../components/ui/Modal';
 import { Button } from '../components/ui/Button';
 import { RequisitesSection } from '../components/ui/RequisitesSection';
 import { useModal } from './ModalProvider';
 import { useAuth } from '../auth/AuthContext';
 import { useTags } from '../api/TagsContext';
-import { canAddFinanceOperations, canDeleteFinanceOperations } from '../auth/permissions';
+import {
+  canAddFinanceOperations,
+  canDeleteContragents,
+  canDeleteFinanceOperations,
+  canEditContractFamily,
+  canEditContragents,
+} from '../auth/permissions';
 import { deleteFinanceOperation, fetchFinanceCard, formatMoney } from '../api/finance';
+import { deleteContragent, getContragent } from '../api/contragents';
 
 /**
  * Карточка контрагента в ML Finance: кто это, по каким реквизитам платить,
@@ -33,6 +40,9 @@ export function FinanceContragentModal({ contragentId, level, isTop, onChanged }
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [removing, setRemoving] = useState(null);
+  // Удаление САМОЙ КАРТОЧКИ (не операции) — с подтверждением, как в ML Docs.
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
     setError('');
@@ -54,6 +64,42 @@ export function FinanceContragentModal({ contragentId, level, isTop, onChanged }
     load();
     onChanged?.();
   }, [load, onChanged]);
+
+  /**
+   * Правка карточки открывает ТУ ЖЕ модалку, что и в ML Docs: набор полей,
+   * права и ограниченный режим для менеджера живут там, и заводить финансам
+   * свою форму значило бы держать две правды об одной карточке. Модалке
+   * нужна полная карточка (поля документов), а финансовая отдаёт свой набор —
+   * поэтому перед открытием дотягиваем её обычным запросом.
+   */
+  async function openEdit() {
+    setBusy(true);
+    setError('');
+    try {
+      const full = await getContragent(contragentId);
+      openModal('editContragent', { contragent: full, onSaved: afterChange });
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeCard() {
+    setBusy(true);
+    setError('');
+    try {
+      await deleteContragent(contragentId);
+      onChanged?.();
+      closeModal();
+    } catch (e) {
+      // Сюда прилетает 409 сервера: по контрагенту есть операции или на него
+      // ссылается номенклатура. Текст уже человеческий — показываем как есть.
+      setError(e.message);
+      setConfirmDelete(false);
+      setBusy(false);
+    }
+  }
 
   async function remove(operationId) {
     setRemoving(operationId);
@@ -77,7 +123,36 @@ export function FinanceContragentModal({ contragentId, level, isTop, onChanged }
       level={level}
       isTop={isTop}
       width={720}
+      actions={
+        card && (
+          <>
+            {(canEditContragents(role) || canEditContractFamily(role)) && (
+              <ModalAction icon="✎" title="Редактировать" onClick={openEdit} disabled={busy} />
+            )}
+            {canDeleteContragents(role) && (
+              <ModalAction
+                icon="🗑"
+                title="Удалить"
+                danger
+                disabled={confirmDelete || busy}
+                onClick={() => setConfirmDelete(true)}
+              />
+            )}
+          </>
+        )
+      }
       footer={
+        confirmDelete ? (
+          <div className="flex items-center gap-3 w-full">
+            <span className="text-[13px] text-text-muted mr-auto">Удалить карточку безвозвратно?</span>
+            <Button variant="secondary" size="sm" onClick={() => setConfirmDelete(false)}>
+              Отмена
+            </Button>
+            <Button variant="accent" size="sm" onClick={removeCard} disabled={busy}>
+              {busy ? 'Удаляем…' : 'Удалить'}
+            </Button>
+          </div>
+        ) : (
         <div className="flex items-center gap-3">
           {/* «Треки» уводит в номенклатуру, отфильтрованную по ЭТОЙ карточке.
               Отбор идёт по ссылке track_rights.contragent_id, а не по имени:
@@ -132,6 +207,7 @@ export function FinanceContragentModal({ contragentId, level, isTop, onChanged }
             Закрыть
           </Button>
         </div>
+        )
       }
     >
       {loading && <div className="text-[13px] text-text-muted">Загружаем…</div>}
