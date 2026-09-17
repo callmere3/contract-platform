@@ -200,6 +200,7 @@ export function PartnerReportsPage() {
   const [onlyUnmatched, setOnlyUnmatched] = useState(false);
   // Какие формулы человек сейчас правит: остальные показаны словами.
   const [editing, setEditing] = useState({});
+  const [showMapping, setShowMapping] = useState(false);
 
   const [reports, setReports] = useState([]);
   const [totals, setTotals] = useState(null);
@@ -285,6 +286,7 @@ export function PartnerReportsPage() {
     setManualSkus({});
     setSkuInfo({});
     setOnlyUnmatched(false);
+    setShowMapping(false);
     if (next && partnerId) runPreview(next, {}, vatRate);
   }
 
@@ -330,9 +332,14 @@ export function PartnerReportsPage() {
     }
   }
 
-  // Строки, к которым трек не нашёлся: их и показывает отдельный режим.
-  const unmatchedRows = (preview?.preview ?? []).filter((r) => !r.matched);
+  // Строки без трека приходят ОТДЕЛЬНЫМ списком и показываются только по
+  // кнопке: дописанные в конец обычной таблицы, они выглядели так, будто отчёт
+  // ими заканчивается.
+  const unmatchedRows = preview?.unmatched_rows ?? [];
   const shownRows = onlyUnmatched ? unmatchedRows : preview?.preview ?? [];
+  // Настройку колонок показываем, когда правила нет (его надо проверить) или
+  // когда её открыли вручную.
+  const mappingOpen = showMapping || preview?.rule_source === 'guess';
 
   const inputClass =
     'bg-input-bg border border-border rounded-input px-3 py-2 text-[13px] text-text outline-none font-sans';
@@ -506,9 +513,22 @@ export function PartnerReportsPage() {
                 {preview.rule_source === 'form' && 'Применено правило, которое вы настроили ниже.'}
                 {preview.rule_source === 'guess' &&
                   'Готового правила для такого файла нет — колонки предложены по названиям, проверьте их.'}
+                {' '}
+                {/* Настройка колонок нужна ровно тогда, когда правила нет.
+                    Когда оно есть, показывать шесть полей с уже подставленными
+                    значениями незачем — это готовый ответ, который человек всё
+                    равно не правит. Ссылка оставлена: правило может однажды
+                    разойтись с файлом. */}
+                <button
+                  type="button"
+                  onClick={() => setShowMapping((v) => !v)}
+                  className="text-accent bg-transparent border-0 p-0 cursor-pointer font-sans"
+                >
+                  {mappingOpen ? 'скрыть настройку колонок' : 'настроить колонки'}
+                </button>
               </div>
 
-              <div className="flex flex-col gap-3 mb-4">
+              <div className={`flex-col gap-3 mb-4 ${mappingOpen ? 'flex' : 'hidden'}`}>
                 {FIELDS.map((f) => {
                   const spec = mapping[f.name] ?? {};
                   // Режим определяется НАЛИЧИЕМ ключа, а не его значением:
@@ -616,9 +636,13 @@ export function PartnerReportsPage() {
                 })}
               </div>
 
-              <Button variant="secondary" size="sm" onClick={() => runPreview()} disabled={busy}>
-                Пересобрать по правилу
-              </Button>
+              {/* Кнопка живёт ВНУТРИ настройки: файл разбирается заново с
+                  новым правилом, и делать это на каждую правку поля незачем. */}
+              {mappingOpen && (
+                <Button variant="secondary" size="sm" onClick={() => runPreview()} disabled={busy}>
+                  Применить и пересобрать
+                </Button>
+              )}
 
               {preview.problems.length > 0 && (
                 <div className="mt-4 text-[13px] text-danger">
@@ -654,9 +678,12 @@ export function PartnerReportsPage() {
                     </div>
                   )}
 
-                  <div className="mt-4 overflow-x-auto border border-border rounded-card">
+                  {/* Высота в два десятка строк со скроллом: предпросмотр
+                      нужен, чтобы убедиться, что колонки поняты верно, а не
+                      чтобы читать отчёт целиком — но пролистать дальше можно. */}
+                  <div className="mt-4 overflow-auto max-h-[560px] border border-border rounded-card">
                     <table className="w-full border-collapse">
-                      <thead>
+                      <thead className="sticky top-0 bg-surface z-10">
                         <tr>
                           <th className={th}>Строка</th>
                           <th className={th}>Артикул</th>
@@ -745,12 +772,6 @@ export function PartnerReportsPage() {
                           загрузятся с нулями.
                         </div>
                       )}
-                    </div>
-                  )}
-
-                  {preview.preview_limited && !onlyUnmatched && (
-                    <div className="mt-1 text-[12px] text-text-muted">
-                      В таблице первые строки файла и все строки без трека; итоги — по всему файлу.
                     </div>
                   )}
 

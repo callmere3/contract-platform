@@ -69,9 +69,11 @@ partner_reports_router = APIRouter(
     dependencies=[Depends(require_role(*CAN_VIEW_PARTNER_REPORTS))],
 )
 
-# Сколько строк показываем в предпросмотре. Больше глазами всё равно не
-# смотрят, а браузеру каждая строка — это пять ячеек.
-PREVIEW_ROWS = 100
+# Сколько строк файла отдаём в предпросмотр. На экране видно два десятка, а
+# остальные листаются: человек смотрит начало, но иногда хочет прокрутить
+# дальше. Отдавать весь квартальный отчёт (десятки тысяч строк) ради этого
+# незачем — он в базе, и после загрузки открывается целиком.
+PREVIEW_ROWS = 500
 # Строки, к которым не нашлось трека, показываем ВСЕ (до этого предела) — даже
 # если они лежат в середине файла, за пределами первой сотни. Иначе кнопка
 # «показать строки без артикула» показывала бы не строки без артикула, а те из
@@ -175,6 +177,22 @@ def _apply_manual(rows: list, manual: dict) -> None:
     for row in rows:
         if row.row_num in manual:
             row.sku = manual[row.row_num]
+
+
+def _preview_row(row, resolved: dict) -> dict:
+    """Строка для предпросмотра."""
+    return {
+        "row": row.row_num,
+        "sku": row.sku,
+        "title": row.title,
+        "artist": row.artist,
+        "matched_by": row.matched_by,
+        "matched": row.row_num in resolved,
+        "quantity": _money(row.quantity),
+        "amount_author": _money(row.amount_author),
+        "amount_related": _money(row.amount_related),
+        "problems": row.problems,
+    }
 
 
 def _date(value: str, label: str) -> date:
@@ -471,13 +489,12 @@ def preview(
         if row.row_num in manual:
             row.matched_by = "manual"
 
-    # Показываем начало файла И ВСЕ строки, к которым трека не нашлось: именно
-    # с ними человеку предстоит работать руками.
+    # Начало файла и строки без трека — ДВА РАЗНЫХ СПИСКА, а не один
+    # склеенный: первый показывают всегда, второй — по кнопке. Склеенные, они
+    # дописывали в конец таблицы строки из середины файла, и выглядело это так,
+    # будто отчёт ими заканчивается.
     head = result.rows[:PREVIEW_ROWS]
     missing = [r for r in result.rows if r.row_num not in resolved][:UNMATCHED_PREVIEW]
-    shown = sorted(
-        {r.row_num: r for r in (*head, *missing)}.values(), key=lambda r: r.row_num
-    )
 
     totals = result.totals
     return {
@@ -495,22 +512,9 @@ def preview(
         "rule_name": chosen["name"],
         "vat_rate": rate or None,
         "problems": result.problems,
-        "preview": [
-            {
-                "row": r.row_num,
-                "sku": r.sku,
-                "title": r.title,
-                "artist": r.artist,
-                "matched_by": r.matched_by,
-                "matched": r.row_num in resolved,
-                "quantity": _money(r.quantity),
-                "amount_author": _money(r.amount_author),
-                "amount_related": _money(r.amount_related),
-                "problems": r.problems,
-            }
-            for r in shown
-        ],
-        "preview_limited": totals["rows"] > len(shown),
+        "preview": [_preview_row(r, resolved) for r in head],
+        "unmatched_rows": [_preview_row(r, resolved) for r in missing],
+        "preview_limited": totals["rows"] > len(head),
         "totals": {
             "rows": totals["rows"],
             "ok_rows": totals["ok_rows"],
