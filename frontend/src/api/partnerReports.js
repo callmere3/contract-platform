@@ -51,7 +51,12 @@ export function saveRule(partnerId, { mapping, vatRate = '', sheet = '', sampleF
   return apiJson(`${API}/partner-reports/rules/${partnerId}`, { method: 'PUT', body });
 }
 
-function uploadBody({ partnerId, file, mapping, vatRate, sheet }) {
+/** Есть ли такой артикул в каталоге — для строки, куда его вписывают руками. */
+export function checkTrack(sku) {
+  return apiJson(`${API}/partner-reports/track?sku=${encodeURIComponent(sku)}`);
+}
+
+function uploadBody({ partnerId, file, mapping, vatRate, sheet, manualSkus }) {
   const body = new FormData();
   body.append('partner_id', partnerId);
   body.append('file', file);
@@ -60,6 +65,10 @@ function uploadBody({ partnerId, file, mapping, vatRate, sheet }) {
   if (mapping) body.append('mapping', JSON.stringify(mapping));
   if (vatRate) body.append('vat_rate', vatRate);
   if (sheet) body.append('sheet', sheet);
+  // Артикулы, вписанные руками в предпросмотре: {номер строки: артикул}.
+  if (manualSkus && Object.keys(manualSkus).length) {
+    body.append('manual_skus', JSON.stringify(manualSkus));
+  }
   return body;
 }
 

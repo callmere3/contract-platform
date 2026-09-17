@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { PageHeader } from '../components/ui/PageHeader';
@@ -7,6 +7,7 @@ import { useAuth } from '../auth/AuthContext';
 import { canManagePartnerReports } from '../auth/permissions';
 import { listPartners } from '../api/partners';
 import {
+  checkTrack,
   createReport,
   deleteReport,
   listReports,
@@ -21,10 +22,10 @@ import {
  * перетаскивание удобно, когда файл уже открыт в проводнике, и бесполезно,
  * когда его ищут.
  *
- * ПРАВИЛО РАЗБОРА НАСТРАИВАЕТСЯ ЗДЕСЬ ЖЕ, на предпросмотре: колонки выбираются
- * ПО НАЗВАНИЮ из списка, который сервер прочитал в шапке файла. Первый файл
- * партнёра и есть образец, а галочка «запомнить правило» превращает разовую
- * настройку в постоянную.
+ * ПРАВИЛА ИЗВЕСТНЫХ ПЛОЩАДОК ЖИВУТ НА СЕРВЕРЕ (`BUILTIN_RULES`): файл узнаётся
+ * по колонкам, и правило применяется само — экран лишь показывает, что оно
+ * применилось. Настроить колонки руками по-прежнему можно, и галочка
+ * «запомнить правило» сделает настройку постоянной для этого партнёра.
  *
  * ФОРМУЛА — для случая, когда нужной суммы в отчёте нет отдельной колонкой. В
  * отчёте МТС, например, есть только общая сумма вознаграждения и две ставки, а
@@ -57,6 +58,106 @@ const FIELDS = [
   { name: 'amount_related', label: 'Сумма смежных' },
 ];
 
+/**
+ * Выбор партнёра ПОИСКОМ, а не списком из сотни строк (просьба владельца
+ * 18.09.2026). Стоит начать печатать — список сразу сужается до подходящих:
+ * длинный перечень, который надо листать до нужной буквы, ровно та работа, от
+ * которой поиск и избавляет. Ищем и по имени, и по коду Dista — у человека со
+ * строчкой отчёта в руках чаще именно код.
+ */
+function PartnerPicker({ partners, value, onChange, inputClass }) {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const box = useRef(null);
+  const chosen = partners.find((p) => p.id === value) || null;
+
+  const found = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const list = q
+      ? partners.filter(
+          (p) =>
+            (p.name || '').toLowerCase().includes(q) ||
+            (p.dista_id || '').toLowerCase().includes(q),
+        )
+      : partners;
+    return list.slice(0, 50);
+  }, [partners, query]);
+
+  // Нажатие мимо закрывает список и возвращает в поле имя выбранного: поле
+  // показывает выбор, а не остатки поиска.
+  useEffect(() => {
+    if (!open) return undefined;
+    const away = (e) => {
+      if (box.current && !box.current.contains(e.target)) {
+        setOpen(false);
+        setQuery('');
+      }
+    };
+    document.addEventListener('mousedown', away);
+    return () => document.removeEventListener('mousedown', away);
+  }, [open]);
+
+  function pick(partner) {
+    onChange(partner.id);
+    setOpen(false);
+    setQuery('');
+  }
+
+  return (
+    <div className="relative" ref={box}>
+      <input
+        value={open ? query : chosen?.name ?? ''}
+        placeholder={chosen ? chosen.name : '— начните вводить —'}
+        onFocus={() => {
+          setOpen(true);
+          setQuery('');
+        }}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setOpen(true);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && found.length) pick(found[0]);
+          if (e.key === 'Escape') {
+            setOpen(false);
+            setQuery('');
+          }
+        }}
+        className={`${inputClass} min-w-[240px]`}
+      />
+      {open && (
+        <div className="absolute z-50 mt-1 w-[320px] max-h-[280px] overflow-y-auto bg-surface border border-border rounded-card shadow-lg">
+          {found.length === 0 && (
+            <div className="px-3 py-2 text-[12.5px] text-text-muted">Ничего не нашлось</div>
+          )}
+          {found.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => pick(p)}
+              className={`block w-full text-left px-3 py-2 text-[13px] bg-transparent border-0 cursor-pointer font-sans ${
+                p.id === value ? 'text-accent' : 'text-text'
+              } hover:bg-hover`}
+            >
+              {p.name}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Название колонки и значение из первой строки файла: «Кол-во Продаж · 16». */
+function columnHint(preview, column) {
+  const index = preview.columns.indexOf(column);
+  const value = index >= 0 ? preview.sample_rows?.[0]?.[index] : '';
+  if (!value) return column;
+  const short = String(value).length > 18 ? `${String(value).slice(0, 18)}…` : value;
+  return `${column} · ${short}`;
+}
+
 const iso = (d) => d.toISOString().slice(0, 10);
 const monthRange = (year, month) => ({
   from: iso(new Date(Date.UTC(year, month, 1))),
@@ -87,6 +188,12 @@ export function PartnerReportsPage() {
   const [mapping, setMapping] = useState({});
   const [vatRate, setVatRate] = useState('');
   const [rememberRule, setRememberRule] = useState(true);
+  // Артикулы, вписанные руками: {номер строки: артикул}. Живут до загрузки и
+  // уезжают вместе с файлом — сервер применяет их до привязки к каталогу.
+  const [manualSkus, setManualSkus] = useState({});
+  const [skuInfo, setSkuInfo] = useState({});
+  const [onlyUnmatched, setOnlyUnmatched] = useState(false);
+  const [showSource, setShowSource] = useState(false);
 
   const [reports, setReports] = useState([]);
   const [totals, setTotals] = useState(null);
@@ -121,6 +228,22 @@ export function PartnerReportsPage() {
     loadReports();
   }, [loadReports]);
 
+  /** Вписанный артикул: сразу показываем, что это за трек — или что его нет. */
+  async function lookupSku(rowNum, sku) {
+    const code = sku.trim();
+    setManualSkus((m) => ({ ...m, [rowNum]: code }));
+    if (!code) {
+      setSkuInfo((s) => ({ ...s, [rowNum]: null }));
+      return;
+    }
+    try {
+      const data = await checkTrack(code);
+      setSkuInfo((s) => ({ ...s, [rowNum]: data }));
+    } catch {
+      setSkuInfo((s) => ({ ...s, [rowNum]: null }));
+    }
+  }
+
   async function runPreview(nextFile = file, nextMapping = mapping, nextVat = vatRate) {
     if (!nextFile || !partnerId) return;
     setBusy(true);
@@ -130,9 +253,11 @@ export function PartnerReportsPage() {
       const data = await previewReport({
         partnerId,
         file: nextFile,
-        // Пустое правило = «возьми сохранённое у партнёра или догадайся».
+        // Пустое правило = «возьми готовое правило площадки, сохранённое у
+        // партнёра или догадайся по названиям колонок».
         mapping: Object.keys(nextMapping).length ? nextMapping : null,
         vatRate: nextVat,
+        manualSkus,
       });
       setPreview(data);
       setMapping(data.mapping ?? {});
@@ -149,6 +274,11 @@ export function PartnerReportsPage() {
     setFile(next);
     setPreview(null);
     setMapping({});
+    // Новый файл — новые номера строк: вписанные артикулы к нему отношения не
+    // имеют, и оставить их значит проставить код чужой строке.
+    setManualSkus({});
+    setSkuInfo({});
+    setOnlyUnmatched(false);
     if (next && partnerId) runPreview(next, {}, vatRate);
   }
 
@@ -161,6 +291,7 @@ export function PartnerReportsPage() {
         file,
         mapping,
         vatRate,
+        manualSkus,
         periodFrom: range.from,
         periodTo: range.to,
         saveRuleToo: rememberRule,
@@ -174,6 +305,8 @@ export function PartnerReportsPage() {
       setFile(null);
       setPreview(null);
       setMapping({});
+      setManualSkus({});
+      setSkuInfo({});
       loadReports();
     } catch (e) {
       setError(e.message);
@@ -191,6 +324,10 @@ export function PartnerReportsPage() {
       setError(e.message);
     }
   }
+
+  // Строки, к которым трек не нашёлся: их и показывает отдельный режим.
+  const unmatchedRows = (preview?.preview ?? []).filter((r) => !r.matched);
+  const shownRows = onlyUnmatched ? unmatchedRows : preview?.preview ?? [];
 
   const inputClass =
     'bg-input-bg border border-border rounded-input px-3 py-2 text-[13px] text-text outline-none font-sans';
@@ -214,22 +351,16 @@ export function PartnerReportsPage() {
           <div className="p-5 flex flex-wrap gap-4 items-end border-b border-border">
             <label className="block">
               <span className="block text-[12px] text-text-secondary mb-1">Партнёр</span>
-              <select
+              <PartnerPicker
+                partners={partners}
                 value={partnerId}
-                onChange={(e) => {
-                  setPartnerId(e.target.value);
+                inputClass={inputClass}
+                onChange={(id) => {
+                  setPartnerId(id);
                   setPreview(null);
                   setMapping({});
                 }}
-                className={`${inputClass} min-w-[220px]`}
-              >
-                <option value="">— выберите —</option>
-                {partners.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
+              />
             </label>
 
             {/* ПЕРИОД. Месяц и квартал — кнопки, заполняющие пару дат; «свой»
@@ -354,13 +485,60 @@ export function PartnerReportsPage() {
 
           {preview && (
             <div className="px-5 pb-5">
+              {/* ОТКУДА ПРАВИЛО — первое, что надо понять, глядя на разбор:
+                  готовое правило площадки и догадка по названиям колонок дают
+                  одинаково аккуратную таблицу, а доверия заслуживают разного. */}
               <div className="text-[12.5px] text-text-secondary mb-3">
                 Шапка найдена в строке {preview.header_row}. Колонок в файле:{' '}
                 {preview.columns.length}.{' '}
-                {preview.rule_saved
-                  ? 'Применено сохранённое правило партнёра.'
-                  : 'Правила у партнёра ещё нет — соответствие предложено по названиям колонок.'}
+                {preview.rule_source === 'builtin' && (
+                  <b className="text-accent">
+                    Применено готовое правило «{preview.rule_name}» — колонки и формулы уже
+                    настроены.
+                  </b>
+                )}
+                {preview.rule_source === 'partner' && 'Применено сохранённое правило партнёра.'}
+                {preview.rule_source === 'form' && 'Применено правило, которое вы настроили ниже.'}
+                {preview.rule_source === 'guess' &&
+                  'Готового правила для такого файла нет — колонки предложены по названиям, проверьте их.'}
+                {' '}
+                <button
+                  type="button"
+                  onClick={() => setShowSource((v) => !v)}
+                  className="text-accent bg-transparent border-0 p-0 cursor-pointer font-sans"
+                >
+                  {showSource ? 'скрыть файл' : 'показать первые строки файла'}
+                </button>
               </div>
+
+              {/* Сам файл, как он есть: без него формулу пишут вслепую — видно
+                  названия колонок, но не то, что в них лежит. */}
+              {showSource && (
+                <div className="mb-4 overflow-x-auto border border-border rounded-card">
+                  <table className="w-full border-collapse">
+                    <thead>
+                      <tr>
+                        {preview.columns.map((c, i) => (
+                          <th key={`${c}-${i}`} className={th}>
+                            {c || '—'}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(preview.sample_rows ?? []).map((row, i) => (
+                        <tr key={i}>
+                          {preview.columns.map((c, j) => (
+                            <td key={`${c}-${j}`} className={`${td} whitespace-nowrap`}>
+                              {row[j] || '—'}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
 
               <div className="flex flex-col gap-3 mb-4">
                 {FIELDS.map((f) => {
@@ -399,9 +577,12 @@ export function PartnerReportsPage() {
                             className={`${inputClass} w-full`}
                           >
                             <option value="">— нет —</option>
+                            {/* Рядом с названием — ЗНАЧЕНИЕ из первой строки
+                                файла: по одному названию не всегда понятно, что
+                                в колонке лежит. */}
                             {preview.columns.filter(Boolean).map((c) => (
                               <option key={c} value={c}>
-                                {c}
+                                {columnHint(preview, c)}
                               </option>
                             ))}
                           </select>
@@ -427,7 +608,7 @@ export function PartnerReportsPage() {
                           <option value="">+ колонка</option>
                           {preview.columns.filter(Boolean).map((c) => (
                             <option key={c} value={c}>
-                              {c}
+                              {columnHint(preview, c)}
                             </option>
                           ))}
                         </select>
@@ -465,6 +646,29 @@ export function PartnerReportsPage() {
 
               {preview.preview.length > 0 && (
                 <>
+                  {/* СТРОКИ БЕЗ ТРЕКА — отдельным взглядом: в файле их полтора
+                      десятка на семь сотен, и искать их глазами по таблице
+                      бессмысленно. Сервер присылает их все, даже те, что лежат
+                      в середине файла. */}
+                  {unmatchedRows.length > 0 && (
+                    <div className="mt-4 flex flex-wrap items-center gap-3">
+                      <button
+                        type="button"
+                        className={tab(onlyUnmatched)}
+                        onClick={() => setOnlyUnmatched((v) => !v)}
+                      >
+                        {onlyUnmatched
+                          ? 'Показать все строки'
+                          : `Показать строки без трека (${preview.totals.unmatched})`}
+                      </button>
+                      <span className="text-[12.5px] text-text-muted">
+                        В такие строки артикул можно вписать руками — прямо в таблице.
+                        {unmatchedRows.length < preview.totals.unmatched &&
+                          ` Показаны первые ${unmatchedRows.length}.`}
+                      </span>
+                    </div>
+                  )}
+
                   <div className="mt-4 overflow-x-auto border border-border rounded-card">
                     <table className="w-full border-collapse">
                       <thead>
@@ -479,21 +683,52 @@ export function PartnerReportsPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {preview.preview.map((r) => (
+                        {shownRows.map((r) => (
                           <tr key={r.row} className={r.problems.length ? 'bg-danger-soft' : undefined}>
                             <td className={`${td} tabular-nums text-text-muted`}>{r.row}</td>
-                            {/* Артикул, подобранный по названию, помечен: это
-                                догадка сервиса, пусть и строгая, а не данные
-                                площадки. */}
+                            {/* Артикул: у найденной строки — текст (подобранный
+                                по названию помечен, это догадка сервиса, а не
+                                данные площадки), у ненайденной — поле ввода. */}
                             <td className={`${td} font-mono`}>
-                              {r.sku || '—'}
-                              {r.matched_by === 'name' && (
-                                <span
-                                  className="ml-1 text-[11px] text-accent font-sans"
-                                  title="Артикул подобран по названию и исполнителю — в файле его нет"
-                                >
-                                  подобран
-                                </span>
+                              {r.matched ? (
+                                <>
+                                  {r.sku || '—'}
+                                  {r.matched_by === 'name' && (
+                                    <span
+                                      className="ml-1 text-[11px] text-accent font-sans"
+                                      title="Артикул подобран по названию и исполнителю — в файле его нет"
+                                    >
+                                      подобран
+                                    </span>
+                                  )}
+                                  {r.matched_by === 'manual' && (
+                                    <span className="ml-1 text-[11px] text-accent font-sans">
+                                      вписан
+                                    </span>
+                                  )}
+                                </>
+                              ) : (
+                                <div className="flex flex-col gap-1">
+                                  <input
+                                    value={manualSkus[r.row] ?? r.sku ?? ''}
+                                    placeholder="артикул"
+                                    onChange={(e) => lookupSku(r.row, e.target.value)}
+                                    className={`${inputClass} w-[120px] py-1 font-mono text-[12px]`}
+                                  />
+                                  {/* Найденный трек показываем НАЗВАНИЕМ: код
+                                      из соседней системы сам по себе не
+                                      подтверждает, что это тот же трек. */}
+                                  {skuInfo[r.row]?.found && (
+                                    <span className="text-[11px] text-accent font-sans">
+                                      {skuInfo[r.row].title} — {skuInfo[r.row].artist}
+                                    </span>
+                                  )}
+                                  {skuInfo[r.row] && !skuInfo[r.row].found && (
+                                    <span className="text-[11px] text-danger font-sans">
+                                      нет в каталоге
+                                    </span>
+                                  )}
+                                </div>
                               )}
                             </td>
                             <td className={td}>{r.title || '—'}</td>
@@ -521,9 +756,14 @@ export function PartnerReportsPage() {
                     <div className="mt-2 text-[12.5px] text-danger">
                       {preview.totals.no_sku > 0 && (
                         <div>
-                          Без артикула в файле: {preview.totals.no_sku} строк. Там, где название и
-                          исполнитель однозначно нашлись в каталоге, артикул подобран и помечен
-                          «подобран»; остальные загрузятся неразнесёнными.
+                          Без артикула в файле: {preview.totals.no_sku} строк, из них подобрано по
+                          названию и исполнителю: {preview.totals.matched_by_name}.
+                        </div>
+                      )}
+                      {preview.totals.unmatched > 0 && (
+                        <div>
+                          Не нашлось трека в каталоге: {preview.totals.unmatched} строк — они
+                          загрузятся неразнесёнными.
                         </div>
                       )}
                       {preview.totals.problem_rows > 0 && (
@@ -535,9 +775,9 @@ export function PartnerReportsPage() {
                     </div>
                   )}
 
-                  {preview.preview_limited && (
+                  {preview.preview_limited && !onlyUnmatched && (
                     <div className="mt-1 text-[12px] text-text-muted">
-                      В таблице первые {preview.preview.length} строк, итоги — по всему файлу.
+                      В таблице первые строки файла и все строки без трека; итоги — по всему файлу.
                     </div>
                   )}
 

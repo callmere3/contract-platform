@@ -52,10 +52,13 @@ from app.models import (
 from app.partner_reports import (
     FIELDS,
     FIELD_LABELS,
+    data_samples,
+    match_builtin,
     parse_report,
     period_label,
     pick_track,
     read_columns,
+    read_table,
     search_word,
     sheet_names,
     suggest_mapping,
@@ -71,6 +74,11 @@ partner_reports_router = APIRouter(
 # Сколько строк показываем в предпросмотре. Больше глазами всё равно не
 # смотрят, а браузеру каждая строка — это пять ячеек.
 PREVIEW_ROWS = 100
+# Строки, к которым не нашлось трека, показываем ВСЕ (до этого предела) — даже
+# если они лежат в середине файла, за пределами первой сотни. Иначе кнопка
+# «показать строки без артикула» показывала бы не строки без артикула, а те из
+# них, что случайно попали в начало.
+UNMATCHED_PREVIEW = 300
 # Предел на файл. Квартальный отчёт площадки — это десятки тысяч строк;
 # миллион означает, что прислали что-то другое или файл склеен из года.
 MAX_ROWS = 300_000
@@ -133,6 +141,42 @@ def _resolve_tracks(db: Session, rows: list) -> dict:
             row.matched_by = "name"
             resolved[row.row_num] = track.id
     return resolved
+
+
+def _manual_skus(raw: str) -> dict:
+    """
+    Артикулы, вписанные человеком в предпросмотре: {номер строки: артикул}.
+
+    Площадка код проставляет не всегда, а подбор по названию берёт только
+    однозначное совпадение — «Азимут» у нас лежит пятью разными треками. То,
+    что сервис по-честному отказался угадать, человек вправе указать сам,
+    глядя на название и исполнителя.
+    """
+    if not str(raw or "").strip():
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        raise HTTPException(400, "manual_skus должен быть корректным JSON")
+    if not isinstance(parsed, dict):
+        raise HTTPException(400, "manual_skus должен быть объектом")
+    out = {}
+    for key, value in parsed.items():
+        text = str(value or "").strip()
+        if not text:
+            continue
+        try:
+            out[int(key)] = text
+        except (TypeError, ValueError):
+            raise HTTPException(400, f"manual_skus: «{key}» — это не номер строки")
+    return out
+
+
+def _apply_manual(rows: list, manual: dict) -> None:
+    """Вписанные руками артикулы — в строки, до привязки к каталогу."""
+    for row in rows:
+        if row.row_num in manual:
+            row.sku = manual[row.row_num]
 
 
 def _date(value: str, label: str) -> date:
@@ -321,11 +365,18 @@ def _read_upload(file: UploadFile) -> bytes:
     return file.file.read()
 
 
-def _mapping_from(rule: PartnerReportRule | None, mapping_json: str, columns: list) -> dict:
+def _pick_rule(rule: PartnerReportRule | None, mapping_json: str, columns: list) -> dict:
     """
-    Чьё правило применяем: присланное формой (человек как раз его настраивает),
-    сохранённое у партнёра или — если ни того ни другого — догадку по
-    названиям колонок.
+    Чьё правило применяем — и откуда оно взялось.
+
+    Порядок старшинства: присланное формой (человек как раз его настраивает) →
+    сохранённое у партнёра → ГОТОВОЕ ПРАВИЛО ПЛОЩАДКИ, узнанное по колонкам
+    файла (`BUILTIN_RULES`) → догадка по названиям колонок.
+
+    Откуда правило взялось, уходит на экран (`source`): человек должен видеть,
+    что к его файлу применилось готовое правило МТС, а не набор угаданных
+    колонок, — иначе «оно вроде само всё нашло» и проверка формулы
+    откладывается до первого неверного платежа.
     """
     if mapping_json.strip():
         try:
@@ -333,10 +384,35 @@ def _mapping_from(rule: PartnerReportRule | None, mapping_json: str, columns: li
         except json.JSONDecodeError:
             raise HTTPException(400, "mapping должен быть корректным JSON")
         if parsed:
-            return parsed
+            return {"mapping": parsed, "source": "form", "name": None, "vat_rate": None}
     if rule is not None and rule.mapping:
-        return rule.mapping
-    return suggest_mapping(columns)
+        return {"mapping": rule.mapping, "source": "partner", "name": None, "vat_rate": None}
+    builtin = match_builtin(columns)
+    if builtin is not None:
+        return {
+            "mapping": builtin["mapping"],
+            "source": "builtin",
+            "name": builtin["name"],
+            "vat_rate": builtin.get("vat_rate"),
+        }
+    return {"mapping": suggest_mapping(columns), "source": "guess", "name": None, "vat_rate": None}
+
+
+@partner_reports_router.get("/track")
+def find_track_by_sku(sku: str = "", db: Session = Depends(get_session)) -> dict:
+    """
+    Есть ли такой артикул в каталоге — для строки, в которую артикул вписывают
+    руками. Отвечает названием и исполнителем: человек вписывает код из
+    соседней системы и должен увидеть, ТОТ ли это трек, а не только «найден».
+    """
+    code = str(sku or "").strip()
+    track = db.scalar(select(Track).where(Track.sku == code)) if code else None
+    return {
+        "sku": code,
+        "found": track is not None,
+        "title": track.title if track else None,
+        "artist": track.artist if track else None,
+    }
 
 
 @partner_reports_router.post(
@@ -348,6 +424,7 @@ def preview(
     mapping: str = Form(""),
     vat_rate: str = Form(""),
     sheet: str = Form(""),
+    manual_skus: str = Form(""),
     db: Session = Depends(get_session),
 ) -> dict:
     """
@@ -372,26 +449,42 @@ def preview(
     # Колонки читаем ДО применения правила: если правила нет, догадка
     # строится как раз по ним.
     columns, _ = read_columns(content, file.filename, chosen_sheet)
-    active_mapping = _mapping_from(rule, mapping, columns)
-    rate = vat_rate.strip() or (str(rule.vat_rate) if rule and rule.vat_rate else "")
+    chosen = _pick_rule(rule, mapping, columns)
+    active_mapping = chosen["mapping"]
+    rate = (
+        vat_rate.strip()
+        or (str(rule.vat_rate) if rule and rule.vat_rate else "")
+        or (str(chosen["vat_rate"]) if chosen["vat_rate"] else "")
+    )
+    manual = _manual_skus(manual_skus)
 
+    # Разбираем ВЕСЬ файл, а не первые сто строк: итоги человек сверяет с
+    # платежом площадки, а строки без артикула бывают и на пятисотой строке —
+    # показать их иначе нечем.
     result = parse_report(
         content, file.filename, active_mapping,
-        vat_rate=rate or None, sheet=chosen_sheet, limit=PREVIEW_ROWS,
+        vat_rate=rate or None, sheet=chosen_sheet,
     )
+    _apply_manual(result.rows, manual)
     # Привязку показываем уже в предпросмотре: человек должен видеть, что
     # артикул подобран по названию, ДО того, как отчёт ляжет в базу.
-    if not result.problems:
-        _resolve_tracks(db, result.rows)
-    # Итоги считаем по ВСЕМУ файлу, а не по показанным ста строкам: человек
-    # сверяет сумму отчёта с платежом, и «итог первых ста строк» тут хуже, чем
-    # никакого.
-    full = parse_report(
-        content, file.filename, active_mapping,
-        vat_rate=rate or None, sheet=chosen_sheet,
-    ) if not result.problems else result
+    resolved = {} if result.problems else _resolve_tracks(db, result.rows)
+    for row in result.rows:
+        if row.row_num in manual:
+            row.matched_by = "manual"
 
-    totals = full.totals
+    # Показываем начало файла И ВСЕ строки, к которым трека не нашлось: именно
+    # с ними человеку предстоит работать руками.
+    head = result.rows[:PREVIEW_ROWS]
+    missing = [r for r in result.rows if r.row_num not in resolved][:UNMATCHED_PREVIEW]
+    shown = sorted(
+        {r.row_num: r for r in (*head, *missing)}.values(), key=lambda r: r.row_num
+    )
+
+    totals = result.totals
+    samples = data_samples(
+        read_table(content, file.filename, chosen_sheet), result.header_row
+    )
     return {
         "partner": {"id": str(partner.id), "name": partner.name},
         "file_name": file.filename,
@@ -401,6 +494,13 @@ def preview(
         "header_row": result.header_row + 1,     # человеку — как в Excel
         "mapping": active_mapping,
         "rule_saved": rule is not None,
+        # Откуда взялось правило: готовое правило площадки, сохранённое у
+        # партнёра, настроенное сейчас руками или догадка по названиям колонок.
+        "rule_source": chosen["source"],
+        "rule_name": chosen["name"],
+        # Первые строки файла КАК ЕСТЬ — чтобы было видно сами данные, а не
+        # только то, что из них понял сервис.
+        "sample_rows": samples,
         "vat_rate": rate or None,
         "problems": result.problems,
         "preview": [
@@ -410,14 +510,15 @@ def preview(
                 "title": r.title,
                 "artist": r.artist,
                 "matched_by": r.matched_by,
+                "matched": r.row_num in resolved,
                 "quantity": _money(r.quantity),
                 "amount_author": _money(r.amount_author),
                 "amount_related": _money(r.amount_related),
                 "problems": r.problems,
             }
-            for r in result.rows
+            for r in shown
         ],
-        "preview_limited": totals["rows"] > len(result.rows),
+        "preview_limited": totals["rows"] > len(shown),
         "totals": {
             "rows": totals["rows"],
             "ok_rows": totals["ok_rows"],
@@ -425,6 +526,10 @@ def preview(
             # ЧИСЛОМ до загрузки: по первым деньги придут «ничьи», а вторые
             # лягут нулями, и узнать об этом человек должен заранее.
             "no_sku": totals["no_sku"],
+            # Не нашлось трека — это не то же самое, что «нет артикула»: код
+            # в файле может быть, а трека с таким кодом в каталоге нет.
+            "unmatched": totals["rows"] - len(resolved),
+            "matched_by_name": sum(1 for r in result.rows if r.matched_by == "name"),
             "problem_rows": totals["problem_rows"],
             "quantity": _money(totals["quantity"]),
             "amount_author": _money(totals["amount_author"]),
@@ -445,6 +550,7 @@ def create_report(
     mapping: str = Form(""),
     vat_rate: str = Form(""),
     sheet: str = Form(""),
+    manual_skus: str = Form(""),
     save_rule: bool = Form(False),
     db: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
@@ -487,8 +593,13 @@ def create_report(
     )
     chosen_sheet = sheet.strip() or (rule.sheet if rule else None)
     columns, _ = read_columns(content, file.filename, chosen_sheet)
-    active_mapping = _mapping_from(rule, mapping, columns)
-    rate = vat_rate.strip() or (str(rule.vat_rate) if rule and rule.vat_rate else "")
+    chosen = _pick_rule(rule, mapping, columns)
+    active_mapping = chosen["mapping"]
+    rate = (
+        vat_rate.strip()
+        or (str(rule.vat_rate) if rule and rule.vat_rate else "")
+        or (str(chosen["vat_rate"]) if chosen["vat_rate"] else "")
+    )
 
     result = parse_report(
         content, file.filename, active_mapping,
@@ -504,9 +615,15 @@ def create_report(
             f"В отчёте {len(result.rows)} строк — это больше {MAX_ROWS}. "
             "Похоже, в файл попал не один квартал.",
         )
+    # Артикулы, вписанные руками в предпросмотре, — до привязки к каталогу.
+    manual = _manual_skus(manual_skus)
+    _apply_manual(result.rows, manual)
     # Привязка к каталогу: по артикулу, а строки без него — по названию и
     # исполнителю (см. _resolve_tracks).
     track_by_row = _resolve_tracks(db, result.rows)
+    for row in result.rows:
+        if row.row_num in manual:
+            row.matched_by = "manual"
 
     totals = result.totals
     report = PartnerReport(
@@ -565,6 +682,7 @@ def create_report(
             "rows": report.rows_count,
             "unmatched": report.unmatched_count,
             "matched_by_name": sum(1 for r in result.rows if r.matched_by == "name"),
+            "manual_skus": len(manual),
             "author": str(report.total_author),
             "related": str(report.total_related),
         },
