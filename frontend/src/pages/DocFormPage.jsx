@@ -895,6 +895,24 @@ export function DocFormPage() {
 
   return (
     <div className="max-w-[980px] mx-auto px-8 pt-12 pb-20">
+      {/* Предупреждение приходит С СЕРВЕРА (schema.notice) и показывается как
+          есть: какие шаблоны юрист ещё не смотрел — знание про документы, и
+          живёт оно рядом с остальными правилами по договорам
+          (UNAPPROVED_CONTRACT_FAMILIES в app/tags.py). Форма про это ничего
+          не знает и не решает — просто рисует красным то, что пришло.
+
+          Красным и НАД формой, а не подсказкой под полем: это предупреждение
+          о самом документе, а не о том, как заполнить строку, и прочитать
+          его надо до того, как человек начнёт печатать. */}
+      {schema.notice && (
+        <div className="mb-5 border border-danger rounded-card bg-danger-soft px-5 py-4">
+          <div className="text-[13px] font-semibold text-danger mb-0.5">
+            Шаблон не одобрен юристом
+          </div>
+          <div className="text-[13px] text-text leading-relaxed">{schema.notice}</div>
+        </div>
+      )}
+
       <Card>
         <div className="flex items-center justify-between px-6 py-5 border-b border-border gap-4">
           <div className="min-w-0">

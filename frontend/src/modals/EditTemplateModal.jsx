@@ -22,7 +22,32 @@ import {
  * и попытка его связать вернула бы 404 «В шаблоне нет метки 'performers'».
  * Поэтому в настройке источников списки не показываем и не отправляем.
  */
-const mappableFields = (schemaFields) => schemaFields.filter((f) => f.type !== 'list');
+/**
+ * Поля для настройки источников: без списков (таблицы из карточки не берутся),
+ * а ПОЛЯ ИЗ КАРТОЧКИ КОНТРАГЕНТА — НАВЕРХУ (просьба владельца 17.09.2026).
+ *
+ * Настраивают всегда одни и те же метки — ФИО, рег. номер, роялти, номер
+ * договора, псевдоним, — а лежали они вперемешку с тремя десятками обычных
+ * полей, и в каждом шаблоне их приходилось выискивать заново.
+ *
+ * Порядок такой: сначала уже связанные с карточкой, потом те, что обычно
+ * связывают (список приходит с сервера — `card_fields`), потом всё
+ * остальное. Внутри каждой группы порядок прежний, из схемы шаблона:
+ * сортировка устойчивая, и поля не перемешиваются между собой.
+ */
+const mappableFields = (schemaFields, cardFields = []) => {
+  const suggested = new Set(cardFields);
+  const rank = (f) => {
+    if ((f.maps_to ?? 'manual') !== 'manual') return 0;
+    if (suggested.has(f.name)) return 1;
+    return 2;
+  };
+  return schemaFields
+    .filter((f) => f.type !== 'list')
+    .map((f, i) => ({ f, i }))
+    .sort((a, b) => rank(a.f) - rank(b.f) || a.i - b.i)
+    .map(({ f }) => f);
+};
 
 /**
  * Настройка существующего шаблона (только admin): метаданные, замена файла,
@@ -73,6 +98,9 @@ export function EditTemplateModal({ template, onDone, level, isTop }) {
   const [fields, setFields] = useState([]);
   const [mapsToOptions, setMapsToOptions] = useState([]);
   const [mapping, setMapping] = useState({}); // {placeholder: maps_to}
+  // Метки, которые обычно берут из карточки, — приходят с сервера и задают
+  // порядок списка (см. mappableFields).
+  const [cardFields, setCardFields] = useState([]);
   const [loadingFields, setLoadingFields] = useState(true);
 
   const [error, setError] = useState('');
@@ -96,9 +124,10 @@ export function EditTemplateModal({ template, onDone, level, isTop }) {
           getMapsToOptions(),
         ]);
         if (cancelled) return;
-        const mappable = mappableFields(schema.fields);
+        const mappable = mappableFields(schema.fields, options.card_fields);
         setFields(mappable);
         setMapsToOptions(options.options);
+        setCardFields(options.card_fields ?? []);
         setMapping(Object.fromEntries(mappable.map((f) => [f.name, f.maps_to ?? 'manual'])));
       } catch (e) {
         if (!cancelled) setError(e.message);
@@ -172,7 +201,7 @@ export function EditTemplateModal({ template, onDone, level, isTop }) {
       // поля или исчезнуть старые. maps_to существующих меток сервер
       // сохраняет (см. replace_template_file), но новые придут как 'manual'.
       const schema = await getTemplateFields(template.id);
-      const mappable = mappableFields(schema.fields);
+      const mappable = mappableFields(schema.fields, cardFields);
       setFields(mappable);
       setMapping(Object.fromEntries(mappable.map((f) => [f.name, f.maps_to ?? 'manual'])));
       onDone?.();

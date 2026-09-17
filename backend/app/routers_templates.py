@@ -64,6 +64,9 @@ from app.models import (
 from app.roles import ADMIN, CAN_GENERATE, SEES_HIDDEN_TEMPLATES
 from app.storage import delete_file, get_file, put_file
 from app.tags import (
+    CARD_FIELD_HINTS,
+    UNAPPROVED_CONTRACT_FAMILIES,
+    UNAPPROVED_NOTICE,
     CONTRAGENT_MAPPED_FIELDS,
     CONTRAGENT_TYPES,
     COUNTRIES,
@@ -490,7 +493,11 @@ def get_maps_to_options() -> dict:
     """
     return {
         "options": [{"value": "manual", "label": "Ручной ввод"}]
-        + [{"value": v, "label": l} for v, l in CONTRAGENT_MAPPED_FIELDS.items()]
+        + [{"value": v, "label": l} for v, l in CONTRAGENT_MAPPED_FIELDS.items()],
+        # Метки, которые обычно берут из карточки, — модалка поднимает их
+        # наверх списка (см. CARD_FIELD_HINTS). Порядок полей — дело показа,
+        # но список таких меток знает сервер.
+        "card_fields": sorted(CARD_FIELD_HINTS),
     }
 
 
@@ -737,6 +744,17 @@ def get_template_fields(
         # Готовая пара (Акт) для галочки «Также сформировать …» — или None.
         "paired_act": paired_act,
         "path": folder_path(template.folder),
+        # Предупреждение над формой (или None). Решает СЕРВЕР, а не фронт:
+        # какие шаблоны юрист ещё не смотрел — знание про документы, а не про
+        # вёрстку, и лежать ему рядом с остальными правилами по договорам
+        # (UNAPPROVED_CONTRACT_FAMILIES в tags.py). Фронт просто показывает
+        # текст, если он пришёл.
+        "notice": (
+            UNAPPROVED_NOTICE
+            if template.doc_type == "contract"
+            and template.contract_family in UNAPPROVED_CONTRACT_FAMILIES
+            else None
+        ),
         "fields": form_fields,
     }
 
