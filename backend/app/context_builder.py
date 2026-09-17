@@ -985,6 +985,79 @@ def build_advance_days_text(advance_days_raw) -> str:
     return num_to_words_ru_genitive(n)
 
 
+# ЧАСТИ ГАРАНТИРОВАННОГО ПЛАТЕЖА (договор «аванс + обязательство на треки»,
+# СГ и ИП). Общая сумма аванса выплачивается до трёх раз: до сдачи треков,
+# после сдачи половины и после сдачи всех. Каждой части — свой пункт
+# договора.
+ADVANCE_PARTS = ("first", "middle", "end")
+
+# Номера этих пунктов в обоих договорах. Номера ПОДСТАВЛЯЮТСЯ, а не набраны
+# в шаблоне, потому что пункт с нулевой суммой не печатается вовсе: обычная
+# выплата — в две части, и пункт «0 рублей после сдачи всех треков» в
+# договоре выглядел бы как ошибка. Печатай шаблон свои номера сам — при
+# выпавшей середине осталось бы «2.2.2, 2.2.4», то есть дырка в нумерации.
+ADVANCE_CLAUSE_NUMBERS = ("2.2.2", "2.2.3", "2.2.4")
+
+
+def _positive_amount(raw_value) -> bool:
+    """
+    Часть аванса заполнена? Пусто и ноль — это «пункта нет», а не «ноль
+    рублей»: именно так менеджер и убирает лишнюю часть выплаты.
+
+    Нечисловое значение считаем заполненным: разбираться с опечаткой — дело
+    проверки полей, а не наше; молча выкинуть из договора пункт из-за
+    лишней буквы было бы куда хуже.
+    """
+    text = str(raw_value or "").strip()
+    if not text:
+        return False
+    try:
+        return _parse_amount(text) > 0
+    except ValueError:
+        return True
+
+
+def build_advance_parts(raw: dict) -> dict:
+    """
+    Части аванса, их пропись и НОМЕРА ПУНКТОВ под них.
+
+    Заполненные части нумеруются подряд (2.2.2, 2.2.3, 2.2.4) — сколько
+    печатается, столько номеров и раздаётся. Пустая часть получает пустой
+    номер, а шаблон по нему и прячет пункт целиком (`{%p if clause_first %}`):
+    номер и условие — одна и та же метка, чтобы в шаблоне не было двух
+    похожих меток, которые легко перепутать местами.
+
+    Предзаполнения здесь НЕТ намеренно. Половины считает форма
+    (DocFormPage), а сюда приходит то, что менеджер в итоге оставил: реши
+    сервер «пусто значит половина», убрать часть выплаты стало бы нечем —
+    ровно то поле, которое очистили, он бы и заполнил обратно.
+    """
+    values: dict[str, str] = {}
+    shown: list[str] = []
+    for part in ADVANCE_PARTS:
+        amount = str(raw.get(f"advance_{part}") or "").strip()
+        if _positive_amount(amount):
+            shown.append(part)
+            values[f"advance_{part}"] = build_amount_spaced(amount)
+            values[f"advance_{part}_text"] = build_amount_text(amount)
+        else:
+            values[f"advance_{part}"] = ""
+            values[f"advance_{part}_text"] = ""
+
+    for number, part in zip(ADVANCE_CLAUSE_NUMBERS, shown):
+        values[f"clause_{part}"] = number
+    for part in ADVANCE_PARTS:
+        values.setdefault(f"clause_{part}", "")
+
+    # Сколько треков сдано к промежуточной выплате — число из формы и его
+    # пропись. Живёт рядом с частями аванса, потому что нужно ровно в том
+    # пункте, который эти части и описывает.
+    count_middle = str(raw.get("count_middle") or "").strip()
+    values["count_middle"] = count_middle
+    values["count_middle_text"] = build_count_text(count_middle) if count_middle else ""
+    return values
+
+
 def resolve_penalty_raw(raw: dict) -> str:
     """
     Штраф за непереданный трек (шаблон СГ_аванс с обязательством на
@@ -1303,6 +1376,11 @@ def build_context(
         # мероприятия (п.2.1.2, показывается только при marketing=True).
         "advance": build_amount_spaced(raw.get("advance")),
         "advance_text": build_amount_text(raw.get("advance")),
+
+        # Части аванса (договор «аванс + обязательство»): суммы, пропись и
+        # номера пунктов. Пустая часть = пункта в договоре нет, см.
+        # build_advance_parts.
+        **build_advance_parts(raw),
         "smm": build_amount_spaced(raw.get("smm")),
         "smm_text": build_amount_text(raw.get("smm")),
 

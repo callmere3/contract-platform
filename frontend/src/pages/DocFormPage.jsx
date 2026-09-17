@@ -160,6 +160,38 @@ function parseFormAmount(raw) {
   return Number(s);
 }
 
+// Части аванса (договор «аванс + обязательство на треки»): до сдачи треков,
+// после сдачи половины и после сдачи всех. Правка любой из них означает, что
+// менеджер сам распорядился разбивкой, и предзаполнение отходит в сторону.
+const ADVANCE_PART_FIELDS = ['advance_first', 'advance_middle', 'advance_end'];
+
+/**
+ * Аванс пополам: обычная выплата — в две части, до сдачи и после сдачи
+ * половины треков (так сказал владелец 17.09.2026), поэтому форма и
+ * предлагает именно это, а третью часть оставляет пустой — пустой пункт в
+ * договор не печатается.
+ *
+ * Нечётная сумма: лишний рубль уходит в ПЕРВУЮ часть, чтобы сумма частей
+ * сошлась с общей копейка в копейку. Кому достанется рубль — вопрос
+ * произвольный, а вот несходящаяся сумма в договоре — уже беда.
+ */
+function computeAdvanceHalves(advanceRaw) {
+  const total = parseFormAmount(advanceRaw);
+  if (total === null) return null;
+  const middle = Math.floor(total / 2);
+  return { first: String(total - middle), middle: String(middle) };
+}
+
+/**
+ * Половина треков — ВВЕРХ: в договоре стоит «не менее», и половиной
+ * пятнадцати треков разумнее считать восемь, а не семь с половиной.
+ */
+function computeCountMiddle(countRaw) {
+  const count = parseFormAmount(countRaw);
+  if (!count) return '';
+  return String(Math.ceil(count / 2));
+}
+
 /** Живой пересчёт "Штраф за непереданный трек" — зеркало resolve_penalty_raw() на бэкенде: сумма аванса / количество треков. */
 function computePenalty(advanceRaw, countRaw) {
   const advance = parseFormAmount(advanceRaw);
@@ -236,6 +268,14 @@ export function DocFormPage() {
   // тому же признаку: явное значение или пустая строка).
   const [termEndTouched, setTermEndTouched] = useState(false);
   const [penaltyTouched, setPenaltyTouched] = useState(false);
+  // Разбивка аванса и половина треков — та же идея, но правило снятия
+  // пометки ДРУГОЕ: здесь пустое поле — осмысленный ответ («этой части
+  // выплаты нет, пункт печатать не надо»), а не «считай сам». Поэтому
+  // пометку ставит любая правка, в том числе очистка поля, — иначе
+  // разовую выплату нельзя было бы оформить вовсе: очищенную половину
+  // форма тут же вписывала бы обратно.
+  const [advanceSplitTouched, setAdvanceSplitTouched] = useState(false);
+  const [countMiddleTouched, setCountMiddleTouched] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -295,6 +335,8 @@ export function DocFormPage() {
             wantsPairedAct: d.wantsPairedAct,
             termEndTouched: d.termEndTouched,
             penaltyTouched: d.penaltyTouched,
+            advanceSplitTouched: d.advanceSplitTouched,
+            countMiddleTouched: d.countMiddleTouched,
           };
         } else if (prefillRef.current) {
           const p = prefillRef.current;
@@ -326,6 +368,16 @@ export function DocFormPage() {
           setWantsPairedAct(seed.wantsPairedAct ?? true);
           setTermEndTouched(seed.termEndTouched ?? Boolean(seed.values?.term_end));
           setPenaltyTouched(seed.penaltyTouched ?? Boolean(seed.values?.penalty));
+          // У черновика, сохранённого до появления этих флагов, разбивка
+          // считается тронутой, если в ней что-то есть: перезаписывать
+          // восстановленный черновик своими половинами нельзя.
+          setAdvanceSplitTouched(
+            seed.advanceSplitTouched ??
+              ADVANCE_PART_FIELDS.some((f) => Boolean(seed.values?.[f])),
+          );
+          setCountMiddleTouched(
+            seed.countMiddleTouched ?? Boolean(seed.values?.count_middle),
+          );
           // Предзаполненная форма считается изменённой: выход спросит про
           // черновик, автосохранение продолжит держать его свежим.
           dirtyRef.current = true;
@@ -382,6 +434,27 @@ export function DocFormPage() {
     setValues((s) => ({ ...s, penalty: computePenalty(values.advance, values.count) }));
   }, [values.advance, values.count, penaltyTouched, schema]);
 
+  // Аванс пополам — пока менеджер сам не распорядился частями. Третья часть
+  // остаётся пустой: обычная выплата в две части, а пустой пункт в договор
+  // не печатается (clause_* на бэкенде).
+  useEffect(() => {
+    if (advanceSplitTouched) return;
+    if (!schema?.fields.some((f) => f.name === 'advance_first')) return;
+    const halves = computeAdvanceHalves(values.advance);
+    setValues((s) => ({
+      ...s,
+      advance_first: halves ? halves.first : '',
+      advance_middle: halves ? halves.middle : '',
+    }));
+  }, [values.advance, advanceSplitTouched, schema]);
+
+  // Треков к промежуточной выплате — половина от общего количества.
+  useEffect(() => {
+    if (countMiddleTouched) return;
+    if (!schema?.fields.some((f) => f.name === 'count_middle')) return;
+    setValues((s) => ({ ...s, count_middle: computeCountMiddle(values.count) }));
+  }, [values.count, countMiddleTouched, schema]);
+
   // Синхронизация сноски «Исполнители» с таблицей треков: любой исполнитель,
   // появившийся в треках (в т.ч. второй, и каждый из перечисленных через
   // запятую), автоматически попадает в сноску; если он из псевдонимов
@@ -416,6 +489,8 @@ export function DocFormPage() {
       wantsPairedAct,
       termEndTouched,
       penaltyTouched,
+      advanceSplitTouched,
+      countMiddleTouched,
     };
   }, [
     contragent,
@@ -428,6 +503,8 @@ export function DocFormPage() {
     contragentId,
     termEndTouched,
     penaltyTouched,
+    advanceSplitTouched,
+    countMiddleTouched,
   ]);
 
   // Проверяем dirtyRef ЗДЕСЬ, а не только при постановке таймера: между
@@ -582,6 +659,11 @@ export function DocFormPage() {
       // авторежим (см. комментарий у useState выше).
       if (name === 'term_end') setTermEndTouched(Boolean(v));
       if (name === 'penalty') setPenaltyTouched(Boolean(v));
+      // А здесь пометка ставится и на очистку поля: пустая часть аванса —
+      // это «такой выплаты нет», и вернуть в неё половину значило бы спорить
+      // с менеджером (см. useState выше).
+      if (ADVANCE_PART_FIELDS.includes(name)) setAdvanceSplitTouched(true);
+      if (name === 'count_middle') setCountMiddleTouched(true);
 
       // Выбор псевдонима подхватывают таблицы: колонка исполнителя в треках
       // и псевдоним в сноске "Исполнители". Заполняем только ПУСТЫЕ ячейки —

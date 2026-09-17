@@ -42,6 +42,7 @@ from app.audit import log_generation
 from app.auth import get_current_user, require_role
 from app.config import settings
 from app.context_builder import (
+    ADVANCE_PARTS,
     build_context,
     build_document_filename,
     find_missing_variables,
@@ -812,6 +813,18 @@ def build_document_response(
     # требоваться. Если нажат — сумма обязательна, как и раньше.
     if not context.get("marketing"):
         optional = optional | {"smm", "smm_text"}
+    # Части аванса: пункт с пустой суммой в договор не печатается (шаблон
+    # прячет его по clause_*), и требовать заполнения того, чего в документе
+    # не будет, нельзя. Заполненная часть, наоборот, обязательна — про неё
+    # сообщение придёт как обычно.
+    for part in ADVANCE_PARTS:
+        if not context.get(f"clause_{part}"):
+            optional = optional | {
+                f"advance_{part}", f"advance_{part}_text", f"clause_{part}"
+            }
+    # Количество треков к промежуточной выплате нужно ровно в среднем пункте.
+    if not context.get("clause_middle"):
+        optional = optional | {"count_middle", "count_middle_text"}
     missing = [
         m for m in find_missing_variables(template_vars, context)
         if m not in optional

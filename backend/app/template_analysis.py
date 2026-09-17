@@ -48,6 +48,19 @@ COMPUTED_FIELDS = {
     "count_text",       # пропись количества треков из count (числа)
     "advance_days_text",# пропись срока выплаты аванса из advance_days (числа)
     "vat_text",         # пропись ставки НДС из vat («двадцать два процента»)
+    # Части аванса (договор «аванс + обязательство на треки»): пропись
+    # каждой части и количества треков к промежуточной выплате.
+    "advance_first_text",
+    "advance_middle_text",
+    "advance_end_text",
+    "count_middle_text",
+    # Номера пунктов 2.2.2–2.2.4 под заполненные части аванса. Вычисляются
+    # (build_advance_parts), потому что пункт с пустой суммой не печатается:
+    # набери шаблон номера сам — при выпавшей середине осталось бы «2.2.2,
+    # 2.2.4». Пустой номер = пункта нет, шаблон прячет его по этой же метке.
+    "clause_first",
+    "clause_middle",
+    "clause_end",
 }
 
 # Приложение/Акт — отдельный файл, привязанный к уже существующему
@@ -164,6 +177,17 @@ FIELD_META = {
     "vat":        ("Документ", "Ставка НДС", ""),
     "term_end":   ("Документ", "Срок действия", ""),
     "advance":    ("Документ", "Сумма аванса, ₽", "сумма числом, напр. 150000"),
+    # Части аванса. Подписи названы по СОБЫТИЮ, после которого платят, а не
+    # «первая/вторая»: в договоре пункты различаются именно этим, а порядковый
+    # номер меняется, когда часть убирают.
+    "advance_first":  ("Документ", "Аванс: до сдачи треков, ₽",
+                       "часть общей суммы; пусто — пункт в договор не попадёт"),
+    "advance_middle": ("Документ", "Аванс: после сдачи половины треков, ₽",
+                       "часть общей суммы; пусто — пункт в договор не попадёт"),
+    "advance_end":    ("Документ", "Аванс: после сдачи всех треков, ₽",
+                       "часть общей суммы; пусто — пункт в договор не попадёт"),
+    "count_middle":   ("Документ", "Треков к промежуточной выплате",
+                       "число треков; по умолчанию половина от общего количества"),
     "advance_days": ("Документ", "Срок выплаты аванса, рабочих дней", "число дней"),
     "marketing":  ("Документ", "Маркетинговая кампания", ""),
     "smm":        ("Документ", "Сумма на SMM, ₽", "сумма числом"),
@@ -210,6 +234,9 @@ DEFAULT_VALUES = {
 #                       (computeTermEnd/computePenalty в DocFormPage.jsx).
 #                       Демо задаёт им ИСХОДНЫЕ данные, а не результат —
 #                       иначе проверяли бы не расчёт, а подставленное число.
+#   advance_first,    — по той же причине: форма делит аванс пополам и берёт
+#   advance_middle,     половину треков сама, как только заполнены advance и
+#   count_middle        count (см. computeAdvanceHalves/computeCountMiddle).
 #   performers        — сноска собирается сама из таблицы треков
 #                       (rebuildPerformers), см. DEMO_LIST_ROWS ниже.
 #
@@ -398,6 +425,10 @@ COMPUTED_LABEL_SOURCE = {
     "count_text": "count",
     "advance_days_text": "advance_days",
     "vat_text": "vat",
+    "advance_first_text": "advance_first",
+    "advance_middle_text": "advance_middle",
+    "advance_end_text": "advance_end",
+    "count_middle_text": "count_middle",
     "name_short": "name",
     "name_short_table": "name",
     "contract": "c_date",
@@ -484,7 +515,8 @@ ITEM_FIELD_ORDER = [
 FIELD_ORDER = [
     # Документ (edo — последним в блоке)
     "contract", "c_date", "date", "appendix_no", "act_no", "royalty", "vat",
-    "advance", "marketing", "smm", "term_end", "edo",
+    "advance", "advance_first", "advance_middle", "advance_end",
+    "marketing", "smm", "term_end", "edo",
     # Контрагент
     "name", "inn", "ogrnip", "ogrn", "kpp", "nickname", "director_name",
     # Личные данные (бывший "Паспорт"; npd/birthday — в конце блока)
