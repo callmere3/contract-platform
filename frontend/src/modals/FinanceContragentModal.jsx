@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Modal, ModalAction } from '../components/ui/Modal';
+import { PencilIcon, TrashIcon } from '../components/ui/icons';
 import { Button } from '../components/ui/Button';
 import { RequisitesSection } from '../components/ui/RequisitesSection';
 import { useModal } from './ModalProvider';
@@ -127,11 +128,11 @@ export function FinanceContragentModal({ contragentId, level, isTop, onChanged }
         card && (
           <>
             {(canEditContragents(role) || canEditContractFamily(role)) && (
-              <ModalAction icon="✎" title="Редактировать" onClick={openEdit} disabled={busy} />
+              <ModalAction icon={<PencilIcon />} title="Редактировать" onClick={openEdit} disabled={busy} />
             )}
             {canDeleteContragents(role) && (
               <ModalAction
-                icon="🗑"
+                icon={<TrashIcon />}
                 title="Удалить"
                 danger
                 disabled={confirmDelete || busy}

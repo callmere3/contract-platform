@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Modal, ModalAction } from '../components/ui/Modal';
+import { PencilIcon, TrashIcon } from '../components/ui/icons';
 import { Button } from '../components/ui/Button';
 import { useModal } from './ModalProvider';
 import { useTags } from '../api/TagsContext';
@@ -107,14 +108,14 @@ export function ContragentCardModal({ contragentId, level, isTop, onChanged }) {
                 определяет режим по роли, см. EditContragentModal.restricted). */}
             {(canEditContragents(role) || canEditContractFamily(role)) && (
               <ModalAction
-                icon="✎"
+                icon={<PencilIcon />}
                 title="Редактировать"
                 onClick={() => openModal('editContragent', { contragent: data, onSaved: onChanged })}
               />
             )}
             {canDeleteContragents(role) && (
               <ModalAction
-                icon="🗑"
+                icon={<TrashIcon />}
                 title="Удалить"
                 danger
                 disabled={confirmDelete}

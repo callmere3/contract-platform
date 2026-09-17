@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { CloseIcon } from './icons';
 
 /**
  * Базовая модалка. Стек модалок (карточка контрагента → документы) —
@@ -50,15 +51,17 @@ export function Modal({
           <span className="text-[15px] font-semibold text-text min-w-0 truncate">{title}</span>
           <div className="flex items-center gap-2 flex-shrink-0">
             {actions}
-            {/* Крестик и значки рядом — 32 пикселя и жирное начертание
-                (17.09.2026, просьба владельца): в 28 пикселей и обычным весом
-                они читались как мелкие серые точки, особенно карандаш. */}
+            {/* Крестик и значки рядом — 32 пикселя, и все рисованные, а не
+                эмодзи (17.09.2026): эмодзи приходит со своим цветом и своими
+                пропорциями от системного шрифта, и на Windows мусорка
+                выходила мелким красным пятном, которому не помогал ни
+                размер, ни вес. См. components/ui/icons.jsx. */}
             <button
               onClick={onClose}
               aria-label="Закрыть"
-              className="w-8 h-8 rounded-full border border-border flex items-center justify-center text-[20px] leading-none font-semibold text-text-secondary cursor-pointer bg-transparent hover:text-text"
+              className="w-8 h-8 rounded-full border border-border flex items-center justify-center text-text-secondary cursor-pointer bg-transparent hover:text-text"
             >
-              ×
+              <CloseIcon />
             </button>
           </div>
         </div>
@@ -83,6 +86,10 @@ export function Modal({
  * содержимое в красный: удаление единственное, что стоит выделять цветом,
  * иначе ряд превращается в светофор.
  *
+ * `icon` — рисованный значок из `icons.jsx`, а не эмодзи: он берёт цвет
+ * кнопки через currentColor, поэтому и красный у удаления, и приглушённый у
+ * выключенной получаются сами.
+ *
  * `title` обязателен по смыслу: значок без подписи — загадка, и наведение
  * мышью единственный способ её разгадать (оно же уходит в aria-label).
  */
@@ -94,7 +101,7 @@ export function ModalAction({ icon, title, onClick, danger = false, disabled = f
       title={title}
       aria-label={title}
       disabled={disabled}
-      className={`w-8 h-8 rounded-full border border-border flex items-center justify-center text-[15px] leading-none font-semibold cursor-pointer bg-transparent disabled:opacity-40 disabled:cursor-default ${
+      className={`w-8 h-8 rounded-full border border-border flex items-center justify-center cursor-pointer bg-transparent disabled:opacity-40 disabled:cursor-default ${
         danger ? 'text-danger' : 'text-text-secondary hover:text-text'
       }`}
     >

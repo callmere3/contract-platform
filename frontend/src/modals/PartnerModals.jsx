@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Modal, ModalAction } from '../components/ui/Modal';
+import { PencilIcon, TrashIcon } from '../components/ui/icons';
 import { Button } from '../components/ui/Button';
 import { useModal } from './ModalProvider';
 import { useAuth } from '../auth/AuthContext';
@@ -76,13 +77,13 @@ export function PartnerCardModal({ partner, level, isTop, onChanged }) {
         manage && (
           <>
             <ModalAction
-              icon="✎"
+              icon={<PencilIcon />}
               title="Переименовать"
               disabled={editing || confirmDelete}
               onClick={() => setEditing(true)}
             />
             <ModalAction
-              icon="🗑"
+              icon={<TrashIcon />}
               title="Удалить"
               danger
               disabled={confirmDelete || busy}
