@@ -62,6 +62,10 @@ export function NomenclaturePage() {
   // можно переслать. Сам фильтр — id, а не имя: см. api/nomenclature.js.
   const [searchParams, setSearchParams] = useSearchParams();
   const contragentId = searchParams.get('contragent') || '';
+  // КАКОЙ СПИСОК ОТКРЫТ — тоже в адресе, как и отбор по карточке: ссылку на
+  // неКаталог должно быть видно и можно переслать, а перезагрузка страницы
+  // не должна возвращать человека в каталог.
+  const inCatalog = searchParams.get('list') !== 'non-catalog';
 
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
@@ -79,7 +83,7 @@ export function NomenclaturePage() {
   // строк, останешься на «стр. 40», где пусто.
   useEffect(() => {
     setPage(1);
-  }, [q, owner, contragentId, caseSensitive, exact]);
+  }, [q, owner, contragentId, caseSensitive, exact, inCatalog]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -91,6 +95,7 @@ export function NomenclaturePage() {
         contragentId,
         caseSensitive,
         exact,
+        inCatalog,
         page,
         pageSize: PAGE_SIZE,
       });
@@ -102,7 +107,7 @@ export function NomenclaturePage() {
     } finally {
       setLoading(false);
     }
-  }, [q, owner, contragentId, caseSensitive, exact, page]);
+  }, [q, owner, contragentId, caseSensitive, exact, inCatalog, page]);
 
   useEffect(() => {
     const timer = setTimeout(load, 300);
@@ -121,9 +126,41 @@ export function NomenclaturePage() {
 
   return (
     <div className="max-w-[1180px] mx-auto px-8 pt-12 pb-20">
-      <PageHeader title="Номенклатура">
-        Треки и их правообладатели: у кого какая доля и по какой ставке роялти. Нажмите на
-        строку — откроется карточка трека с подробной информацией.
+      {/* СПИСОК ПЕРЕКЛЮЧАЕТСЯ САМИМ ЗАГОЛОВКОМ — тем же приёмом, что продукты
+          в шапке («ML Docs»): это не фильтр среди прочих, а ответ на вопрос
+          «что я вообще сейчас смотрю». */}
+      <PageHeader
+        title={
+          <>
+            Номенклатура:{' '}
+            <button
+              type="button"
+              onClick={() =>
+                setSearchParams(
+                  (prev) => {
+                    const next = new URLSearchParams(prev);
+                    if (inCatalog) next.set('list', 'non-catalog');
+                    else next.delete('list');
+                    return next;
+                  },
+                  { replace: true },
+                )
+              }
+              title={
+                inCatalog
+                  ? 'Показать изъятые позиции (неКаталог)'
+                  : 'Вернуться к активным трекам (Каталог)'
+              }
+              className="text-accent bg-transparent border-0 p-0 cursor-pointer font-sans text-[26px] font-extrabold tracking-[-0.02em] underline decoration-dotted underline-offset-4"
+            >
+              {inCatalog ? 'Каталог' : 'неКаталог'}
+            </button>
+          </>
+        }
+      >
+        {inCatalog ? 'Активные треки' : 'Изъятые треки'} и их правообладатели: у кого какая доля
+        и по какой ставке роялти. Нажмите на строку — откроется карточка трека с подробной
+        информацией.
       </PageHeader>
 
       <Card>
@@ -204,6 +241,9 @@ export function NomenclaturePage() {
                     contragentId,
                     caseSensitive,
                     exact,
+                    // Импорт и выгрузка работают с открытым списком: из
+                    // неКаталога выгружаются изъятые, и туда же грузится файл.
+                    inCatalog,
                   },
                   onImported: load,
                 })

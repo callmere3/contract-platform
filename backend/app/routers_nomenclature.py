@@ -162,6 +162,7 @@ def _summary(track: Track, rights: dict) -> dict:
         "title": track.title,
         "artist": track.artist,
         "archived": track.archived_at is not None,
+        "in_catalog": track.in_catalog,
         "rights": {
             "author": rights.get(AUTHOR, []),
             "related": rights.get(RELATED, []),
@@ -186,6 +187,7 @@ def _filtered_tracks(
     contragent_id: uuid.UUID | None = None,
     case_sensitive: bool = False,
     exact: bool = False,
+    in_catalog: bool | None = True,
 ):
     """
     Общий сбор фильтров для списка и выгрузки: экспорт обязан отдавать ровно
@@ -216,6 +218,11 @@ def _filtered_tracks(
         )
 
     query = select(Track)
+    # КАТАЛОГ И неКАТАЛОГ — два списка одной таблицы. По умолчанию показываем
+    # каталог: изъятые позиции нужны отдельным взглядом, а не вперемешку с
+    # рабочими. None — «оба списка», это для служебных запросов.
+    if in_catalog is not None:
+        query = query.where(Track.in_catalog.is_(in_catalog))
     if not include_archived:
         query = query.where(Track.archived_at.is_(None))
     if q and q.strip():
@@ -264,6 +271,7 @@ def list_tracks(
     contragent_id: uuid.UUID | None = None,
     case_sensitive: bool = False,
     exact: bool = False,
+    in_catalog: bool = True,
     include_archived: bool = False,
     page: int = 1,
     page_size: int = DEFAULT_PAGE_SIZE,
@@ -295,7 +303,8 @@ def list_tracks(
     page_size = max(1, min(page_size, MAX_PAGE_SIZE))
 
     query = _filtered_tracks(
-        q, owner, catalog, include_archived, contragent_id, case_sensitive, exact
+        q, owner, catalog, include_archived, contragent_id, case_sensitive, exact,
+        in_catalog,
     )
 
     total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
@@ -342,6 +351,7 @@ def export_tracks(
     contragent_id: uuid.UUID | None = None,
     case_sensitive: bool = False,
     exact: bool = False,
+    in_catalog: bool = True,
     include_archived: bool = False,
     db: Session = Depends(get_session),
 ) -> StreamingResponse:
@@ -365,7 +375,8 @@ def export_tracks(
     ws.append(list(COLUMNS))
 
     ids = _filtered_tracks(
-        q, owner, catalog, include_archived, contragent_id, case_sensitive, exact
+        q, owner, catalog, include_archived, contragent_id, case_sensitive, exact,
+        in_catalog,
     ).with_only_columns(Track.id)
     # КОЛОНКАМИ, А НЕ ОБЪЕКТАМИ ORM. Сначала здесь было select(Track, TrackRight),
     # и выгрузка всего каталога занимала 93 секунды: на каждую из 244 тысяч
@@ -699,6 +710,7 @@ def _plan(db: Session, rows: list) -> dict:
 def import_check(
     file: UploadFile | None = File(None),
     pasted: str = Form(""),
+    in_catalog: bool = Form(True),
     db: Session = Depends(get_session),
 ) -> dict:
     """
@@ -711,8 +723,14 @@ def import_check(
     день, должен видеть, что именно он сейчас переписывает.
 
     `pasted` — вставка из буфера вместо файла (Ctrl+V в окне импорта).
+
+    `in_catalog` — В КАКОЙ СПИСОК грузим: каталог или неКаталог (изъятые
+    позиции). Решает та вкладка, с которой открыли импорт, — иначе пришлось
+    бы спрашивать об этом ещё раз, уже другими словами.
     """
-    return _plan(db, _read_input(file, pasted))
+    plan = _plan(db, _read_input(file, pasted))
+    plan["in_catalog"] = in_catalog
+    return plan
 
 
 @nomenclature_router.post(
@@ -724,6 +742,7 @@ def import_apply(
     owner_map: str = Form("{}"),
     create_missing_owners: bool = Form(True),
     skip_rows: str = Form("[]"),
+    in_catalog: bool = Form(True),
     db: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> dict:
@@ -742,6 +761,11 @@ def import_apply(
     Строки с ошибками ПРОПУСКАЮТСЯ, а не роняют весь файл: в выгрузке на
     несколько десятков строк из-за одной кривой доли незачем откладывать
     остальные. Сколько пропущено и почему — в ответе.
+
+    `in_catalog` — в какой список кладём: каталог или неКаталог. ПОЗИЦИЯ ИЗ
+    ФАЙЛА ПЕРЕЕЗЖАЕТ в тот список, куда её грузят: файл с изъятыми и означает
+    «эти теперь изъяты». Обратно она возвращается тем же способом — импортом
+    в каталог.
     """
     rows = _read_input(file, pasted)
     try:
@@ -807,6 +831,7 @@ def import_apply(
                 Track(
                     id=track_id,
                     **row.track,
+                    in_catalog=in_catalog,
                     source_file=source,
                     imported_at=now,
                 )
@@ -816,7 +841,13 @@ def import_apply(
             db.execute(
                 update(Track)
                 .where(Track.id == track_id)
-                .values(**row.track, source_file=source, imported_at=now, archived_at=None)
+                .values(
+                    **row.track,
+                    in_catalog=in_catalog,
+                    source_file=source,
+                    imported_at=now,
+                    archived_at=None,
+                )
             )
             updated += 1
         touched.append(track_id)
@@ -861,6 +892,9 @@ def import_apply(
         entity_type="track",
         meta={
             "file": source,
+            # Куда грузили: по журналу должно быть понятно, отчего позиция
+            # переехала в неКаталог.
+            "list": "catalog" if in_catalog else "non_catalog",
             "created": created,
             "updated": updated,
             "skipped": len(skipped),

@@ -47,6 +47,10 @@ export function NomenclatureImportExportModal({ level, isTop, filters = {}, onIm
   const [skipRows, setSkipRows] = useState([]);
 
   const filterParts = [filters.q ? `«${filters.q}»` : null, filters.owner].filter(Boolean);
+  // Импорт и выгрузка работают с тем списком, из которого открыли окно:
+  // спрашивать об этом ещё раз, уже другими словами, незачем.
+  const listName = filters.inCatalog === false ? 'неКаталог' : 'Каталог';
+  const inCatalog = filters.inCatalog !== false;
 
   async function handleExport() {
     setBusy(true);
@@ -68,15 +72,17 @@ export function NomenclatureImportExportModal({ level, isTop, filters = {}, onIm
     }
   }
 
-  const handleCheck = useCallback(async (picked) => {
+  const handleCheck = useCallback(async (picked, inCatalog) => {
     if (!picked) return;
     setBusy(true);
     setError('');
     setPlan(null);
     setResult(null);
-    setSource(picked);
+    // В источнике помним и список: «применить» уходит тем же путём, и
+    // файл не должен переехать в другой список между проверкой и записью.
+    setSource({ ...picked, inCatalog });
     try {
-      const got = await checkTracksImport(picked);
+      const got = await checkTracksImport({ ...picked, inCatalog });
       setPlan(got);
       setSkipRows([]);
       // Замены предлагаем принятыми: чаще всего подсказка верна, а отказаться
@@ -107,11 +113,11 @@ export function NomenclatureImportExportModal({ level, isTop, filters = {}, onIm
       if (!text.includes('\t')) return;
       e.preventDefault();
       const lines = text.trim().split(/\r?\n/).length;
-      handleCheck({ text, label: `вставка из буфера, строк: ${lines}` });
+      handleCheck({ text, label: `вставка из буфера, строк: ${lines}` }, inCatalog);
     };
     window.addEventListener('paste', onPaste);
     return () => window.removeEventListener('paste', onPaste);
-  }, [role, handleCheck]);
+  }, [role, handleCheck, inCatalog]);
 
   async function handleApply() {
     setBusy(true);
@@ -148,7 +154,7 @@ export function NomenclatureImportExportModal({ level, isTop, filters = {}, onIm
     >
       {canExportNomenclature(role) && (
         <div className={canImportNomenclature(role) ? 'mb-6 pb-6 border-b border-border' : ''}>
-          <div className="text-sm font-semibold text-text mb-1.5">Экспорт</div>
+          <div className="text-sm font-semibold text-text mb-1.5">Экспорт: {listName}</div>
           <div className="text-[13px] text-text-secondary mb-3">
             {filterParts.length ? (
               <>
@@ -181,11 +187,16 @@ export function NomenclatureImportExportModal({ level, isTop, filters = {}, onIm
 
       {canImportNomenclature(role) && (
         <div>
-          <div className="text-sm font-semibold text-text mb-1.5">Импорт</div>
+          <div className="text-sm font-semibold text-text mb-1.5">Импорт: {listName}</div>
           <div className="text-[13px] text-text-secondary mb-3">
             Файл в формате выгрузки Dista — или вставленные из буфера строки в том же порядке
             колонок. Строка ищется по артикулу: знакомый трек обновится, а состав его прав
-            заменится тем, что пришло.
+            заменится тем, что пришло.{' '}
+            {!inCatalog && (
+              <span className="text-text">
+                Позиции лягут в неКаталог — те, что сейчас в каталоге, переедут туда.
+              </span>
+            )}
           </div>
 
           <div className="flex items-center gap-3 flex-wrap">
@@ -196,7 +207,7 @@ export function NomenclatureImportExportModal({ level, isTop, filters = {}, onIm
                 className="hidden"
                 onChange={(e) => {
                   const picked = e.target.files?.[0];
-                  if (picked) handleCheck({ file: picked, label: picked.name });
+                  if (picked) handleCheck({ file: picked, label: picked.name }, inCatalog);
                 }}
               />
               <span className="inline-block px-3.5 py-2 rounded-input border border-border text-[13px] text-text cursor-pointer">

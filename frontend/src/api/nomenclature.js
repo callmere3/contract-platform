@@ -21,6 +21,7 @@ export function listTracks({
   contragentId,
   caseSensitive,
   exact,
+  inCatalog = true,
   page,
   pageSize,
 } = {}) {
@@ -28,6 +29,9 @@ export function listTracks({
   if (q) params.set('q', q);
   if (owner) params.set('owner', owner);
   if (catalog) params.set('catalog', catalog);
+  // КАТАЛОГ или неКАТАЛОГ — два списка одной таблицы (18.09.2026). По
+  // умолчанию каталог: изъятые позиции нужны отдельным взглядом.
+  if (!inCatalog) params.set('in_catalog', 'false');
   // Отбор по СВЯЗИ с карточкой, а не по имени: у контрагента бывает
   // несколько написаний в выгрузке, и по титлу нашлись бы не все его треки.
   if (contragentId) params.set('contragent_id', contragentId);
@@ -94,11 +98,13 @@ export async function exportTracks({
   contragentId,
   caseSensitive,
   exact,
+  inCatalog = true,
 } = {}) {
   const params = new URLSearchParams();
   if (q) params.set('q', q);
   if (owner) params.set('owner', owner);
   if (catalog) params.set('catalog', catalog);
+  if (!inCatalog) params.set('in_catalog', 'false');
   if (contragentId) params.set('contragent_id', contragentId);
   // Выгрузка обязана отдавать ровно то, что видно на экране, — значит, и
   // галочку регистра надо передать.
@@ -119,6 +125,9 @@ function importBody(source) {
   const body = new FormData();
   if (source.file) body.append('file', source.file);
   if (source.text) body.append('pasted', source.text);
+  // В какой список грузим. Решает вкладка, с которой открыли импорт: файл с
+  // изъятыми позициями и означает «эти теперь изъяты».
+  if (source.inCatalog === false) body.append('in_catalog', 'false');
   return body;
 }
 

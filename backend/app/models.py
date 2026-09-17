@@ -43,6 +43,7 @@ from sqlalchemy import (
     UniqueConstraint,
     false,
     func,
+    true,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -770,6 +771,18 @@ class Track(Base):
         DateTime(timezone=True), server_default=func.now()
     )
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    # КАТАЛОГ или неКАТАЛОГ (18.09.2026). Изъятые позиции лежат в той же
+    # таблице и отличаются только этим флагом: поля у них те же, права те же,
+    # и весь код показа, поиска и выгрузки общий — отдельная таблица означала
+    # бы вторую копию всего этого ради одного «где лежит».
+    #
+    # Это НЕ `archived_at`. Архив — «строка исчезла из выгрузки Dista», то
+    # есть наблюдение; неКаталог — решение изъять позицию, и приезжает оно
+    # отдельным файлом.
+    in_catalog: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=true(), default=True
+    )
 
     rights: Mapped[list["TrackRight"]] = relationship(
         back_populates="track", cascade="all, delete-orphan"
