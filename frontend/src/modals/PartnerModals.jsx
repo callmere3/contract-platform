@@ -133,19 +133,13 @@ export function PartnerCardModal({ partner, level, isTop, onChanged }) {
           <DistaField value={distaId} onChange={setDistaId} onSubmit={save} />
         </div>
       ) : (
-        <>
-          <div className="text-[13px] mb-4">
-            <span className="text-text-secondary">Код в Dista: </span>
-            <span className="text-text tabular-nums">
-              {partner.dista_id || 'не проставлен'}
-            </span>
-          </div>
-          <div className="text-[13px] text-text-secondary leading-relaxed">
-            Других полей у партнёра нет: он нужен, чтобы поступление было к кому отнести, а код —
-            чтобы сверяться с Dista по нему, а не по названию. Договор, реквизиты и ставки живут в
-            карточке контрагента.
-          </div>
-        </>
+        /* Только код. Пояснение «почему у партнёра больше ничего нет» убрано
+           (просьба владельца 17.09.2026): его читают один раз, а висело оно в
+           каждой карточке. Причина по-прежнему записана в CLAUDE.md. */
+        <div className="text-[13px]">
+          <span className="text-text-secondary">Код в Dista: </span>
+          <span className="text-text tabular-nums">{partner.dista_id || 'не проставлен'}</span>
+        </div>
       )}
       {error && <div className="text-[13px] text-danger mt-3">{error}</div>}
     </Modal>
@@ -262,8 +256,8 @@ export function PartnersImportExportModal({ level, isTop, onImported }) {
       <div className="mb-6 pb-6 border-b border-border">
         <div className="text-sm font-semibold text-text mb-1.5">Экспорт</div>
         <div className="text-[13px] text-text-secondary mb-3">
-          Выгрузить справочник в Excel — одной колонкой, ровно в том виде, в каком его принимает
-          импорт.
+          Выгрузить справочник в Excel — ровно в том виде, в каком его принимает импорт: код
+          Dista первой колонкой, название второй.
         </div>
         <Button variant="secondary" size="sm" onClick={handleExport} disabled={busy}>
           {busy ? 'Готовим файл…' : 'Скачать .xlsx'}
@@ -272,9 +266,9 @@ export function PartnersImportExportModal({ level, isTop, onImported }) {
 
       <div className="text-sm font-semibold text-text mb-1.5">Импорт</div>
       <div className="text-[13px] text-text-secondary mb-3">
-        Две колонки: название и код Dista, по строке на партнёра. Шапка необязательна, код
-        можно не заполнять. Сопоставление идёт сначала по коду, потом по названию: знакомый код
-        переименует партнёра, знакомое название получит код.
+        Две колонки: сначала код Dista, потом название — по строке на партнёра. Шапка
+        необязательна, код можно не заполнять. Сопоставление идёт сначала по коду, потом по
+        названию: знакомый код переименует партнёра, знакомое название получит код.
       </div>
       <label className="inline-block">
         <input

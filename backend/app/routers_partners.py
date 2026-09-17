@@ -48,9 +48,17 @@ partners_router = APIRouter(
 
 MAX_NAME = 255
 MAX_DISTA_ID = 32
-# Две колонки: имя и код в Dista. Порядок тот же, в каком их отдаёт экспорт —
-# файл должен заливаться обратно без правки руками.
-EXCEL_COLUMNS = ("Партнёр", "Dista ID")
+# ДВЕ КОЛОНКИ, КОД ПЕРВЫЙ (17.09.2026). Файлы сверки приходят со стороны
+# Dista, а там строка начинается с идентификатора; так же устроен и импорт
+# контрагентов, где «Dista ID» — первая колонка. Пока порядок был обратный,
+# первый же залитый файл встал наоборот: имена уехали в коды, коды в имена.
+# Порядок тот же, в каком колонки отдаёт экспорт — файл должен заливаться
+# обратно без правки руками.
+EXCEL_COLUMNS = ("Dista ID", "Партнёр")
+# Шапка узнаётся ПО СОДЕРЖИМОМУ и может стоять где угодно, поэтому распознаём
+# подписи обеих колонок: руками пишут то «Партнёр», то «Название».
+NAME_HEADERS = {"партнёр", "партнер", "название", "имя"}
+CODE_HEADERS = {"dista id", "dista_id", "distaid", "id", "код", "код dista"}
 
 
 def _normalized(name: str) -> str:
@@ -154,13 +162,20 @@ def import_partners(
     current_user: User = Depends(get_current_user),
 ) -> dict:
     """
-    Импорт из .xlsx: ДВЕ КОЛОНКИ — имя партнёра и его код в Dista, по строке
-    на партнёра. Код необязателен: часть площадок живёт у нас и без него.
+    Импорт из .xlsx: ДВЕ КОЛОНКИ — СНАЧАЛА КОД В DISTA, потом имя партнёра,
+    по строке на каждого. Код необязателен: часть площадок живёт у нас и без
+    него, но место у него первое — файлы сверки приходят из Dista, а там
+    строка начинается с идентификатора.
 
     Шапка необязательна и узнаётся по содержимому: файл на две колонки
     человек нередко собирает руками, сразу с данных, и пропускать первую
     строку вслепую значит терять первого партнёра. Та же логика, что в
     импорте номенклатуры.
+
+    Файл В ОДНУ КОЛОНКУ читается как СПИСОК ИМЁН, а не кодов: справочник,
+    набранный руками, — это имена площадок, кодов у человека под рукой нет.
+    Решается это по всему файлу сразу, а не построчно, иначе один и тот же
+    столбец читался бы то так, то эдак.
 
     СОПОСТАВЛЯЕМ СНАЧАЛА ПО КОДУ, потом по имени. Код — то, ради чего он
     здесь и появился: имена площадок расходятся первыми («Яндекс Музыка»
@@ -187,13 +202,27 @@ def import_partners(
     skipped = 0
     conflicts: list[str] = []
 
-    for row in wb.active.iter_rows(values_only=True):
-        name = " ".join(str((row[0] if row else None) or "").split())
-        code = _clean_dista_id(row[1] if row and len(row) > 1 else None)
+    rows = list(wb.active.iter_rows(values_only=True))
+    # Вторая колонка пуста во всём файле — значит, перед нами список имён
+    # (см. докстринг), а не кодов.
+    names_only = not any(
+        len(row) > 1 and str(row[1] or "").strip() for row in rows
+    )
+
+    for row in rows:
+        if names_only:
+            raw_code, raw_name = None, (row[0] if row else None)
+        else:
+            raw_code = row[0] if row else None
+            raw_name = row[1] if len(row) > 1 else None
+        name = " ".join(str(raw_name or "").split())
+        code = _clean_dista_id(raw_code)
+        # Шапку отсекаем ДО проверки на пустое имя: в строке «Dista ID |
+        # Партнёр» заполнены обе ячейки, и иначе её код уехал бы в справочник.
+        if name.casefold() in NAME_HEADERS or (code or "").casefold() in CODE_HEADERS:
+            continue  # шапка, где бы она ни стояла
         if not name:
             continue
-        if name.casefold() in {"партнёр", "партнер", "название", "имя"}:
-            continue  # шапка, где бы она ни стояла
 
         name = name[:MAX_NAME]
         key = _normalized(name)
@@ -263,8 +292,9 @@ def import_partners(
 @partners_router.get("/export")
 def export_partners(db: Session = Depends(get_session)) -> StreamingResponse:
     """
-    Выгрузка в .xlsx — в том же виде, в каком её принимает импорт: одна
-    колонка, шапка первой строкой. Выгрузили, поправили, залили обратно.
+    Выгрузка в .xlsx — в том же виде, в каком её принимает импорт: код Dista
+    первой колонкой, имя второй, шапка первой строкой. Выгрузили, поправили,
+    залили обратно.
     """
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -273,7 +303,7 @@ def export_partners(db: Session = Depends(get_session)) -> StreamingResponse:
     for name, code in db.execute(
         select(Partner.name, Partner.dista_id).order_by(Partner.name)
     ):
-        ws.append([name, code or ""])
+        ws.append([code or "", name])
 
     buffer = io.BytesIO()
     wb.save(buffer)

@@ -64,8 +64,8 @@ export function PartnersPage() {
     <div className="max-w-[980px] mx-auto px-8 pt-12 pb-20">
       <h1 className="text-[26px] font-extrabold tracking-[-0.02em] text-text mb-1.5">Партнёры</h1>
       <p className="text-[13.5px] text-text-secondary mb-6 max-w-[620px] leading-relaxed">
-        Площадки и агрегаторы, от которых приходят деньги. У каждой — код в Dista, по нему и
-        сверяемся. Нажмите на строку, чтобы поправить или удалить.
+        Площадки и агрегаторы, от которых приходят деньги. Нажмите на строку, чтобы посмотреть
+        код Dista, поправить или удалить.
       </p>
 
       <Card>
@@ -111,15 +111,12 @@ export function PartnersPage() {
               key={p.id}
               type="button"
               onClick={() => openModal('partnerCard', { partner: p, onChanged: load })}
-              className="w-full flex items-center justify-between gap-4 px-5 py-3.5 border-b border-border last:border-b-0 bg-transparent cursor-pointer text-left font-sans hover:bg-surface-hover"
+              className="w-full flex items-center gap-4 px-5 py-3.5 border-b border-border last:border-b-0 bg-transparent cursor-pointer text-left font-sans hover:bg-surface-hover"
             >
+              {/* Только имя: в списке партнёра ищут глазами по названию, а код
+                  нужен при сверке — он в карточке, и по нему по-прежнему ищет
+                  поле поиска (просьба владельца 17.09.2026). */}
               <span className="text-[15px] font-semibold text-text truncate">{p.name}</span>
-              {/* Код Dista справа и приглушённым: он нужен при сверке, а не
-                  при чтении списка. Пусто — так и пишем словами: пустое место
-                  читалось бы как «не загрузилось». */}
-              <span className="text-[12.5px] text-text-muted tabular-nums flex-shrink-0">
-                {p.dista_id ? `Dista ID ${p.dista_id}` : 'без кода Dista'}
-              </span>
             </button>
           ))}
 
