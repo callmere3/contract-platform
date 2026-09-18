@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Modal, ModalAction } from '../components/ui/Modal';
 import { PencilIcon, TrashIcon } from '../components/ui/icons';
+import { ComboCell } from '../components/ui/ComboCell';
 import { Button } from '../components/ui/Button';
 import { useModal } from './ModalProvider';
 import { useAuth } from '../auth/AuthContext';
@@ -325,20 +326,11 @@ function TrackForm({
           onDeclared={set(block.field)}
           onChange={setRight}
           onOwnerInput={onOwnerInput}
+          ownerOptions={ownerOptions}
           onAdd={() => addRight(block.type)}
           onRemove={removeRight}
         />
       ))}
-
-      {/* ОДИН СПИСОК ПОДСКАЗОК НА ВСЮ ФОРМУ, а не по списку на строку: набирают
-          всегда в одном поле — в том, где стоит курсор, — и держать несколько
-          одинаковых списков значило бы несколько раз спрашивать сервер об
-          одном и том же. */}
-      <datalist id="track-owner-options">
-        {ownerOptions.map((o) => (
-          <option key={o.id} value={o.title} />
-        ))}
-      </datalist>
 
       {unknownOwners && (
         <div className="mt-5 border border-border rounded-card p-4">
@@ -388,6 +380,7 @@ function RightsEditor({
   onDeclared,
   onChange,
   onOwnerInput,
+  ownerOptions,
   onAdd,
   onRemove,
 }) {
@@ -409,7 +402,7 @@ function RightsEditor({
                 onChange(right.key, 'owner', v);
                 onOwnerInput(v);
               }}
-              list="track-owner-options"
+              options={(ownerOptions ?? []).map((o) => o.title)}
             />
           </div>
           <div className="w-[92px]">
@@ -473,7 +466,10 @@ function RightsEditor({
 }
 
 /**
- * Подсказки по правообладателям — один <datalist> на всю форму.
+ * Подсказки по правообладателям — ОДИН СПИСОК НА ВСЮ ФОРМУ, а не по списку на
+ * строку: набирают всегда в одном поле, в том, где стоит курсор, и держать
+ * несколько одинаковых списков значило бы несколько раз спрашивать сервер об
+ * одном и том же.
  *
  * Список приходит с сервера (титлы карточек контрагентов) и обновляется по
  * мере набора: их 729, и отдавать всё разом незачем. Именно КАРТОЧКИ, а не
@@ -505,19 +501,33 @@ function useOwnerOptions() {
   return { ownerOptions, onOwnerInput };
 }
 
-function Field({ label, value, onChange, type = 'text', mono = false, list }) {
+function Field({ label, value, onChange, type = 'text', mono = false, options }) {
+  const control = `w-full bg-input-bg border border-border rounded-input px-3 py-2 text-[13.5px] text-text outline-none font-sans ${
+    mono ? 'font-mono' : ''
+  }`;
   return (
     <label className="block">
       <span className="block text-[12px] text-text-secondary mb-1">{label}</span>
-      <input
-        type={type}
-        list={list}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className={`w-full bg-input-bg border border-border rounded-input px-3 py-2 text-[13.5px] text-text outline-none font-sans ${
-          mono ? 'font-mono' : ''
-        }`}
-      />
+      {/* ПОДСКАЗКИ — НАШИМ комбобоксом, а не браузерным `datalist` (правка
+          18.09.2026): тот выглядит системным окном, открывается через раз и
+          ничем не показывает, что подсказки вообще есть. Компонент общий с
+          колонкой «Исполнитель» в форме генерации. */}
+      {options ? (
+        <ComboCell
+          value={value}
+          options={options}
+          onChange={onChange}
+          arrowLabel={`Показать подсказки: ${label}`}
+          inputClassName={`${control} pr-6`}
+        />
+      ) : (
+        <input
+          type={type}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className={control}
+        />
+      )}
     </label>
   );
 }

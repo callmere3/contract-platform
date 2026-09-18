@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { PageHeader } from '../components/ui/PageHeader';
+import { ComboCell } from '../components/ui/ComboCell';
 import { TrashIcon } from '../components/ui/icons';
 import { useAuth } from '../auth/AuthContext';
 import { canManagePartnerReports } from '../auth/permissions';
@@ -593,23 +594,21 @@ export function PartnerReportsPage() {
               они приезжают заполненными (у МТС — «RBT · <не участвует> ·
               Mobile · RU»). */}
           <div className="px-5 pb-5 flex flex-wrap gap-4 items-end">
+            {/* Подсказки — НАШИМ комбобоксом, а не браузерным `datalist`:
+                тот выглядит системным окном, открывается через раз и не
+                показывает, что подсказки вообще есть. Компонент тот же, что у
+                колонки «Исполнитель» в форме генерации. */}
             {ATTRS.map((a) => (
-              <label className="block" key={a.name}>
+              <label className="block w-[190px]" key={a.name}>
                 <span className="block text-[12px] text-text-secondary mb-1">{a.label}</span>
-                <input
+                <ComboCell
                   value={attributes[a.name] ?? ''}
-                  onChange={(e) =>
-                    setAttributes((prev) => ({ ...prev, [a.name]: e.target.value }))
-                  }
-                  list={`attr-${a.name}`}
+                  options={attrOptions[a.name] ?? []}
+                  onChange={(v) => setAttributes((prev) => ({ ...prev, [a.name]: v }))}
                   placeholder="—"
-                  className={`${inputClass} w-[190px]`}
+                  arrowLabel={`Показать значения: ${a.label}`}
+                  inputClassName={`${inputClass} w-full pr-6`}
                 />
-                <datalist id={`attr-${a.name}`}>
-                  {(attrOptions[a.name] ?? []).map((v) => (
-                    <option key={v} value={v} />
-                  ))}
-                </datalist>
               </label>
             ))}
           </div>
