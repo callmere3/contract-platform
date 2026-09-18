@@ -928,6 +928,54 @@ class PartnerReportRule(Base):
     )
 
 
+class PartnerTrackAlias(Base):
+    """
+    ЗАПОМНЕННОЕ СОПОСТАВЛЕНИЕ: «в отчётах этой площадки такой трек — вот этот
+    артикул» (просьба владельца 18.09.2026).
+
+    Зачем. У площадки код объекта проставлен не всегда, а подбор по названию
+    берёт только однозначное совпадение — «Азимут» в каталоге лежит пятью
+    треками, и выбрать может лишь человек. Выбирать одно и то же каждый месяц
+    он не должен: отчёты приходят регулярно, и позиции в них повторяются.
+
+    КЛЮЧ — ПЛОЩАДКА + НАЗВАНИЕ + ИСПОЛНИТЕЛЬ, а не одно название: у разных
+    артистов бывают одинаковые названия, и общий на всех «Азимут» отправил бы
+    деньги не туда. Площадка в ключе потому, что пишут названия все по-своему:
+    «ПОШЛАЯ МОЛЛИ» у одной и «Пошлая Молли» у другой — и сопоставление,
+    сделанное для одной, для другой может не подойти.
+
+    Ключи хранятся УЖЕ НОРМАЛИЗОВАННЫМИ (регистр, знаки препинания,
+    разделители исполнителей), а рядом лежит исходное написание: по нему
+    человек узнаёт строку в списке запомненного.
+
+    Хранится АРТИКУЛ, а не ссылка на трек: артикул — наш код и переживает
+    перезаливку каталога, а id трека при ней меняется.
+    """
+    __tablename__ = "partner_track_aliases"
+    __table_args__ = (
+        UniqueConstraint("partner_id", "title_key", "artist_key", name="uq_alias_key"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    partner_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("partners.id", ondelete="CASCADE"), index=True
+    )
+    title_key: Mapped[str] = mapped_column(String(300))
+    artist_key: Mapped[str] = mapped_column(String(300))
+    # Как это было написано в отчёте — чтобы список запомненного читался.
+    title: Mapped[str | None] = mapped_column(String(300))
+    artist: Mapped[str | None] = mapped_column(String(300))
+    sku: Mapped[str] = mapped_column(String(32))
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 class PartnerReport(Base):
     """
     Загруженный отчёт площадки за квартал: заголовок и итоги.

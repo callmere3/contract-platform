@@ -12,7 +12,9 @@ import { formatMoney } from '../api/finance';
 import {
   checkTrack,
   createReport,
+  deleteAlias,
   fetchAttributeOptions,
+  listAliases,
   listReports,
   previewReport,
 } from '../api/partnerReports';
@@ -218,6 +220,10 @@ export function PartnerReportsPage() {
   // руками и уходят вместе с отчётом.
   const [attributes, setAttributes] = useState({});
   const [attrOptions, setAttrOptions] = useState({});
+  // Запомненные сопоставления выбранной площадки: «название — исполнитель →
+  // артикул». Их заводит сервис, когда артикул вписывают руками.
+  const [aliases, setAliases] = useState([]);
+  const [showAliases, setShowAliases] = useState(false);
 
   const [reports, setReports] = useState([]);
   const [totals, setTotals] = useState(null);
@@ -240,6 +246,24 @@ export function PartnerReportsPage() {
       .then((d) => setAttrOptions(d.options ?? {}))
       .catch(() => setAttrOptions({}));
   }, []);
+
+  const loadAliases = useCallback(async () => {
+    if (!partnerId) {
+      setAliases([]);
+      return;
+    }
+    try {
+      const data = await listAliases(partnerId);
+      setAliases(data.aliases ?? []);
+    } catch {
+      setAliases([]);
+    }
+  }, [partnerId]);
+
+  useEffect(() => {
+    loadAliases();
+    setShowAliases(false);
+  }, [loadAliases]);
 
   const loadReports = useCallback(async () => {
     try {
@@ -347,7 +371,7 @@ export function PartnerReportsPage() {
     setBusy(true);
     setError('');
     try {
-      const { report } = await createReport({
+      const { report, remembered } = await createReport({
         partnerId,
         file,
         mapping,
@@ -361,8 +385,13 @@ export function PartnerReportsPage() {
       setNotice(
         `Отчёт «${report.file_name}» загружен за ${report.period_label}: ` +
           `${report.rows_count} строк, авторские ${formatMoney(report.total_author)}, ` +
-          `смежные ${formatMoney(report.total_related)}.`,
+          `смежные ${formatMoney(report.total_related)}.` +
+          (remembered
+            ? ` Запомнили артикулов для этой площадки: ${remembered} — в следующем отчёте` +
+              ' они подставятся сами.'
+            : ''),
       );
+      loadAliases();
       setFile(null);
       setPreview(null);
       setMapping({});
@@ -584,6 +613,62 @@ export function PartnerReportsPage() {
               </label>
             ))}
           </div>
+
+          {/* ЗАПОМНЕННЫЕ АРТИКУЛЫ площадки. Список нужен не для красоты:
+              сопоставление, сделанное по ошибке, иначе повторялось бы в каждом
+              следующем отчёте молча — увидеть и убрать, вот и вся задача. */}
+          {aliases.length > 0 && (
+            <div className="px-5 pb-5 text-[12.5px]">
+              <button
+                type="button"
+                onClick={() => setShowAliases((v) => !v)}
+                className="text-accent bg-transparent border-0 p-0 cursor-pointer font-sans text-[12.5px]"
+              >
+                Запомненные артикулы этой площадки: {aliases.length}
+                {showAliases ? ' — скрыть' : ' — показать'}
+              </button>
+              {showAliases && (
+                <div className="mt-2 border border-border rounded-card divide-y divide-border">
+                  {aliases.map((a) => (
+                    <div key={a.id} className="flex items-center gap-3 px-3 py-2">
+                      <div className="flex-1">
+                        <span className="text-text">{a.title}</span>
+                        {a.artist && <span className="text-text-secondary"> — {a.artist}</span>}
+                        <span className="text-text-muted"> → </span>
+                        <span className="text-text font-mono">{a.sku}</span>
+                        {/* Что это за трек СЕЙЧАС: каталог живёт своей жизнью,
+                            и сопоставление могло указывать на позицию, которой
+                            уже нет. */}
+                        <span className="text-text-muted">
+                          {a.track_title
+                            ? ` (${a.track_title}${a.track_artist ? ` — ${a.track_artist}` : ''})`
+                            : ' (нет в номенклатуре)'}
+                        </span>
+                      </div>
+                      {manage && (
+                        <button
+                          type="button"
+                          title="Забыть: в следующем отчёте строка снова будет без артикула"
+                          aria-label="Забыть сопоставление"
+                          onClick={async () => {
+                            try {
+                              await deleteAlias(a.id);
+                              loadAliases();
+                            } catch (e) {
+                              setError(e.message);
+                            }
+                          }}
+                          className="text-danger bg-transparent border-0 cursor-pointer p-0"
+                        >
+                          <TrashIcon size={15} />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {busy && <div className="px-5 pb-5 text-[13px] text-text-muted">Читаем файл…</div>}
 

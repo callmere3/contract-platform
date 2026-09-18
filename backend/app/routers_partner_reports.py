@@ -46,13 +46,16 @@ from app.models import (
     PartnerReport,
     PartnerReportRow,
     PartnerReportRule,
+    PartnerTrackAlias,
     Track,
     User,
 )
 from app.partner_reports import (
     FIELDS,
     FIELD_LABELS,
+    artist_tokens,
     find_period,
+    normalize_name,
     match_builtin,
     parse_report,
     period_label,
@@ -104,7 +107,38 @@ ATTR_LABELS = {
 MAX_ATTR_LEN = 120
 
 
-def _resolve_tracks(db: Session, rows: list) -> dict:
+def _alias_key(title, artist) -> tuple:
+    """
+    Ключ запомненного сопоставления: нормализованные название и исполнитель.
+
+    Нормализуем тем же кодом, что и подбор по названию: иначе «Тмстс!» и
+    «тмстс» стали бы разными ключами, и одно и то же сопоставление
+    запоминалось бы дважды — а при следующем отчёте не нашлось бы ни одно.
+    """
+    return normalize_name(title), " ".join(artist_tokens(artist))
+
+
+def _aliases_for(db: Session, partner_id, rows: list) -> dict:
+    """
+    Что мы уже запоминали для этой площадки — только по строкам этого файла.
+
+    Тянем не весь список партнёра: в отчёте несколько сотен строк, а
+    сопоставлений со временем накопятся тысячи, и фильтр по ключам дешевле,
+    чем перебор всего.
+    """
+    keys = {_alias_key(r.title, r.artist) for r in rows if r.title}
+    if not keys:
+        return {}
+    found = db.execute(
+        select(PartnerTrackAlias).where(
+            PartnerTrackAlias.partner_id == partner_id,
+            PartnerTrackAlias.title_key.in_({k[0] for k in keys}),
+        )
+    ).scalars()
+    return {(a.title_key, a.artist_key): a.sku for a in found}
+
+
+def _resolve_tracks(db: Session, rows: list, partner_id=None) -> dict:
     """
     Привязать строки отчёта к каталогу: сначала по артикулу, а СТРОКИ БЕЗ
     АРТИКУЛА — по названию и исполнителю (просьба владельца 18.09.2026).
@@ -113,6 +147,11 @@ def _resolve_tracks(db: Session, rows: list) -> dict:
     МТС таких строк шесть, и все шесть на самом деле есть в каталоге — просто
     исполнитель записан иначе («ПОШЛАЯ МОЛЛИ» против «Пошлая Молли», «Slim &
     Константа» против «Slim, Константа»).
+
+    ПОРЯДОК: артикул из файла → ЗАПОМНЕННОЕ СОПОСТАВЛЕНИЕ этой площадки
+    (`partner_track_aliases`: человек уже вписывал артикул этому треку) →
+    подбор по названию. Решение человека сильнее догадки сервиса, поэтому оно
+    и выше подбора.
 
     ПОДБИРАЕМ ТОЛЬКО ПРИ СИЛЬНОМ СОВПАДЕНИИ: название сходится целиком (с
     точностью до регистра и знаков препинания), исполнитель — по словам, с
@@ -138,9 +177,34 @@ def _resolve_tracks(db: Session, rows: list) -> dict:
             row.matched_by = "sku"
             resolved[row.row_num] = by_sku[row.sku]
 
+    # ЗАПОМНЕННЫЕ СОПОСТАВЛЕНИЯ — раньше подбора по названию и даже поверх
+    # артикула, которого нет в каталоге: человек уже решал эту задачу для этой
+    # площадки, и его решение сильнее любой догадки сервиса.
+    aliases = _aliases_for(db, partner_id, rows) if partner_id is not None else {}
+    if aliases:
+        unresolved = [r for r in rows if r.row_num not in resolved and r.title]
+        wanted = {
+            aliases[key]
+            for key in (_alias_key(r.title, r.artist) for r in unresolved)
+            if key in aliases
+        }
+        by_alias_sku = {
+            sku: track_id
+            for sku, track_id in db.execute(
+                select(Track.sku, Track.id).where(Track.sku.in_(wanted))
+            )
+        } if wanted else {}
+        for row in unresolved:
+            sku = aliases.get(_alias_key(row.title, row.artist))
+            track_id = by_alias_sku.get(sku) if sku else None
+            if track_id is not None:
+                row.sku = sku
+                row.matched_by = "alias"
+                resolved[row.row_num] = track_id
+
     # Строки без артикула — по названию. Одинаковые пары «название +
     # исполнитель» ищем один раз: в отчёте они повторяются по нескольку строк.
-    pending = [r for r in rows if not r.sku and r.title]
+    pending = [r for r in rows if r.row_num not in resolved and not r.sku and r.title]
     cache: dict = {}
     for row in pending:
         key = (row.title.lower(), (row.artist or "").lower())
@@ -526,6 +590,75 @@ def attribute_options(db: Session = Depends(get_session)) -> dict:
     return {"options": options, "labels": ATTR_LABELS}
 
 
+@partner_reports_router.get("/aliases/{partner_id}")
+def list_aliases(partner_id: uuid.UUID, db: Session = Depends(get_session)) -> dict:
+    """
+    Что мы запомнили для этой площадки: «название — исполнитель → артикул».
+
+    Список нужен не для красоты: сопоставление, сделанное по ошибке, иначе
+    повторялось бы в каждом следующем отчёте молча. Увидеть и убрать — вот и
+    вся его задача.
+    """
+    rows = db.scalars(
+        select(PartnerTrackAlias)
+        .where(PartnerTrackAlias.partner_id == partner_id)
+        .order_by(PartnerTrackAlias.created_at.desc())
+    ).all()
+    skus = {a.sku for a in rows}
+    known = {
+        sku: (title, artist)
+        for sku, title, artist in db.execute(
+            select(Track.sku, Track.title, Track.artist).where(Track.sku.in_(skus))
+        )
+    } if skus else {}
+    return {
+        "aliases": [
+            {
+                "id": str(a.id),
+                "title": a.title,
+                "artist": a.artist,
+                "sku": a.sku,
+                # Что это за трек СЕЙЧАС: каталог живёт своей жизнью, и
+                # сопоставление могло указывать на позицию, которой больше нет.
+                "track_title": known.get(a.sku, (None, None))[0],
+                "track_artist": known.get(a.sku, (None, None))[1],
+                "created_at": a.created_at.isoformat() if a.created_at else None,
+            }
+            for a in rows
+        ]
+    }
+
+
+@partner_reports_router.delete(
+    "/aliases/{alias_id}",
+    dependencies=[Depends(require_role(*CAN_MANAGE_PARTNER_REPORTS))],
+)
+def delete_alias(
+    alias_id: uuid.UUID,
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Забыть сопоставление: в следующем отчёте строка снова будет без артикула."""
+    alias = db.get(PartnerTrackAlias, alias_id)
+    if alias is None:
+        raise HTTPException(404, "Сопоставление не найдено")
+    partner = db.get(Partner, alias.partner_id)
+    db.delete(alias)
+    db.commit()
+    log_action(
+        db, current_user, "partner_report.alias.delete", entity_type="partner",
+        entity_id=alias.partner_id,
+        meta={
+            "partner": partner.name if partner else None,
+            "title": alias.title,
+            "artist": alias.artist,
+            "sku": alias.sku,
+        },
+    )
+    db.commit()
+    return {"deleted": alias.sku}
+
+
 @partner_reports_router.get("/track")
 def find_track_by_sku(sku: str = "", db: Session = Depends(get_session)) -> dict:
     """
@@ -601,7 +734,7 @@ def preview(
     _apply_manual(result.rows, manual)
     # Привязку показываем уже в предпросмотре: человек должен видеть, что
     # артикул подобран по названию, ДО того, как отчёт ляжет в базу.
-    resolved = {} if result.problems else _resolve_tracks(db, result.rows)
+    resolved = {} if result.problems else _resolve_tracks(db, result.rows, partner.id)
     for row in result.rows:
         if row.row_num in manual:
             row.matched_by = "manual"
@@ -767,7 +900,7 @@ def create_report(
     _apply_manual(result.rows, manual)
     # Привязка к каталогу: по артикулу, а строки без него — по названию и
     # исполнителю (см. _resolve_tracks).
-    track_by_row = _resolve_tracks(db, result.rows)
+    track_by_row = _resolve_tracks(db, result.rows, partner_id)
     for row in result.rows:
         if row.row_num in manual:
             row.matched_by = "manual"
@@ -827,6 +960,43 @@ def create_report(
         for r in result.rows
     ])
 
+    # ЗАПОМИНАЕМ ВПИСАННОЕ РУКАМИ: в следующем отчёте этой площадки тот же
+    # трек приедет уже с артикулом. Запоминаем ТОЛЬКО то, что нашлось в
+    # каталоге: код с опечаткой, который ничему не соответствует, повторять из
+    # месяца в месяц незачем.
+    remembered = 0
+    for row in result.rows:
+        if row.row_num not in manual or row.row_num not in track_by_row or not row.title:
+            continue
+        title_key, artist_key = _alias_key(row.title, row.artist)
+        alias = db.scalar(
+            select(PartnerTrackAlias).where(
+                PartnerTrackAlias.partner_id == partner_id,
+                PartnerTrackAlias.title_key == title_key,
+                PartnerTrackAlias.artist_key == artist_key,
+            )
+        )
+        if alias is None:
+            db.add(
+                PartnerTrackAlias(
+                    id=uuid.uuid4(),
+                    partner_id=partner_id,
+                    title_key=title_key,
+                    artist_key=artist_key,
+                    title=row.title,
+                    artist=row.artist,
+                    sku=row.sku,
+                    created_by=current_user.id,
+                )
+            )
+            remembered += 1
+        elif alias.sku != row.sku:
+            # Человек вписал другой артикул той же строке — значит, прежнее
+            # сопоставление было неверным. Верим последнему решению.
+            alias.sku = row.sku
+            alias.created_by = current_user.id
+            remembered += 1
+
     if save_rule:
         if rule is None:
             rule = PartnerReportRule(id=uuid.uuid4(), partner_id=partner_id)
@@ -852,6 +1022,7 @@ def create_report(
             "unmatched_amount": str(unmatched_amount),
             "matched_by_name": sum(1 for r in result.rows if r.matched_by == "name"),
             "manual_skus": len(manual),
+            "remembered": remembered,
             "author": str(report.total_author),
             "related": str(report.total_related),
         },
@@ -859,6 +1030,9 @@ def create_report(
     db.commit()
     return {
         "report": _report_out(report, partner.name),
+        # Сколько сопоставлений запомнили — человек должен знать, что его
+        # правка теперь будет применяться сама.
+        "remembered": remembered,
         # Сколько артикулов подобрано по названию — это стоит увидеть сразу:
         # подбор хоть и строгий, но всё-таки догадка сервиса, а не данные
         # площадки.

@@ -60,6 +60,22 @@ export function checkTrack(sku) {
   return apiJson(`${API}/partner-reports/track?sku=${encodeURIComponent(sku)}`);
 }
 
+/**
+ * Запомненные сопоставления площадки: «название — исполнитель → артикул».
+ *
+ * Их заводит сам сервис, когда человек вписывает артикул в предпросмотре, —
+ * чтобы в следующем отчёте той же площадки тот же трек приехал уже с
+ * артикулом. Список нужен, чтобы ошибочное сопоставление можно было убрать:
+ * иначе оно повторялось бы в каждом отчёте молча.
+ */
+export function listAliases(partnerId) {
+  return apiJson(`${API}/partner-reports/aliases/${partnerId}`);
+}
+
+export function deleteAlias(aliasId) {
+  return apiJson(`${API}/partner-reports/aliases/${aliasId}`, { method: 'DELETE' });
+}
+
 /** Что уже вводили в параметрах отчёта — для подсказок в полях. */
 export function fetchAttributeOptions() {
   return apiJson(`${API}/partner-reports/attributes`);
