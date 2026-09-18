@@ -490,9 +490,15 @@ def _pick_rule(rule: PartnerReportRule | None, mapping_json: str, columns: list)
         except json.JSONDecodeError:
             raise HTTPException(400, "mapping должен быть корректным JSON")
         if parsed:
-            return {"mapping": parsed, "source": "form", "name": None, "vat_rate": None}
+            return {
+                "mapping": parsed, "source": "form", "name": None,
+                "vat_rate": None, "attributes": {},
+            }
     if rule is not None and rule.mapping:
-        return {"mapping": rule.mapping, "source": "partner", "name": None, "vat_rate": None}
+        return {
+            "mapping": rule.mapping, "source": "partner", "name": None,
+            "vat_rate": None, "attributes": {},
+        }
     builtin = match_builtin(columns)
     if builtin is not None:
         return {
@@ -500,8 +506,15 @@ def _pick_rule(rule: PartnerReportRule | None, mapping_json: str, columns: list)
             "source": "builtin",
             "name": builtin["name"],
             "vat_rate": builtin.get("vat_rate"),
+            "attributes": builtin.get("attributes") or {},
         }
-    return {"mapping": suggest_mapping(columns), "source": "guess", "name": None, "vat_rate": None}
+    return {
+        "mapping": suggest_mapping(columns),
+        "source": "guess",
+        "name": None,
+        "vat_rate": None,
+        "attributes": {},
+    }
 
 
 @partner_reports_router.get("/attributes")
@@ -632,8 +645,13 @@ def preview(
         "rule_source": chosen["source"],
         "rule_name": chosen["name"],
         "vat_rate": rate or None,
-        # Параметры отчёта: что запомнено у партнёра, то и подставим.
-        "attributes": {name: getattr(rule, name) if rule else None for name in REPORT_ATTRS},
+        # Параметры отчёта: что запомнено у партнёра — то и подставим, а
+        # если ничего не запомнено, берём заготовку готового правила площадки
+        # (у МТС это «RBT · <не участвует> · Mobile · RU»).
+        "attributes": {
+            name: (getattr(rule, name) if rule else None) or chosen["attributes"].get(name)
+            for name in REPORT_ATTRS
+        },
         "attribute_labels": ATTR_LABELS,
         "period": (
             {

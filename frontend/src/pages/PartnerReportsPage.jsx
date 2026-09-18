@@ -496,29 +496,6 @@ export function PartnerReportsPage() {
               </div>
             </div>
 
-            {/* ПАРАМЕТРЫ ОТЧЁТА. Заполняются один раз на партнёра: галочка
-                «запомнить правило» сохраняет их вместе с колонками, и
-                следующий файл той же площадки приедет уже с ними. */}
-            {ATTRS.map((a) => (
-              <label className="block" key={a.name}>
-                <span className="block text-[12px] text-text-secondary mb-1">{a.label}</span>
-                <input
-                  value={attributes[a.name] ?? ''}
-                  onChange={(e) =>
-                    setAttributes((prev) => ({ ...prev, [a.name]: e.target.value }))
-                  }
-                  list={`attr-${a.name}`}
-                  placeholder="—"
-                  className={`${inputClass} w-[170px]`}
-                />
-                <datalist id={`attr-${a.name}`}>
-                  {(attrOptions[a.name] ?? []).map((v) => (
-                    <option key={v} value={v} />
-                  ))}
-                </datalist>
-              </label>
-            ))}
-
             <label className="block">
               <span className="block text-[12px] text-text-secondary mb-1">НДС в суммах, %</span>
               <input
@@ -571,6 +548,35 @@ export function PartnerReportsPage() {
                 Площадка определится по файлу — а если формат незнакомый, выберите её сами
               </div>
             )}
+          </div>
+
+          {/* ПАРАМЕТРЫ ОТЧЁТА — ПОД ЗАГРУЗКОЙ ФАЙЛА (просьба владельца
+              18.09.2026): сверху остаётся то, без чего файл не прочитать
+              (партнёр, период, НДС), а это — свойства уже прочитанного
+              отчёта, и заполняют их один раз на площадку: галочка «запомнить
+              правило» сохраняет их вместе с колонками. У знакомого формата
+              они приезжают заполненными (у МТС — «RBT · <не участвует> ·
+              Mobile · RU»). */}
+          <div className="px-5 pb-5 flex flex-wrap gap-4 items-end">
+            {ATTRS.map((a) => (
+              <label className="block" key={a.name}>
+                <span className="block text-[12px] text-text-secondary mb-1">{a.label}</span>
+                <input
+                  value={attributes[a.name] ?? ''}
+                  onChange={(e) =>
+                    setAttributes((prev) => ({ ...prev, [a.name]: e.target.value }))
+                  }
+                  list={`attr-${a.name}`}
+                  placeholder="—"
+                  className={`${inputClass} w-[190px]`}
+                />
+                <datalist id={`attr-${a.name}`}>
+                  {(attrOptions[a.name] ?? []).map((v) => (
+                    <option key={v} value={v} />
+                  ))}
+                </datalist>
+              </label>
+            ))}
           </div>
 
           {busy && <div className="px-5 pb-5 text-[13px] text-text-muted">Читаем файл…</div>}
