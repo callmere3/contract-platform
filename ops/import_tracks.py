@@ -31,6 +31,11 @@
 архивирование по умолчанию снесло бы в архив всё остальное. Для полной
 выгрузки есть флаг --archive-missing.
 
+--non-catalog кладёт строки в неКАТАЛОГ — список изъятых позиций. Сверка
+долей со справочными при этом не делается вовсе: изъятое приезжает из
+исторических списков, где доли не сходятся, и чинить их уже негде (то же
+послабление, что у импорта неКаталога из интерфейса).
+
 --dry-run читает файл и печатает, что получилось бы, ничего не записывая.
 """
 import argparse
@@ -63,6 +68,11 @@ def main() -> int:
         "--strict",
         action="store_true",
         help="не грузить строки с ошибками (как импорт из интерфейса)",
+    )
+    parser.add_argument(
+        "--non-catalog",
+        action="store_true",
+        help="залить в неКаталог (изъятые позиции); сверка долей не делается",
     )
     args = parser.parse_args()
 
@@ -103,7 +113,10 @@ def main() -> int:
         ws = wb[wb.sheetnames[0]]
         problems: list[str] = []
 
-        for parsed in read_rows(ws):
+        # Сверку долей для неКаталога не делаем — как и импорт из
+        # интерфейса: иначе отчёт об ошибках состоял бы из неё одной, а
+        # чинить эти доли всё равно негде.
+        for parsed in read_rows(ws, check_sums=not args.non_catalog):
             stats["read"] += 1
             track, rights = parsed.track, parsed.rights
             if parsed.errors:
@@ -136,6 +149,7 @@ def main() -> int:
                     {
                         "id": track_id,
                         **track,
+                        "in_catalog": not args.non_catalog,
                         "source_file": source,
                         "imported_at": now,
                         "archived_at": None,
@@ -147,6 +161,8 @@ def main() -> int:
                     {
                         "id": track_id,
                         **track,
+                        # Позиция переезжает в тот список, куда её грузят.
+                        "in_catalog": not args.non_catalog,
                         "source_file": source,
                         "imported_at": now,
                         # Трек, вернувшийся в выгрузку, перестаёт быть архивным.
@@ -182,6 +198,7 @@ def main() -> int:
 
         print()
         print("=== Результат ===")
+        print(f"список               : {'неКаталог' if args.non_catalog else 'Каталог'}")
         print(f"строк прочитано      : {stats['read']}")
         print(f"треков заведено      : {stats['заведено']}")
         print(f"треков обновлено     : {stats['обновлено']}")
