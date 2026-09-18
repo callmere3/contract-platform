@@ -24,6 +24,7 @@ import {
   PartnerCardModal,
   PartnersImportExportModal,
 } from './PartnerModals';
+import { ConfirmDeleteReportModal } from './ConfirmDeleteReportModal';
 import { AlertModal } from './AlertModal';
 
 const REGISTRY = {
@@ -52,6 +53,7 @@ const REGISTRY = {
   partnerCard: PartnerCardModal,
   newPartner: NewPartnerModal,
   partnersImportExport: PartnersImportExportModal,
+  confirmDeleteReport: ConfirmDeleteReportModal,
 };
 
 export function ModalRoot() {

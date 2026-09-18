@@ -12,11 +12,11 @@ import { formatMoney } from '../api/finance';
 import {
   checkTrack,
   createReport,
-  deleteReport,
   fetchAttributeOptions,
   listReports,
   previewReport,
 } from '../api/partnerReports';
+import { useModal } from '../modals/ModalProvider';
 
 /**
  * ML Finance → «Отчёты»: загрузка отчётов площадок.
@@ -187,6 +187,7 @@ const quarterRange = (year, quarter) => ({
 
 export function PartnerReportsPage() {
   const { role } = useAuth();
+  const { openModal } = useModal();
   const manage = canManagePartnerReports(role);
 
   const [partners, setPartners] = useState([]);
@@ -375,14 +376,12 @@ export function PartnerReportsPage() {
     }
   }
 
-  async function remove(report) {
-    if (!window.confirm(`Удалить отчёт «${report.file_name}» вместе со строками?`)) return;
-    try {
-      await deleteReport(report.id);
-      loadReports();
-    } catch (e) {
-      setError(e.message);
-    }
+  // Подтверждение — СВОИМ окном, а не браузерным confirm: решение принимают,
+  // глядя на сам отчёт (площадка, период, суммы), а системное окно умеет
+  // показать одну строку. Удаляет само окно, страница только перечитывает
+  // список.
+  function remove(report) {
+    openModal('confirmDeleteReport', { report, onDeleted: loadReports });
   }
 
   // Строки без трека приходят ОТДЕЛЬНЫМ списком и показываются только по
