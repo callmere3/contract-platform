@@ -43,6 +43,7 @@ from app.auth import get_current_user, require_role
 from app.db import get_session
 from app.models import (
     Partner,
+    PartnerPayment,
     PartnerReport,
     PartnerReportRow,
     PartnerReportRule,
@@ -359,7 +360,38 @@ def _rule_out(rule: PartnerReportRule | None) -> dict | None:
     }
 
 
-def _report_out(report: PartnerReport, partner_name: str) -> dict:
+def _sync_payment_actual(db: Session, payment: PartnerPayment | None) -> None:
+    """
+    ФАКТИЧЕСКИЙ ЗАВОД ПЛАТЕЖА = сумма отчётов, к нему привязанных.
+
+    Так это и работает у владельца: платёж пришёл, к нему подшивают отчёты
+    площадки, и «сколько по нему реально завелось» — это их итог. Считаем, а
+    не просим ввести: числа уже есть в базе, и переписывать их руками значит
+    однажды ошибиться в третьем знаке.
+
+    Одним платежом закрывают несколько отчётов, поэтому именно СУММА, а не
+    итог последнего привязанного.
+    """
+    if payment is None:
+        return
+    rows = db.execute(
+        select(PartnerReport.total_author, PartnerReport.total_related).where(
+            PartnerReport.payment_id == payment.id
+        )
+    ).all()
+    if not rows:
+        # Отвязали последний отчёт — поле очищаем, а не оставляем прежнее
+        # число: иначе в таблице висела бы сумма, которой больше нечем
+        # объясниться.
+        payment.actual_amount = None
+        return
+    payment.actual_amount = sum(
+        ((author or Decimal(0)) + (related or Decimal(0)) for author, related in rows),
+        Decimal(0),
+    )
+
+
+def _report_out(report: PartnerReport, partner_name: str, payment_date=None) -> dict:
     return {
         "id": str(report.id),
         "partner_id": str(report.partner_id),
@@ -382,6 +414,10 @@ def _report_out(report: PartnerReport, partner_name: str) -> dict:
         "total_related": _money(report.total_related),
         "total": _money((report.total_author or 0) + (report.total_related or 0)),
         "vat_rate": _money(report.vat_rate),
+        "payment_id": str(report.payment_id) if report.payment_id else None,
+        # Дата привязанного поступления: в списке отчётов её показывают
+        # столбцом, и ходить за ней вторым запросом ради одной ячейки незачем.
+        "payment_date": payment_date.isoformat() if payment_date else None,
         **{name: getattr(report, name) for name in REPORT_ATTRS},
         "uploaded_at": report.uploaded_at.isoformat() if report.uploaded_at else None,
     }
@@ -401,8 +437,10 @@ def list_reports(
     периоды разные (месяц, квартал), и «покажи всё за третий квартал» должно
     находить и июльский отчёт МТС.
     """
-    query = select(PartnerReport, Partner.name).join(
-        Partner, Partner.id == PartnerReport.partner_id
+    query = (
+        select(PartnerReport, Partner.name, PartnerPayment.occurred_on)
+        .join(Partner, Partner.id == PartnerReport.partner_id)
+        .join(PartnerPayment, PartnerPayment.id == PartnerReport.payment_id, isouter=True)
     )
     if partner_id is not None:
         query = query.where(PartnerReport.partner_id == partner_id)
@@ -412,7 +450,7 @@ def list_reports(
         query = query.where(PartnerReport.period_from <= _date(period_to, "period_to"))
 
     rows = db.execute(query.order_by(PartnerReport.uploaded_at.desc()).limit(200)).all()
-    reports = [_report_out(r, name) for r, name in rows]
+    reports = [_report_out(r, name, paid_on) for r, name, paid_on in rows]
     return {
         "reports": reports,
         # Итог по показанному — чтобы сверять квартал целиком, не складывая
@@ -566,6 +604,111 @@ def _pick_rule(rule: PartnerReportRule | None, mapping_json: str, columns: list)
             "vat_rate": builtin.get("vat_rate"),
         }
     return {"mapping": suggest_mapping(columns), "source": "guess", "name": None, "vat_rate": None}
+
+
+@partner_reports_router.post(
+    "/{report_id}/payment",
+    dependencies=[Depends(require_role(*CAN_MANAGE_PARTNER_REPORTS))],
+)
+def link_payment(
+    report_id: uuid.UUID,
+    payment_id: str = Form(...),
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """
+    Привязать отчёт к строке поступления.
+
+    ПЛОЩАДКА СВЕРЯЕТСЯ: отчёт МТС нельзя подшить к платежу от другой
+    площадки — это деньги не на тот счёт, и поймать такое потом можно только
+    вручную. Если у строки поступления площадка ещё не проставлена (её
+    заводят по выписке, а чей платёж, выясняют потом) — проставим её из
+    отчёта: это и есть ответ на тот самый вопрос.
+
+    После привязки пересчитывается «сумма фактического завода» платежа — она
+    равна сумме привязанных к нему отчётов (см. `_sync_payment_actual`).
+    """
+    report = db.get(PartnerReport, report_id)
+    if report is None:
+        raise HTTPException(404, "Отчёт не найден")
+    try:
+        payment = db.get(PartnerPayment, uuid.UUID(str(payment_id)))
+    except ValueError:
+        raise HTTPException(400, "payment_id: это не идентификатор")
+    if payment is None:
+        raise HTTPException(404, "Поступление не найдено")
+
+    if payment.partner_id is None:
+        payment.partner_id = report.partner_id
+    elif payment.partner_id != report.partner_id:
+        report_partner = db.get(Partner, report.partner_id)
+        payment_partner = db.get(Partner, payment.partner_id)
+        raise HTTPException(
+            409,
+            "Площадки не совпадают: отчёт от «%s», а поступление от «%s»."
+            % (
+                report_partner.name if report_partner else "—",
+                payment_partner.name if payment_partner else "—",
+            ),
+        )
+
+    previous = db.get(PartnerPayment, report.payment_id) if report.payment_id else None
+    report.payment_id = payment.id
+    db.flush()
+    _sync_payment_actual(db, payment)
+    # Прежний платёж тоже пересчитываем: отчёт из него ушёл, и его
+    # фактический завод больше не включает эти деньги.
+    if previous is not None and previous.id != payment.id:
+        _sync_payment_actual(db, previous)
+    db.commit()
+
+    partner = db.get(Partner, report.partner_id)
+    log_action(
+        db, current_user, "partner_report.payment.link", entity_type="partner_report",
+        entity_id=report.id,
+        meta={
+            "partner": partner.name if partner else None,
+            "period": period_label(report.period_from, report.period_to),
+            "payment": payment.occurred_on.isoformat(),
+        },
+    )
+    db.commit()
+    return {
+        "report": _report_out(report, partner.name if partner else "", payment.occurred_on),
+        "payment_actual": _money(payment.actual_amount),
+    }
+
+
+@partner_reports_router.delete(
+    "/{report_id}/payment",
+    dependencies=[Depends(require_role(*CAN_MANAGE_PARTNER_REPORTS))],
+)
+def unlink_payment(
+    report_id: uuid.UUID,
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Отвязать отчёт от поступления и пересчитать его фактический завод."""
+    report = db.get(PartnerReport, report_id)
+    if report is None:
+        raise HTTPException(404, "Отчёт не найден")
+    payment = db.get(PartnerPayment, report.payment_id) if report.payment_id else None
+    report.payment_id = None
+    db.flush()
+    _sync_payment_actual(db, payment)
+    db.commit()
+
+    partner = db.get(Partner, report.partner_id)
+    log_action(
+        db, current_user, "partner_report.payment.unlink", entity_type="partner_report",
+        entity_id=report.id,
+        meta={
+            "partner": partner.name if partner else None,
+            "period": period_label(report.period_from, report.period_to),
+        },
+    )
+    db.commit()
+    return {"report": _report_out(report, partner.name if partner else "")}
 
 
 @partner_reports_router.get("/attributes")

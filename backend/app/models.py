@@ -1081,6 +1081,15 @@ class PartnerReport(Base):
     total_author: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
     total_related: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
     vat_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
+    # К КАКОМУ ПОСТУПЛЕНИЮ ОТНОСИТСЯ отчёт (19.09.2026). Связь со стороны
+    # отчёта, а не платежа: одним платежом закрывают несколько отчётов, и
+    # обратная ссылка потребовала бы третьей таблицы ради того же самого.
+    #
+    # SET NULL при удалении платежа: отчёт — документ площадки и живёт сам по
+    # себе, а строку поступления могут завести заново.
+    payment_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("partner_payments.id", ondelete="SET NULL"), index=True
+    )
     # Параметры отчёта — СНИМКОМ, как и ставка НДС: в правиле они могут
     # смениться, а загруженный отчёт обязан объяснять себя сам. Дальше они
     # уйдут в отчёт правообладателю.

@@ -76,6 +76,23 @@ export function deleteAlias(aliasId) {
   return apiJson(`${API}/partner-reports/aliases/${aliasId}`, { method: 'DELETE' });
 }
 
+/**
+ * Привязать отчёт к строке поступления: «эти деньги пришли по этому отчёту».
+ *
+ * Сервер сверяет площадку (отчёт МТС нельзя подшить к чужому платежу) и
+ * пересчитывает у поступления «сумму фактического завода» — она равна сумме
+ * привязанных к нему отчётов.
+ */
+export function linkReportPayment(reportId, paymentId) {
+  const body = new FormData();
+  body.append('payment_id', paymentId);
+  return apiJson(`${API}/partner-reports/${reportId}/payment`, { method: 'POST', body });
+}
+
+export function unlinkReportPayment(reportId) {
+  return apiJson(`${API}/partner-reports/${reportId}/payment`, { method: 'DELETE' });
+}
+
 /** Что уже вводили в параметрах отчёта — для подсказок в полях. */
 export function fetchAttributeOptions() {
   return apiJson(`${API}/partner-reports/attributes`);

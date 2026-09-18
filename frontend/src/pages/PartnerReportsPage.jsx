@@ -927,6 +927,7 @@ export function PartnerReportsPage() {
                       {a.label}
                     </th>
                   ))}
+                  <th className={th}>Поступление</th>
                   <th className={th}>Не разнесено, ₽</th>
                   <th className={th}>Авторские, ₽</th>
                   <th className={th}>Смежные, ₽</th>
@@ -935,7 +936,17 @@ export function PartnerReportsPage() {
               </thead>
               <tbody>
                 {reports.map((r) => (
-                  <tr key={r.id}>
+                  /* СТРОКА КЛИКАБЕЛЬНА (19.09.2026): нажатие открывает
+                     «к какому поступлению относится этот отчёт». Это
+                     единственное действие над загруженным отчётом, кроме
+                     удаления, — отдельной кнопки ради него заводить незачем. */
+                  <tr
+                    key={r.id}
+                    onClick={() =>
+                      openModal('linkReportPayment', { report: r, onChanged: loadReports })
+                    }
+                    className="cursor-pointer hover:bg-hover"
+                  >
                     <td className={`${td} font-semibold text-text`}>{r.partner}</td>
                     {/* Имя файла и число строк убраны из списка (просьба
                         владельца 18.09.2026): имя площадки и период отвечают,
@@ -947,6 +958,15 @@ export function PartnerReportsPage() {
                         {r[a.name] || '—'}
                       </td>
                     ))}
+                    {/* К какому поступлению отчёт привязан. Пусто — значит,
+                        деньги по нему ещё не свели с выпиской. */}
+                    <td className={`${td} tabular-nums whitespace-nowrap`}>
+                      {r.payment_date ? (
+                        ru(r.payment_date)
+                      ) : (
+                        <span className="text-text-muted">—</span>
+                      )}
+                    </td>
                     {/* СУММА, а не число строк (просьба владельца 18.09.2026):
                         десять строк по рублю и одна на сто тысяч выглядят
                         одинаково, если считать строки. */}
@@ -964,7 +984,12 @@ export function PartnerReportsPage() {
                       {manage && (
                         <button
                           type="button"
-                          onClick={() => remove(r)}
+                          onClick={(e) => {
+                            // Иначе нажатие на мусорку откроет ещё и окно
+                            // привязки: клик всплывает до строки.
+                            e.stopPropagation();
+                            remove(r);
+                          }}
                           title="Удалить отчёт"
                           aria-label="Удалить отчёт"
                           className="text-danger bg-transparent border-0 cursor-pointer p-0"
