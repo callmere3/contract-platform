@@ -507,7 +507,7 @@ def _owner_index(db: Session) -> OwnerIndex:
     return OwnerIndex(owners, cards)
 
 
-def _read_input(file: UploadFile | None, pasted: str | None):
+def _read_input(file: UploadFile | None, pasted: str | None, check_sums: bool = True):
     """
     Источник импорта → разобранные строки. Их два, и оба ведут в один и тот
     же разборщик:
@@ -517,9 +517,13 @@ def _read_input(file: UploadFile | None, pasted: str | None):
 
     Проверки после этого одинаковые: разница только в том, откуда взялись
     ячейки.
+
+    `check_sums=False` — сверку долей со справочными не делаем. Так грузится
+    неКаталог: изъятые позиции приезжают из исторических списков, где доли
+    не сходятся, и починить их уже негде (см. `nomenclature_import`).
     """
     if pasted and pasted.strip():
-        rows = list(read_pasted(pasted))
+        rows = list(read_pasted(pasted, check_sums))
         # Ни одного артикула — значит, вставили не таблицу каталога, а
         # что-то другое (одну колонку, текст, кусок другого отчёта). Отвечаем
         # понятной фразой, а не сотней одинаковых ошибок «не заполнен
@@ -541,7 +545,7 @@ def _read_input(file: UploadFile | None, pasted: str | None):
         wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True, read_only=True)
     except Exception as exc:
         raise HTTPException(400, f"Не удалось прочитать файл: {exc}")
-    return _limit(list(read_rows(wb[wb.sheetnames[0]])))
+    return _limit(list(read_rows(wb[wb.sheetnames[0]], check_sums)))
 
 
 def _limit(rows: list):
@@ -728,7 +732,7 @@ def import_check(
     позиции). Решает та вкладка, с которой открыли импорт, — иначе пришлось
     бы спрашивать об этом ещё раз, уже другими словами.
     """
-    plan = _plan(db, _read_input(file, pasted))
+    plan = _plan(db, _read_input(file, pasted, check_sums=in_catalog))
     plan["in_catalog"] = in_catalog
     return plan
 
@@ -766,8 +770,13 @@ def import_apply(
     ФАЙЛА ПЕРЕЕЗЖАЕТ в тот список, куда её грузят: файл с изъятыми и означает
     «эти теперь изъяты». Обратно она возвращается тем же способом — импортом
     в каталог.
+
+    У неКаталога СВЕРКИ ДОЛЕЙ СО СПРАВОЧНЫМИ НЕТ (18.09.2026): изъятые
+    позиции приезжают из исторических списков, где доли не сходятся, и чинить
+    их негде. Остальные проверки — обязательные поля, артикул, разбор чисел —
+    те же самые.
     """
-    rows = _read_input(file, pasted)
+    rows = _read_input(file, pasted, check_sums=in_catalog)
     try:
         mapping = json.loads(owner_map or "{}")
         if not isinstance(mapping, dict):

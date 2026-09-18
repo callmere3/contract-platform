@@ -29,6 +29,11 @@
     считается это отдельно по каждому виду прав: смежные и авторские
     независимы.
 
+СВЕРКА ДОЛЕЙ ВЫКЛЮЧАЕТСЯ ТОЛЬКО ПРИ ИМПОРТЕ В неКАТАЛОГ (`check_sums=False`,
+18.09.2026). Изъятые позиции приезжают из исторических списков, где доли с
+общими не сходятся сплошь и рядом, и чинить их негде — в Dista этих треков уже
+нет. Каталог проверяется строго, как и раньше: туда приезжают свежие выгрузки.
+
 ЭТИ ЖЕ ПРАВИЛА ПРОВЕРЯЮТ РУЧНУЮ ПРАВКУ КАРТОЧКИ (`check_required` и
 `check_shares`, вызываются из `routers_nomenclature.update_track`). Разойдись
 они — и трек, который импорт принять отказывается, спокойно заводился бы
@@ -334,7 +339,12 @@ def _num(value: Decimal) -> str:
     return f"{value:.2f}".rstrip("0").rstrip(".") or "0"
 
 
-def parse_row(raw: tuple, row_num: int, percent_cols: set | None = None) -> Row | None:
+def parse_row(
+    raw: tuple,
+    row_num: int,
+    percent_cols: set | None = None,
+    check_sums: bool = True,
+) -> Row | None:
     """
     Строка файла → разобранная строка с ошибками и предупреждениями.
 
@@ -386,7 +396,15 @@ def parse_row(raw: tuple, row_num: int, percent_cols: set | None = None) -> Row 
     row.errors.extend(required_errors)
 
     _parse_rights(raw, percent_cols, row)
-    row.errors.extend(check_shares(row.track, row.rights))
+    # СВЕРКА ДОЛЕЙ ОТКЛЮЧАЕМА, и ровно для одного случая — импорта в
+    # неКаталог (просьба владельца 18.09.2026). Изъятые позиции приезжают из
+    # исторических списков, где доли с общими не сходятся сплошь и рядом (в
+    # боевом каталоге таких 48 тысяч строк), а чинить их негде: в Dista они
+    # уже не живут. Требовать сходимости значило бы не дать залить список
+    # вовсе. Для каталога правило остаётся строгим: туда приезжают свежие
+    # выгрузки, и они его проходят.
+    if check_sums:
+        row.errors.extend(check_shares(row.track, row.rights))
 
     # Артикула нет — строку не на что записать, и все прочие претензии к ней
     # бессмысленны.
@@ -395,7 +413,7 @@ def parse_row(raw: tuple, row_num: int, percent_cols: set | None = None) -> Row 
     return row
 
 
-def read_rows(worksheet):
+def read_rows(worksheet, check_sums: bool = True):
     """
     Лист Excel → разобранные строки.
 
@@ -413,12 +431,12 @@ def read_rows(worksheet):
         percent_cols = {
             i for i, c in enumerate(cells) if "%" in (c.number_format or "")
         }
-        parsed = parse_row(values, row_num, percent_cols)
+        parsed = parse_row(values, row_num, percent_cols, check_sums)
         if parsed is not None:
             yield parsed
 
 
-def read_pasted(text_block: str):
+def read_pasted(text_block: str, check_sums: bool = True):
     """
     Вставка из буфера обмена → разобранные строки.
 
@@ -435,7 +453,9 @@ def read_pasted(text_block: str):
     for row_num, values in enumerate(rows, start=1):
         if not values:
             continue
-        parsed = parse_row(tuple(v.strip() or None for v in values), row_num, set())
+        parsed = parse_row(
+            tuple(v.strip() or None for v in values), row_num, set(), check_sums
+        )
         if parsed is not None:
             yield parsed
 
