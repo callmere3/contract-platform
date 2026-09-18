@@ -134,6 +134,12 @@ export const canManagePartners = (role) => is(role, ADMIN, DIRECTOR);
 export const canViewPartnerReports = (role) => is(role, ADMIN, DIRECTOR);
 export const canManagePartnerReports = (role) => is(role, ADMIN, DIRECTOR);
 
+// backend: CAN_VIEW_PAYMENTS / CAN_MANAGE_PAYMENTS. Поступления от площадок:
+// что реально дошло до счёта, с курсом и заводом. Право своё, хоть и совпадает
+// с отчётами: отчёт — что площадка насчитала, поступление — что пришло.
+export const canViewPayments = (role) => is(role, ADMIN, DIRECTOR);
+export const canManagePayments = (role) => is(role, ADMIN, DIRECTOR);
+
 // backend: CAN_EXPORT_CONTRAGENTS = (ADMIN, DIRECTOR) — у top_manager/tester убран
 export const canExport = (role) => is(role, ADMIN, DIRECTOR);
 

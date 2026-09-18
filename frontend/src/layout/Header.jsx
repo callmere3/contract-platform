@@ -142,6 +142,9 @@ export function Header({ companyName = 'ML Docs' }) {
     // «Отчёты» — после справочников и намеренно: сначала каталог и партнёры,
     // потом то, что по ним приходит. Это же порядок расчёта.
     { to: '/finance/reports', label: 'Отчёты' },
+    // «Поступления» — сразу за отчётами: отчёт говорит, что площадка
+    // насчитала, поступление — что дошло до счёта, и сверяют их парой.
+    { to: '/finance/payments', label: 'Поступления' },
   ];
   if (canUseDistaSync(user?.role)) {
     financeTabs = [...financeTabs, { to: '/dista', label: 'Dista Connect' }];

@@ -36,6 +36,7 @@ from app.routers_finance import finance_router
 from app.routers_generation_history import generation_history_router
 from app.routers_nomenclature import nomenclature_router
 from app.routers_partner_reports import partner_reports_router
+from app.routers_payments import payments_router
 from app.routers_partners import partners_router
 from app.routers_notifications import notifications_router
 from app.routers_tags import tags_router
@@ -62,6 +63,7 @@ app.include_router(finance_router)
 app.include_router(nomenclature_router)
 app.include_router(partners_router)
 app.include_router(partner_reports_router)
+app.include_router(payments_router)
 app.include_router(tags_router)
 app.include_router(generation_history_router)
 app.include_router(notifications_router)

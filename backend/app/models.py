@@ -928,6 +928,59 @@ class PartnerReportRule(Base):
     )
 
 
+class PartnerPayment(Base):
+    """
+    ПОСТУПЛЕНИЕ ОТ ПЛОЩАДКИ: деньги, которые реально пришли на счёт
+    (19.09.2026, просьба владельца).
+
+    Это НЕ `FinanceOperation` и не отчёт. Отчёт говорит, что площадка
+    насчитала; поступление — что дошло до счёта, когда, по какому курсу и
+    сколько из этого завели. Одним платежом нередко закрывают несколько
+    отчётов, а курс и завод к отчёту отношения не имеют вовсе.
+
+    ПРАВИТСЯ ПРЯМО В ТАБЛИЦЕ, в отличие от денежных операций контрагента, где
+    правки нет вовсе. Причина в самой строке: «заведено» и «сумма
+    фактического завода» проставляются ПОЗЖЕ платежа, иногда через недели.
+    Строка тут не запись в книге, а живой лист, который дозаполняют.
+
+    Деньги — Numeric и наружу строками, как везде в ML Finance: float в JSON
+    превращает 1234.10 в 1234.0999999999999.
+    """
+    __tablename__ = "partner_payments"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    # Дата поступления. Она же определяет, в каком месяце строка видна: месяц
+    # и квартал на экране — это отбор по ней, отдельного поля «период» нет.
+    occurred_on: Mapped[date] = mapped_column(Date, index=True)
+    # Площадка. NULLABLE намеренно: строку заводят по выписке, а чей это
+    # платёж, иногда выясняют потом. Пустая площадка — честное «ещё не
+    # разобрались», а не повод не дать завести строку.
+    partner_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("partners.id", ondelete="RESTRICT"), index=True
+    )
+    description: Mapped[str | None] = mapped_column(Text)
+    # Сумма, как она пришла, и курс, по которому её заводят. Курс — шесть
+    # знаков: у валют вроде тенге третьего знака не хватает.
+    amount: Mapped[Decimal | None] = mapped_column(Numeric(16, 2))
+    rate: Mapped[Decimal | None] = mapped_column(Numeric(14, 6))
+    # Сколько должно завестись и сколько завелось на самом деле. Оба поля
+    # хранятся, а не считаются: расхождение между ними и есть то, ради чего
+    # эту таблицу ведут.
+    transfer_amount: Mapped[Decimal | None] = mapped_column(Numeric(16, 2))
+    transferred: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=false(), default=False
+    )
+    actual_amount: Mapped[Decimal | None] = mapped_column(Numeric(16, 2))
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 class PartnerTrackAlias(Base):
     """
     ЗАПОМНЕННОЕ СОПОСТАВЛЕНИЕ: «в отчётах этой площадки такой трек — вот этот
