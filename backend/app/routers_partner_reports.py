@@ -490,15 +490,9 @@ def _pick_rule(rule: PartnerReportRule | None, mapping_json: str, columns: list)
         except json.JSONDecodeError:
             raise HTTPException(400, "mapping должен быть корректным JSON")
         if parsed:
-            return {
-                "mapping": parsed, "source": "form", "name": None,
-                "vat_rate": None, "attributes": {},
-            }
+            return {"mapping": parsed, "source": "form", "name": None, "vat_rate": None}
     if rule is not None and rule.mapping:
-        return {
-            "mapping": rule.mapping, "source": "partner", "name": None,
-            "vat_rate": None, "attributes": {},
-        }
+        return {"mapping": rule.mapping, "source": "partner", "name": None, "vat_rate": None}
     builtin = match_builtin(columns)
     if builtin is not None:
         return {
@@ -506,15 +500,8 @@ def _pick_rule(rule: PartnerReportRule | None, mapping_json: str, columns: list)
             "source": "builtin",
             "name": builtin["name"],
             "vat_rate": builtin.get("vat_rate"),
-            "attributes": builtin.get("attributes") or {},
         }
-    return {
-        "mapping": suggest_mapping(columns),
-        "source": "guess",
-        "name": None,
-        "vat_rate": None,
-        "attributes": {},
-    }
+    return {"mapping": suggest_mapping(columns), "source": "guess", "name": None, "vat_rate": None}
 
 
 @partner_reports_router.get("/attributes")
@@ -599,6 +586,9 @@ def preview(
         or (str(rule.vat_rate) if rule and rule.vat_rate else "")
         or (str(chosen["vat_rate"]) if chosen["vat_rate"] else "")
     )
+    # Заготовка параметров узнаётся ПО ФАЙЛУ, даже если колонки разбирает
+    # правило партнёра или настройка из формы (см. ниже, "attributes").
+    builtin_attrs = (match_builtin(columns) or {}).get("attributes") or {}
     manual = _manual_skus(manual_skus)
 
     # Разбираем ВЕСЬ файл, а не первые сто строк: итоги человек сверяет с
@@ -645,11 +635,17 @@ def preview(
         "rule_source": chosen["source"],
         "rule_name": chosen["name"],
         "vat_rate": rate or None,
-        # Параметры отчёта: что запомнено у партнёра — то и подставим, а
-        # если ничего не запомнено, берём заготовку готового правила площадки
-        # (у МТС это «RBT · <не участвует> · Mobile · RU»).
+        # Параметры отчёта: что запомнено у партнёра — то и подставим, а чего
+        # не запомнено, берём из заготовки готового правила площадки (у МТС
+        # это «RBT · <не участвует> · Mobile · RU»).
+        #
+        # ЗАГОТОВКУ ИЩЕМ ОТДЕЛЬНО от того, чьё правило разобрало колонки: у
+        # МТС правило партнёра сохранено (колонки настраивали руками), и
+        # раньше вместе с ним выигрывали его пустые параметры — поля
+        # оставались пустыми, хотя заготовка есть. Правило — про формат файла,
+        # заготовка — про площадку, и мешать их не надо.
         "attributes": {
-            name: (getattr(rule, name) if rule else None) or chosen["attributes"].get(name)
+            name: (getattr(rule, name) if rule else None) or builtin_attrs.get(name)
             for name in REPORT_ATTRS
         },
         "attribute_labels": ATTR_LABELS,

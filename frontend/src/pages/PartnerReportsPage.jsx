@@ -297,7 +297,10 @@ export function PartnerReportsPage() {
       // человек уже вписал руками на этом файле.
       setAttributes((prev) =>
         Object.fromEntries(
-          ATTRS.map(({ name }) => [name, prev[name] ?? data.attributes?.[name] ?? '']),
+          // ИМЕННО `||`, а не `??`: пустая строка здесь значит «ещё не
+          // заполнено», и подставить в неё значение из правила надо. С `??`
+          // первый предпросмотр записывал пустоту, и второй её сохранял.
+          ATTRS.map(({ name }) => [name, prev[name] || data.attributes?.[name] || '']),
         ),
       );
       // ПЕРИОД ИЗ ШАПКИ ФАЙЛА: у МТС он там написан прямо («за период с
