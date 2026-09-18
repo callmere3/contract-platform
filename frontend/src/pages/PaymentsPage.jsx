@@ -44,6 +44,45 @@ const monthRange = (year, month) => ({
   to: iso(new Date(Date.UTC(year, month + 1, 0))),
 });
 
+/**
+ * Ячейка с суммой: пока в неё не встали курсором — показываем с разделением
+ * тысяч («925 000,00»), а как только встали — то, что реально лежит в поле.
+ *
+ * Иначе пришлось бы выбирать из двух зол: либо человек читает «925000.00»
+ * слитно и пересчитывает нули пальцем, либо правит строку, в которой пробелы
+ * расставлены на каждый третий знак и прыгают под курсором. Сервер, к слову,
+ * принимает и «10 000,50» — так что форматирование ничему не мешает.
+ */
+function MoneyCell({ value, disabled, onSave, className }) {
+  const [text, setText] = useState(value ?? '');
+  const [editing, setEditing] = useState(false);
+
+  // Значение с сервера главнее набранного, пока поле не правят: оно
+  // приведено к копейкам, а после привязки отчёта ещё и пересчитано.
+  useEffect(() => {
+    if (!editing) setText(value ?? '');
+  }, [value, editing]);
+
+  return (
+    <input
+      value={editing ? text : value ? amount(value) : ''}
+      disabled={disabled}
+      onFocus={() => setEditing(true)}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={() => {
+        setEditing(false);
+        if (text !== (value ?? '')) onSave(text);
+      }}
+      className={className}
+    />
+  );
+}
+
+/** Сумма для ячейки: те же тысячи, но без «₽» — он в шапке колонки. */
+function amount(value) {
+  return formatMoney(value).replace(' ₽', '');
+}
+
 export function PaymentsPage() {
   const { role } = useAuth();
   const { openModal } = useModal();
@@ -275,8 +314,18 @@ export function PaymentsPage() {
                         className={cellInput}
                       />
                     </td>
-                    {['amount', 'rate', 'vat_rate', 'transfer_amount'].map((field) => (
-                      <td key={field} className={`${td} w-[130px]`}>
+                    <td className={`${td} w-[140px]`}>
+                      <MoneyCell
+                        value={r.amount}
+                        disabled={!manage}
+                        onSave={(v) => save(r.id, 'amount', v)}
+                        className={`${cellInput} tabular-nums text-right`}
+                      />
+                    </td>
+                    {/* Курс и НДС — множители, а не деньги: тысяч в них не
+                        бывает, и разделять там нечего. */}
+                    {['rate', 'vat_rate'].map((field) => (
+                      <td key={field} className={`${td} w-[110px]`}>
                         <input
                           value={r[field] ?? ''}
                           disabled={!manage}
@@ -286,6 +335,14 @@ export function PaymentsPage() {
                         />
                       </td>
                     ))}
+                    <td className={`${td} w-[140px]`}>
+                      <MoneyCell
+                        value={r.transfer_amount}
+                        disabled={!manage}
+                        onSave={(v) => save(r.id, 'transfer_amount', v)}
+                        className={`${cellInput} tabular-nums text-right`}
+                      />
+                    </td>
                     <td className={`${td} w-[90px] text-center`}>
                       <input
                         type="checkbox"
@@ -297,14 +354,29 @@ export function PaymentsPage() {
                         }}
                       />
                     </td>
-                    <td className={`${td} w-[150px]`}>
-                      <input
-                        value={r.actual_amount ?? ''}
-                        disabled={!manage}
-                        onChange={(e) => edit(r.id, 'actual_amount', e.target.value)}
-                        onBlur={(e) => save(r.id, 'actual_amount', e.target.value)}
-                        className={`${cellInput} tabular-nums text-right`}
-                      />
+                    {/* ФАКТИЧЕСКИЙ ЗАВОД, ПОСЧИТАННЫЙ ПО ОТЧЁТАМ, НЕ ПРАВИТСЯ
+                        (просьба владельца 19.09.2026): он равен сумме
+                        привязанных отчётов, и ручная правка всё равно
+                        затёрлась бы при следующей привязке. Отвязали
+                        отчёты — поле снова обычное. Сервер тоже откажет:
+                        запрет живёт не только на экране. */}
+                    <td className={`${td} w-[160px] text-right`}>
+                      {r.linked_reports > 0 ? (
+                        <span
+                          className="inline-block px-2 py-1.5 text-[13px] text-text tabular-nums"
+                          title={`Сумма ${r.linked_reports} привязанных отчётов. Чтобы поправить — отвяжите отчёт во вкладке «Отчёты».`}
+                        >
+                          {amount(r.actual_amount)}
+                          <span className="text-text-muted"> ↩</span>
+                        </span>
+                      ) : (
+                        <MoneyCell
+                          value={r.actual_amount}
+                          disabled={!manage}
+                          onSave={(v) => save(r.id, 'actual_amount', v)}
+                          className={`${cellInput} tabular-nums text-right`}
+                        />
+                      )}
                     </td>
                     <td className={`${td} w-[40px] text-right`}>
                       {manage && (

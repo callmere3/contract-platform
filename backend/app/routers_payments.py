@@ -29,13 +29,13 @@ from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Body, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.audit import log_action
 from app.auth import get_current_user, require_role
 from app.db import get_session
-from app.models import Partner, PartnerPayment, User
+from app.models import Partner, PartnerPayment, PartnerReport, User
 from app.roles import CAN_MANAGE_PAYMENTS, CAN_VIEW_PAYMENTS
 
 payments_router = APIRouter(
@@ -89,7 +89,19 @@ def _parse_date(value, label: str) -> date:
         raise HTTPException(400, f"{label}: «{value}» — это не дата")
 
 
-def _out(payment: PartnerPayment, partner_name: str | None) -> dict:
+def _linked_reports(db: Session, payment_ids: list) -> dict:
+    """Сколько отчётов привязано к каждому платежу — одним запросом."""
+    if not payment_ids:
+        return {}
+    rows = db.execute(
+        select(PartnerReport.payment_id, func.count())
+        .where(PartnerReport.payment_id.in_(payment_ids))
+        .group_by(PartnerReport.payment_id)
+    ).all()
+    return {payment_id: count for payment_id, count in rows}
+
+
+def _out(payment: PartnerPayment, partner_name: str | None, linked: int = 0) -> dict:
     return {
         "id": str(payment.id),
         "occurred_on": payment.occurred_on.isoformat(),
@@ -102,6 +114,10 @@ def _out(payment: PartnerPayment, partner_name: str | None) -> dict:
         "transfer_amount": _money(payment.transfer_amount),
         "transferred": payment.transferred,
         "actual_amount": _money(payment.actual_amount),
+        # Сколько отчётов привязано. Пока хоть один есть, фактический завод
+        # СЧИТАЕТСЯ по ним, и руками его править нельзя — ни на экране, ни
+        # через API: правку всё равно затёрло бы при следующей привязке.
+        "linked_reports": linked,
     }
 
 
@@ -179,7 +195,8 @@ def list_payments(
     rows = db.execute(
         query.order_by(PartnerPayment.occurred_on, PartnerPayment.created_at)
     ).all()
-    payments = [_out(p, name) for p, name in rows]
+    linked = _linked_reports(db, [p.id for p, _ in rows])
+    payments = [_out(p, name, linked.get(p.id, 0)) for p, name in rows]
 
     def total(field):
         return sum((getattr(p, field) or Decimal(0) for p, _ in rows), Decimal(0))
@@ -249,6 +266,12 @@ def update_payment(
     if payment is None:
         raise HTTPException(404, "Поступление не найдено")
 
+    if "actual_amount" in body and _linked_reports(db, [payment.id]).get(payment.id):
+        raise HTTPException(
+            409,
+            "Сумма фактического завода посчитана по привязанным отчётам — "
+            "поправить её можно, только отвязав отчёт.",
+        )
     touched = _apply(payment, body, db)
     if not touched:
         raise HTTPException(400, "Нечего менять")
@@ -262,7 +285,13 @@ def update_payment(
         meta={"fields": sorted(touched), "date": payment.occurred_on.isoformat()},
     )
     db.commit()
-    return {"payment": _out(payment, partner.name if partner else None)}
+    return {
+        "payment": _out(
+            payment,
+            partner.name if partner else None,
+            _linked_reports(db, [payment.id]).get(payment.id, 0),
+        )
+    }
 
 
 @payments_router.delete(
