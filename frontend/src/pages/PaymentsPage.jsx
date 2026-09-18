@@ -217,6 +217,7 @@ export function PaymentsPage() {
                   <th className={th}>Описание платежа</th>
                   <th className={th}>Сумма поступления</th>
                   <th className={th}>Курс</th>
+                  <th className={th}>НДС</th>
                   <th className={th}>Сумма завода</th>
                   <th className={th}>Заведено</th>
                   <th className={th}>Сумма фактического завода</th>
@@ -226,7 +227,7 @@ export function PaymentsPage() {
               <tbody>
                 {rows.length === 0 && (
                   <tr>
-                    <td className={`${td} text-[13px] text-text-muted`} colSpan={9}>
+                    <td className={`${td} text-[13px] text-text-muted`} colSpan={10}>
                       За этот месяц поступлений нет.
                     </td>
                   </tr>
@@ -273,7 +274,7 @@ export function PaymentsPage() {
                         className={cellInput}
                       />
                     </td>
-                    {['amount', 'rate', 'transfer_amount'].map((field) => (
+                    {['amount', 'rate', 'vat_amount', 'transfer_amount'].map((field) => (
                       <td key={field} className={`${td} w-[130px]`}>
                         <input
                           value={r[field] ?? ''}
@@ -330,7 +331,8 @@ export function PaymentsPage() {
               )}
               {totals && rows.length > 0 && (
                 <div className="text-[13px] text-text">
-                  Поступило <b className="tabular-nums">{formatMoney(totals.amount)}</b> · завод{' '}
+                  Поступило <b className="tabular-nums">{formatMoney(totals.amount)}</b> · НДС{' '}
+                  <b className="tabular-nums">{formatMoney(totals.vat_amount)}</b> · завод{' '}
                   <b className="tabular-nums">{formatMoney(totals.transfer_amount)}</b> ·
                   фактически <b className="tabular-nums">{formatMoney(totals.actual_amount)}</b>
                   {totals.not_transferred > 0 && (

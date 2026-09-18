@@ -47,7 +47,7 @@ payments_router = APIRouter(
 # Поля, которые можно править, и как их читать. Список ОДИН на создание и
 # правку: разойдись они, и через форму завелось бы то, чего правкой не
 # поправить.
-MONEY_FIELDS = ("amount", "transfer_amount", "actual_amount")
+MONEY_FIELDS = ("amount", "vat_amount", "transfer_amount", "actual_amount")
 TEXT_FIELDS = ("description",)
 MAX_DESCRIPTION = 2000
 
@@ -95,6 +95,7 @@ def _out(payment: PartnerPayment, partner_name: str | None) -> dict:
         "description": payment.description,
         "amount": _money(payment.amount),
         "rate": _rate(payment.rate),
+        "vat_amount": _money(payment.vat_amount),
         "transfer_amount": _money(payment.transfer_amount),
         "transferred": payment.transferred,
         "actual_amount": _money(payment.actual_amount),
@@ -183,6 +184,7 @@ def list_payments(
         "payments": payments,
         "totals": {
             "amount": _money(total("amount")),
+            "vat_amount": _money(total("vat_amount")),
             "transfer_amount": _money(total("transfer_amount")),
             "actual_amount": _money(total("actual_amount")),
             # Сколько строк ещё не заведено: столбец с галочками читается
