@@ -531,18 +531,6 @@ export function PartnerReportsPage() {
                 )}
               </div>
             </div>
-
-            <label className="block">
-              <span className="block text-[12px] text-text-secondary mb-1">НДС в суммах, %</span>
-              <input
-                value={vatRate ?? ''}
-                onChange={(e) => setVatRate(e.target.value)}
-                onBlur={() => preview && runPreview()}
-                placeholder="нет"
-                title="Если суммы в отчёте С НДС — укажите ставку (сейчас 22), и она будет вычтена. В отчётах «без НДС» поле оставляют пустым."
-                className={`${inputClass} w-[110px] tabular-nums`}
-              />
-            </label>
           </div>
 
           <div
@@ -611,6 +599,22 @@ export function PartnerReportsPage() {
                 />
               </label>
             ))}
+
+            {/* НДС — ЗДЕСЬ ЖЕ (просьба владельца 18.09.2026): наверху остаётся
+                то, без чего файл не прочитать (площадка и период), а ставка —
+                такое же свойство разобранного отчёта, как и остальные поля.
+                Правка ставки пересобирает предпросмотр: суммы от неё зависят. */}
+            <label className="block">
+              <span className="block text-[12px] text-text-secondary mb-1">НДС в суммах, %</span>
+              <input
+                value={vatRate ?? ''}
+                onChange={(e) => setVatRate(e.target.value)}
+                onBlur={() => preview && runPreview()}
+                placeholder="нет"
+                title="Если суммы в отчёте С НДС — укажите ставку (сейчас 22), и она будет вычтена. В отчётах «без НДС» поле оставляют пустым."
+                className={`${inputClass} w-[110px] tabular-nums`}
+              />
+            </label>
           </div>
 
           {/* ЗАПОМНЕННЫЕ АРТИКУЛЫ площадки. Список нужен не для красоты:
