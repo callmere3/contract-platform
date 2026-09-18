@@ -30,6 +30,10 @@ export function ProfileModal({ level, isTop }) {
   const { user, logout } = useAuth();
 
   const [achievements, setAchievements] = useState([]);
+  // Подпись над списком — у почётных учёток (см. achievements.py). Приходит
+  // с сервера, а не собирается здесь: кому она положена — решение о людях, и
+  // жить оно должно рядом с самими достижениями.
+  const [note, setNote] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   // Что подсветить: значки, полученные с прошлого открытия профиля. Список
@@ -62,6 +66,7 @@ export function ProfileModal({ level, isTop }) {
       .then((data) => {
         if (!alive) return;
         setAchievements(data.achievements ?? []);
+        setNote(data.note ?? null);
         // Профиль открыт — точка у имени больше не нужна.
         markProfileOpened();
       })
@@ -117,6 +122,12 @@ export function ProfileModal({ level, isTop }) {
           <div className="text-[11px] font-semibold tracking-[0.08em] uppercase text-text-muted">
             Достижения
           </div>
+
+          {note && (
+            <div className="text-[13px] text-text leading-relaxed bg-accent-soft border border-accent/30 rounded-card px-4 py-3">
+              {note}
+            </div>
+          )}
 
           {loading && <div className="text-[13px] text-text-muted">Загружаем…</div>}
           {error && <div className="text-[13px] text-danger">{error}</div>}

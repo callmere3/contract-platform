@@ -265,6 +265,27 @@ def _longest_cup_streak(months: list) -> int:
     return best
 
 
+# ПОЧЁТНЫЕ УЧЁТКИ: у них открыты все достижения, кроме секретного (решение
+# владельца 18.09.2026). Егор — директор, он сервисом не «работает», а
+# смотрит; зарабатывать значки ему не на чем, а видеть их он заслужил.
+# Admin в списке, чтобы владелец мог посмотреть, как это выглядит.
+#
+# СПИСОК ПО ИМЕНИ УЧЁТКИ, а не по роли: это личное признание конкретным
+# людям, а не право роли — новый директор его сам собой не получит.
+# СЕКРЕТНОЕ НЕ ОТКРЫВАЕТСЯ: у «Призрака» нет ни условия, ни прогресса наружу,
+# и открыть его значило бы выдать сам секрет.
+HONORARY_USERNAMES = ("Egor", "Admin")
+HONORARY_NOTE = (
+    "Егор, ты легенда! Ты как уже не играющий тренер. "
+    "Ты заслуживаешь всего этого и даже больше! Все достижения открыты!"
+)
+
+
+def honorary_note(user: User) -> str | None:
+    """Подпись над списком достижений — или None, если её для этого нет."""
+    return HONORARY_NOTE if (user.username or "") in HONORARY_USERNAMES else None
+
+
 def _achievement(code, icon, title, hint, earned, subtitle=None, progress=None, count=None):
     return {
         "code": code,
@@ -554,5 +575,14 @@ def user_achievements(db: Session, user: User) -> list[dict]:
         )
     ghost["secret"] = True
     out.append(ghost)
+
+    if honorary_note(user):
+        # Открываем всё, кроме секретного. Прогресс при этом убираем: «3 из
+        # 10» рядом с полученным значком читается как ошибка.
+        for item in out:
+            if item["secret"] or item["earned"]:
+                continue
+            item["earned"] = True
+            item["progress"] = None
 
     return out

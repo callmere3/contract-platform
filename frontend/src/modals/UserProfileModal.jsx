@@ -94,6 +94,15 @@ export function UserProfileModal({ userId, level, isTop }) {
               </div>
             </div>
 
+            {/* Та же подпись, что человек видит у себя: чужую карточку
+                смотрят, чтобы понять, что у человека происходит, а не чтобы
+                увидеть другую картину. */}
+            {card?.note && (
+              <div className="text-[13px] text-text leading-relaxed bg-accent-soft border border-accent/30 rounded-card px-4 py-3">
+                {card.note}
+              </div>
+            )}
+
             <div className="grid grid-cols-4 gap-2">
               {achievements.map((a) => (
                 <AchievementCard

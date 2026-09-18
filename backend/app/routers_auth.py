@@ -28,7 +28,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.achievements import user_achievements
+from app.achievements import honorary_note, user_achievements
 from app.audit import SOURCE_KEY, SOURCE_SCRIPT, log_action
 from app.champion import champion_badge, month_champions
 from app.auth import (
@@ -315,6 +315,7 @@ def user_card(user_id: uuid.UUID, db: Session = Depends(get_session)) -> dict:
             "champion": champion_badge(month_champions(db), user.id),
         },
         "achievements": user_achievements(db, user),
+        "note": honorary_note(user),
     }
 
 

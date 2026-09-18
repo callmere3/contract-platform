@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.achievements import user_achievements
+from app.achievements import honorary_note, user_achievements
 from app.auth import get_current_user
 from app.db import get_session
 from app.models import User, UserEvent
@@ -44,7 +44,11 @@ def my_achievements(
     count, secret}, …]} — и полученные, и ещё нет (у вторых заполнен
     progress). Секретное, пока не получено, приходит «замком» без условия.
     """
-    return {"achievements": user_achievements(db, current_user)}
+    return {
+        "achievements": user_achievements(db, current_user),
+        # Подпись над списком — у почётных учёток (см. achievements.py).
+        "note": honorary_note(current_user),
+    }
 
 
 @profile_router.post("/events")
