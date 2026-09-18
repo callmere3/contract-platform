@@ -918,7 +918,15 @@ export function PartnerReportsPage() {
                   <th className={th}>Партнёр</th>
                   <th className={th}>Период</th>
                   <th className={th}>Файл</th>
-                  <th className={th}>Параметры</th>
+                  {/* ЧЕТЫРЕ ОТДЕЛЬНЫХ СТОЛБЦА (просьба владельца 18.09.2026):
+                      по ним сверяют отчёты между собой, а склеенные через «·»
+                      они читались как одна подпись. Таблица от этого шире —
+                      она и скроллится вбок. */}
+                  {ATTRS.map((a) => (
+                    <th key={a.name} className={th}>
+                      {a.label}
+                    </th>
+                  ))}
                   <th className={th}>Строк</th>
                   <th className={th}>Не разнесено, ₽</th>
                   <th className={th}>Авторские, ₽</th>
@@ -932,12 +940,11 @@ export function PartnerReportsPage() {
                     <td className={`${td} font-semibold text-text`}>{r.partner}</td>
                     <td className={td}>{r.period_label}</td>
                     <td className={`${td} text-text-secondary`}>{r.file_name}</td>
-                    {/* Параметры отчёта одной ячейкой: четыре отдельных
-                        столбца растянули бы таблицу вдвое, а читают их
-                        вместе — «музыка · стриминг · РФ». */}
-                    <td className={`${td} text-text-secondary`}>
-                      {ATTRS.map((a) => r[a.name]).filter(Boolean).join(' · ') || '—'}
-                    </td>
+                    {ATTRS.map((a) => (
+                      <td key={a.name} className={`${td} text-text-secondary whitespace-nowrap`}>
+                        {r[a.name] || '—'}
+                      </td>
+                    ))}
                     <td className={`${td} tabular-nums`}>{r.rows_count}</td>
                     {/* СУММА, а не число строк (просьба владельца 18.09.2026):
                         десять строк по рублю и одна на сто тысяч выглядят
