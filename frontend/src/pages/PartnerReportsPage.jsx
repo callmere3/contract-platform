@@ -77,6 +77,17 @@ const FIELDS = [
   { name: 'amount_related', label: 'Сумма смежных' },
 ];
 
+/** Сумма для ячейки таблицы: те же тысячи, но без «₽» — он в шапке колонки. */
+function amount(value) {
+  return formatMoney(value).replace(' ₽', '');
+}
+
+/** Российская дата: 2026-07-01 → 01.07.2026. */
+function ru(isoDate) {
+  const [y, m, d] = String(isoDate || '').split('-');
+  return y && m && d ? `${d}.${m}.${y}` : isoDate;
+}
+
 const iso = (d) => d.toISOString().slice(0, 10);
 const monthRange = (year, month) => ({
   from: iso(new Date(Date.UTC(year, month, 1))),
