@@ -42,12 +42,16 @@ export function getRule(partnerId) {
   return apiJson(`${API}/partner-reports/rules/${partnerId}`);
 }
 
-export function saveRule(partnerId, { mapping, vatRate = '', sheet = '', sampleFile = '' }) {
+export function saveRule(
+  partnerId,
+  { mapping, vatRate = '', sheet = '', sampleFile = '', attributes = {} },
+) {
   const body = new FormData();
   body.append('mapping', JSON.stringify(mapping));
   body.append('vat_rate', vatRate ?? '');
   body.append('sheet', sheet ?? '');
   body.append('sample_file', sampleFile ?? '');
+  for (const [name, value] of Object.entries(attributes)) body.append(name, value ?? '');
   return apiJson(`${API}/partner-reports/rules/${partnerId}`, { method: 'PUT', body });
 }
 
@@ -56,7 +60,12 @@ export function checkTrack(sku) {
   return apiJson(`${API}/partner-reports/track?sku=${encodeURIComponent(sku)}`);
 }
 
-function uploadBody({ partnerId, file, mapping, vatRate, sheet, manualSkus }) {
+/** Что уже вводили в параметрах отчёта — для подсказок в полях. */
+export function fetchAttributeOptions() {
+  return apiJson(`${API}/partner-reports/attributes`);
+}
+
+function uploadBody({ partnerId, file, mapping, vatRate, sheet, manualSkus, attributes }) {
   const body = new FormData();
   // Партнёр может быть не выбран: предпросмотр узнаёт площадку по колонкам
   // файла и возвращает её. При сохранении он, наоборот, обязателен.
@@ -70,6 +79,13 @@ function uploadBody({ partnerId, file, mapping, vatRate, sheet, manualSkus }) {
   // Артикулы, вписанные руками в предпросмотре: {номер строки: артикул}.
   if (manualSkus && Object.keys(manualSkus).length) {
     body.append('manual_skus', JSON.stringify(manualSkus));
+  }
+  // Параметры отчёта (тип контента, тип и вид использования, территория)
+  // шлём ВСЕГДА, даже пустыми: «не прислали» и «очистили» на сервере
+  // одинаковы, а вот у правила партнёра пустое значение должно стирать
+  // прежнее, а не оставлять его.
+  for (const [name, value] of Object.entries(attributes ?? {})) {
+    body.append(name, value ?? '');
   }
   return body;
 }

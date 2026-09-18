@@ -41,6 +41,7 @@ import ast
 import csv
 import io
 import re
+from datetime import date, timedelta
 from dataclasses import dataclass, field
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 
@@ -668,6 +669,106 @@ def match_builtin(columns: list) -> dict | None:
     for rule in BUILTIN_RULES:
         if all(normalize_header(c) in keys for c in rule["signature"]):
             return rule
+    return None
+
+
+# ------------------------------------------------- период из шапки отчёта
+
+# Основы названий месяцев: в отчётах они стоят и в именительном («июль 2026»),
+# и в родительном («с 1 июля 2026»). Сравнивать целиком нельзя, а по основе —
+# можно: «июн», «июл», «август»…
+_MONTH_STEMS = (
+    ("январ", 1), ("феврал", 2), ("март", 3), ("апрел", 4), ("ма", 5),
+    ("июн", 6), ("июл", 7), ("август", 8), ("сентябр", 9), ("октябр", 10),
+    ("ноябр", 11), ("декабр", 12),
+)
+_MONTH_RE = (
+    "январ\\w*|феврал\\w*|март\\w*|апрел\\w*|ма[йяе]|июн\\w*|июл\\w*|"
+    "август\\w*|сентябр\\w*|октябр\\w*|ноябр\\w*|декабр\\w*"
+)
+_ROMAN_QUARTERS = {"i": 1, "ii": 2, "iii": 3, "iv": 4}
+
+
+def _month_number(word: str) -> int | None:
+    """«июля» → 7. Сравниваем по основе: падеж у месяца в отчётах любой."""
+    lowered = str(word or "").lower()
+    for stem, number in _MONTH_STEMS:
+        if lowered.startswith(stem):
+            return number
+    return None
+
+
+def _month_end(year: int, month: int) -> date:
+    return date(year + (month == 12), month % 12 + 1, 1) - timedelta(days=1)
+
+
+def find_period(table: list, header_row: int) -> tuple | None:
+    """
+    Период отчёта, написанный В САМОМ ФАЙЛЕ, — пара дат или None.
+
+    У МТС это строка над шапкой: «за период с 1 июля 2026 по 31 июля 2026».
+    Читать её стоит потому, что период — единственное, что человек вводит
+    руками на загрузке, и ошибиться в нём легче всего: файл за июнь грузят в
+    июле, и месяц ставится «по умолчанию» не тот. В файле же он написан
+    прямо.
+
+    ЭТО ПОДСКАЗКА, А НЕ ПРИГОВОР: форма подставляет найденное, человек видит
+    и может поправить. Поэтому и разбираем только очевидные записи, не пытаясь
+    угадывать по обрывкам.
+    """
+    chunks = []
+    for raw in table[:max(header_row, MAX_HEADER_SCAN)]:
+        for cell in raw:
+            value = _clean(cell)
+            if value:
+                chunks.append(value)
+    if not chunks:
+        return None
+    text = " ".join(chunks).lower().replace("\xa0", " ")
+
+    # «с 1 июля 2026 по 31 июля 2026»
+    match = re.search(
+        r"с\s+(\d{1,2})\s+(" + _MONTH_RE + r")\s+(\d{4})"
+        r"\s+по\s+(\d{1,2})\s+(" + _MONTH_RE + r")\s+(\d{4})",
+        text,
+    )
+    if match:
+        d1, m1, y1, d2, m2, y2 = match.groups()
+        first, second = _month_number(m1), _month_number(m2)
+        if first and second:
+            try:
+                return date(int(y1), first, int(d1)), date(int(y2), second, int(d2))
+            except ValueError:
+                return None
+
+    # «с 01.07.2026 по 31.07.2026», «01.07.2026 — 31.07.2026»
+    match = re.search(
+        r"(\d{1,2})[.\-/](\d{1,2})[.\-/](\d{4})\s*(?:по|—|–|-)\s*"
+        r"(\d{1,2})[.\-/](\d{1,2})[.\-/](\d{4})",
+        text,
+    )
+    if match:
+        d1, m1, y1, d2, m2, y2 = (int(g) for g in match.groups())
+        try:
+            return date(y1, m1, d1), date(y2, m2, d2)
+        except ValueError:
+            return None
+
+    # «III квартал 2026», «за 3 квартал 2026»
+    match = re.search(r"\b(i{1,3}v?|[1-4])\s*квартал\w*\s*(\d{4})", text)
+    if match:
+        raw_quarter, year = match.groups()
+        quarter = _ROMAN_QUARTERS.get(raw_quarter) or int(raw_quarter)
+        start_month = (quarter - 1) * 3 + 1
+        return date(int(year), start_month, 1), _month_end(int(year), start_month + 2)
+
+    # «за июль 2026» — весь месяц
+    match = re.search(r"\b(" + _MONTH_RE + r")\s+(\d{4})\b", text)
+    if match:
+        month = _month_number(match.group(1))
+        if month:
+            year = int(match.group(2))
+            return date(year, month, 1), _month_end(year, month)
     return None
 
 

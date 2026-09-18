@@ -13,6 +13,7 @@ import {
   checkTrack,
   createReport,
   deleteReport,
+  fetchAttributeOptions,
   listReports,
   previewReport,
 } from '../api/partnerReports';
@@ -48,6 +49,17 @@ const MONTHS = [
   'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь',
 ];
 const ROMAN = ['I', 'II', 'III', 'IV'];
+
+// ПАРАМЕТРЫ ОТЧЁТА — одинаковые для всего файла и дальше уходят в отчёт
+// правообладателю. Значения свободные: какие бывают виды использования, знает
+// площадка, а не мы, — поэтому поле с подсказками по тому, что уже вводили, а
+// не список из кода.
+const ATTRS = [
+  { name: 'content_type', label: 'Тип контента' },
+  { name: 'usage_type', label: 'Тип использования' },
+  { name: 'usage_kind', label: 'Вид использования' },
+  { name: 'territory', label: 'Территория' },
+];
 
 // Поля единого формата: к ним сводится любой отчёт площадки.
 const FIELDS = [
@@ -201,6 +213,10 @@ export function PartnerReportsPage() {
   // Какие формулы человек сейчас правит: остальные показаны словами.
   const [editing, setEditing] = useState({});
   const [showMapping, setShowMapping] = useState(false);
+  // Параметры отчёта: приезжают из правила партнёра в предпросмотре, правятся
+  // руками и уходят вместе с отчётом.
+  const [attributes, setAttributes] = useState({});
+  const [attrOptions, setAttrOptions] = useState({});
 
   const [reports, setReports] = useState([]);
   const [totals, setTotals] = useState(null);
@@ -219,6 +235,9 @@ export function PartnerReportsPage() {
     listPartners({ pageSize: 500 })
       .then((d) => setPartners(d.partners ?? []))
       .catch((e) => setError(e.message));
+    fetchAttributeOptions()
+      .then((d) => setAttrOptions(d.options ?? {}))
+      .catch(() => setAttrOptions({}));
   }, []);
 
   const loadReports = useCallback(async () => {
@@ -274,6 +293,21 @@ export function PartnerReportsPage() {
       setPreview(data);
       setMapping(data.mapping ?? {});
       setVatRate(data.vat_rate ?? '');
+      // Параметры подставляем из правила партнёра — но не затираем то, что
+      // человек уже вписал руками на этом файле.
+      setAttributes((prev) =>
+        Object.fromEntries(
+          ATTRS.map(({ name }) => [name, prev[name] ?? data.attributes?.[name] ?? '']),
+        ),
+      );
+      // ПЕРИОД ИЗ ШАПКИ ФАЙЛА: у МТС он там написан прямо («за период с
+      // 1 июля 2026 по 31 июля 2026»), и это надёжнее, чем месяц по
+      // умолчанию, — файл за июнь грузят в июле. Ставим режим «свой», иначе
+      // кнопки месяца тут же пересчитали бы даты обратно.
+      if (data.period?.from && data.period?.to) {
+        setMode('custom');
+        setRange({ from: data.period.from, to: data.period.to });
+      }
       // Площадку мог определить сам файл — тогда ставим её в поле: человек
       // должен видеть, за кого будет засчитан отчёт, и вправе это поменять.
       if (data.partner?.id && data.partner.id !== partnerId) {
@@ -299,6 +333,9 @@ export function PartnerReportsPage() {
     setSkuInfo({});
     setOnlyUnmatched(false);
     setShowMapping(false);
+    // Параметры — свойство ОТЧЁТА, а не сеанса: у нового файла они приедут из
+    // правила партнёра заново.
+    setAttributes({});
     if (next) runPreview(next, {}, vatRate);
   }
 
@@ -312,6 +349,7 @@ export function PartnerReportsPage() {
         mapping,
         vatRate,
         manualSkus,
+        attributes,
         periodFrom: range.from,
         periodTo: range.to,
         saveRuleToo: rememberRule,
@@ -457,6 +495,29 @@ export function PartnerReportsPage() {
                 )}
               </div>
             </div>
+
+            {/* ПАРАМЕТРЫ ОТЧЁТА. Заполняются один раз на партнёра: галочка
+                «запомнить правило» сохраняет их вместе с колонками, и
+                следующий файл той же площадки приедет уже с ними. */}
+            {ATTRS.map((a) => (
+              <label className="block" key={a.name}>
+                <span className="block text-[12px] text-text-secondary mb-1">{a.label}</span>
+                <input
+                  value={attributes[a.name] ?? ''}
+                  onChange={(e) =>
+                    setAttributes((prev) => ({ ...prev, [a.name]: e.target.value }))
+                  }
+                  list={`attr-${a.name}`}
+                  placeholder="—"
+                  className={`${inputClass} w-[170px]`}
+                />
+                <datalist id={`attr-${a.name}`}>
+                  {(attrOptions[a.name] ?? []).map((v) => (
+                    <option key={v} value={v} />
+                  ))}
+                </datalist>
+              </label>
+            ))}
 
             <label className="block">
               <span className="block text-[12px] text-text-secondary mb-1">НДС в суммах, %</span>
@@ -697,10 +758,11 @@ export function PartnerReportsPage() {
                     </div>
                   )}
 
-                  {/* Высота в два десятка строк со скроллом: предпросмотр
-                      нужен, чтобы убедиться, что колонки поняты верно, а не
-                      чтобы читать отчёт целиком — но пролистать дальше можно. */}
-                  <div className="mt-4 overflow-auto max-h-[560px] border border-border rounded-card">
+                  {/* ДВАДЦАТЬ СТРОК И БЕЗ ПРОКРУТКИ (просьба владельца
+                      18.09.2026): предпросмотр нужен, чтобы убедиться, что
+                      колонки поняты верно, а не читать отчёт. Вбок таблица
+                      по-прежнему скроллится — колонок больше, чем ширины. */}
+                  <div className="mt-4 overflow-x-auto border border-border rounded-card">
                     <table className="w-full border-collapse">
                       <thead className="sticky top-0 bg-surface z-10">
                         <tr>
@@ -800,6 +862,9 @@ export function PartnerReportsPage() {
                     </Button>
                     <span className="text-[12.5px] text-text-muted">
                       период: {ru(range.from)} — {ru(range.to)}
+                      {preview.period?.from === range.from && preview.period?.to === range.to
+                        ? ' (из шапки отчёта)'
+                        : ''}
                     </span>
                     <label className="flex items-center gap-2 text-[13px] text-text-secondary select-none">
                       <input
@@ -844,8 +909,9 @@ export function PartnerReportsPage() {
                   <th className={th}>Партнёр</th>
                   <th className={th}>Период</th>
                   <th className={th}>Файл</th>
+                  <th className={th}>Параметры</th>
                   <th className={th}>Строк</th>
-                  <th className={th}>Не разнесено</th>
+                  <th className={th}>Не разнесено, ₽</th>
                   <th className={th}>Авторские, ₽</th>
                   <th className={th}>Смежные, ₽</th>
                   <th className={th}></th>
@@ -857,14 +923,23 @@ export function PartnerReportsPage() {
                     <td className={`${td} font-semibold text-text`}>{r.partner}</td>
                     <td className={td}>{r.period_label}</td>
                     <td className={`${td} text-text-secondary`}>{r.file_name}</td>
+                    {/* Параметры отчёта одной ячейкой: четыре отдельных
+                        столбца растянули бы таблицу вдвое, а читают их
+                        вместе — «музыка · стриминг · РФ». */}
+                    <td className={`${td} text-text-secondary`}>
+                      {ATTRS.map((a) => r[a.name]).filter(Boolean).join(' · ') || '—'}
+                    </td>
                     <td className={`${td} tabular-nums`}>{r.rows_count}</td>
+                    {/* СУММА, а не число строк (просьба владельца 18.09.2026):
+                        десять строк по рублю и одна на сто тысяч выглядят
+                        одинаково, если считать строки. */}
                     <td
                       className={`${td} tabular-nums ${
-                        r.unmatched_count ? 'text-danger' : 'text-text-muted'
+                        Number(r.unmatched_amount) > 0 ? 'text-danger' : 'text-text-muted'
                       }`}
-                      title="Строки без артикула или с артикулом, которого нет в каталоге"
+                      title={`Строк без трека: ${r.unmatched_count}. Это суммы, которые пока не на что отнести.`}
                     >
-                      {r.unmatched_count || '—'}
+                      {Number(r.unmatched_amount) > 0 ? amount(r.unmatched_amount) : '—'}
                     </td>
                     <td className={`${td} tabular-nums`}>{amount(r.total_author)}</td>
                     <td className={`${td} tabular-nums`}>{amount(r.total_related)}</td>

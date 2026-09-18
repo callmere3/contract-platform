@@ -52,11 +52,14 @@ from app.models import (
 from app.partner_reports import (
     FIELDS,
     FIELD_LABELS,
+    find_period,
     match_builtin,
     parse_report,
     period_label,
     pick_track,
     read_columns,
+    read_table,
+    rubles,
     search_word,
     sheet_names,
     suggest_mapping,
@@ -69,11 +72,11 @@ partner_reports_router = APIRouter(
     dependencies=[Depends(require_role(*CAN_VIEW_PARTNER_REPORTS))],
 )
 
-# Сколько строк файла отдаём в предпросмотр. На экране видно два десятка, а
-# остальные листаются: человек смотрит начало, но иногда хочет прокрутить
-# дальше. Отдавать весь квартальный отчёт (десятки тысяч строк) ради этого
-# незачем — он в базе, и после загрузки открывается целиком.
-PREVIEW_ROWS = 500
+# Сколько строк файла показываем в предпросмотре. ДВАДЦАТЬ И БЕЗ ПРОКРУТКИ
+# (просьба владельца 18.09.2026): предпросмотр нужен, чтобы убедиться, что
+# колонки поняты верно, а не читать отчёт — для чтения он уже в базе. Строки
+# без трека приходят отдельным списком и показываются по кнопке целиком.
+PREVIEW_ROWS = 20
 # Строки, к которым не нашлось трека, показываем ВСЕ (до этого предела) — даже
 # если они лежат в середине файла, за пределами первой сотни. Иначе кнопка
 # «показать строки без артикула» показывала бы не строки без артикула, а те из
@@ -82,6 +85,23 @@ UNMATCHED_PREVIEW = 300
 # Предел на файл. Квартальный отчёт площадки — это десятки тысяч строк;
 # миллион означает, что прислали что-то другое или файл склеен из года.
 MAX_ROWS = 300_000
+
+# ПАРАМЕТРЫ ОТЧЁТА — те же четыре, что в Dista: тип контента, тип и вид
+# использования, территория. Они одинаковы для всего файла и дальше уйдут в
+# отчёт правообладателю, поэтому хранятся у отчёта снимком, а у правила
+# партнёра — значением по умолчанию.
+#
+# СТРОКИ, А НЕ СПРАВОЧНИК: какие значения бывают, знает площадка, а не мы.
+# Любой зафиксированный список разошёлся бы с первым же новым партнёром;
+# подсказки в поле собираются по тому, что уже вводили (`/attributes`).
+REPORT_ATTRS = ("content_type", "usage_type", "usage_kind", "territory")
+ATTR_LABELS = {
+    "content_type": "Тип контента",
+    "usage_type": "Тип использования",
+    "usage_kind": "Вид использования",
+    "territory": "Территория",
+}
+MAX_ATTR_LEN = 120
 
 
 def _resolve_tracks(db: Session, rows: list) -> dict:
@@ -141,6 +161,23 @@ def _resolve_tracks(db: Session, rows: list) -> dict:
             row.matched_by = "name"
             resolved[row.row_num] = track.id
     return resolved
+
+
+def _attrs_from_form(values: dict) -> dict:
+    """
+    Параметры отчёта из формы: лишние пробелы прочь, пусто — это None.
+
+    «Не прислали» и «прислали пусто» здесь ОДНО И ТО ЖЕ: у отчёта параметр
+    либо задан, либо нет, и хранить пустую строку значило бы завести второе
+    «не заполнено», неотличимое от первого на глаз.
+    """
+    out = {}
+    for name in REPORT_ATTRS:
+        text_value = " ".join(str(values.get(name) or "").split())
+        if len(text_value) > MAX_ATTR_LEN:
+            raise HTTPException(400, f"{ATTR_LABELS[name]}: слишком длинное значение")
+        out[name] = text_value or None
+    return out
 
 
 def _manual_skus(raw: str) -> dict:
@@ -253,6 +290,7 @@ def _rule_out(rule: PartnerReportRule | None) -> dict | None:
         "sheet": rule.sheet,
         "mapping": rule.mapping or {},
         "vat_rate": _money(rule.vat_rate),
+        **{name: getattr(rule, name) for name in REPORT_ATTRS},
         "updated_at": rule.updated_at.isoformat() if rule.updated_at else None,
     }
 
@@ -271,12 +309,16 @@ def _report_out(report: PartnerReport, partner_name: str) -> dict:
         "sheet": report.sheet,
         "rows_count": report.rows_count,
         "unmatched_count": report.unmatched_count,
+        # СУММА, а не только число строк: десять строк по рублю и одна на сто
+        # тысяч выглядят одинаково, если считать строки.
+        "unmatched_amount": _money(report.unmatched_amount),
         "problem_count": report.problem_count,
         "total_quantity": _money(report.total_quantity),
         "total_author": _money(report.total_author),
         "total_related": _money(report.total_related),
         "total": _money((report.total_author or 0) + (report.total_related or 0)),
         "vat_rate": _money(report.vat_rate),
+        **{name: getattr(report, name) for name in REPORT_ATTRS},
         "uploaded_at": report.uploaded_at.isoformat() if report.uploaded_at else None,
     }
 
@@ -339,6 +381,10 @@ def save_rule(
     vat_rate: str = Form(""),
     sheet: str = Form(""),
     sample_file: str = Form(""),
+    content_type: str = Form(""),
+    usage_type: str = Form(""),
+    usage_kind: str = Form(""),
+    territory: str = Form(""),
     db: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> dict:
@@ -397,6 +443,14 @@ def save_rule(
         db.add(rule)
     rule.mapping = clean
     rule.vat_rate = rate
+    attrs = _attrs_from_form({
+        "content_type": content_type,
+        "usage_type": usage_type,
+        "usage_kind": usage_kind,
+        "territory": territory,
+    })
+    for name, value in attrs.items():
+        setattr(rule, name, value)
     rule.sheet = sheet.strip() or None
     rule.sample_file = sample_file.strip() or rule.sample_file
     rule.updated_at = datetime.now(timezone.utc)
@@ -448,6 +502,28 @@ def _pick_rule(rule: PartnerReportRule | None, mapping_json: str, columns: list)
             "vat_rate": builtin.get("vat_rate"),
         }
     return {"mapping": suggest_mapping(columns), "source": "guess", "name": None, "vat_rate": None}
+
+
+@partner_reports_router.get("/attributes")
+def attribute_options(db: Session = Depends(get_session)) -> dict:
+    """
+    Что уже вводили в параметрах отчёта — для подсказок в полях.
+
+    Справочник СЧИТАЕТСЯ ПО ДАННЫМ, а не задан в коде (то же решение, что у
+    каталогов в номенклатуре): какие бывают виды использования, знает
+    площадка, и любой зафиксированный список разошёлся бы с первым же новым
+    партнёром.
+    """
+    options: dict = {}
+    for name in REPORT_ATTRS:
+        values = set()
+        for model in (PartnerReport, PartnerReportRule):
+            column = getattr(model, name)
+            values.update(
+                v for v in db.scalars(select(column).where(column.isnot(None))) if v
+            )
+        options[name] = sorted(values)
+    return {"options": options, "labels": ATTR_LABELS}
 
 
 @partner_reports_router.get("/track")
@@ -535,6 +611,13 @@ def preview(
     missing = [r for r in result.rows if r.row_num not in resolved][:UNMATCHED_PREVIEW]
 
     totals = result.totals
+    # ПЕРИОД, НАПИСАННЫЙ В САМОМ ФАЙЛЕ: у МТС это строка над шапкой («за
+    # период с 1 июля 2026 по 31 июля 2026»). Период — единственное, что
+    # человек вводит руками, и ошибиться в нём легче всего: файл за июнь
+    # грузят в июле. Это подсказка — форма подставит, а править можно.
+    found_period = find_period(
+        read_table(content, file.filename, chosen_sheet), result.header_row
+    )
     return {
         "partner": {"id": str(partner.id), "name": partner.name},
         "file_name": file.filename,
@@ -549,6 +632,18 @@ def preview(
         "rule_source": chosen["source"],
         "rule_name": chosen["name"],
         "vat_rate": rate or None,
+        # Параметры отчёта: что запомнено у партнёра, то и подставим.
+        "attributes": {name: getattr(rule, name) if rule else None for name in REPORT_ATTRS},
+        "attribute_labels": ATTR_LABELS,
+        "period": (
+            {
+                "from": found_period[0].isoformat(),
+                "to": found_period[1].isoformat(),
+                "label": period_label(*found_period),
+            }
+            if found_period
+            else None
+        ),
         "problems": result.problems,
         "preview": [_preview_row(r, resolved) for r in head],
         "unmatched_rows": [_preview_row(r, resolved) for r in missing],
@@ -585,6 +680,10 @@ def create_report(
     vat_rate: str = Form(""),
     sheet: str = Form(""),
     manual_skus: str = Form(""),
+    content_type: str = Form(""),
+    usage_type: str = Form(""),
+    usage_kind: str = Form(""),
+    territory: str = Form(""),
     save_rule: bool = Form(False),
     db: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
@@ -660,6 +759,23 @@ def create_report(
             row.matched_by = "manual"
 
     totals = result.totals
+    attrs = _attrs_from_form({
+        "content_type": content_type,
+        "usage_type": usage_type,
+        "usage_kind": usage_kind,
+        "territory": territory,
+    })
+    # Неразнесённая СУММА: сколько денег пока не на что отнести.
+    unmatched_amount = rubles(
+        sum(
+            (
+                r.amount_author + r.amount_related
+                for r in result.rows
+                if r.row_num not in track_by_row
+            ),
+            Decimal(0),
+        )
+    )
     report = PartnerReport(
         id=uuid.uuid4(),
         partner_id=partner_id,
@@ -669,6 +785,8 @@ def create_report(
         sheet=chosen_sheet,
         rows_count=len(result.rows),
         unmatched_count=sum(1 for r in result.rows if r.row_num not in track_by_row),
+        unmatched_amount=unmatched_amount,
+        **attrs,
         problem_count=sum(1 for r in result.rows if r.problems),
         total_quantity=totals["quantity"],
         total_author=totals["amount_author"],
@@ -701,6 +819,8 @@ def create_report(
             db.add(rule)
         rule.mapping = active_mapping
         rule.vat_rate = Decimal(rate) if rate else None
+        for name, value in attrs.items():
+            setattr(rule, name, value)
         rule.sheet = chosen_sheet
         rule.sample_file = file.filename
         rule.updated_at = datetime.now(timezone.utc)
@@ -715,6 +835,7 @@ def create_report(
             "file": file.filename,
             "rows": report.rows_count,
             "unmatched": report.unmatched_count,
+            "unmatched_amount": str(unmatched_amount),
             "matched_by_name": sum(1 for r in result.rows if r.matched_by == "name"),
             "manual_skus": len(manual),
             "author": str(report.total_author),

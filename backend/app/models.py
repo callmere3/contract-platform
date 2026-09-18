@@ -911,6 +911,18 @@ class PartnerReportRule(Base):
     sheet: Mapped[str | None] = mapped_column(String(120))
     mapping: Mapped[dict] = mapped_column(JSONB, default=dict)
     vat_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
+    # ПАРАМЕТРЫ ОТЧЁТА ПО УМОЛЧАНИЮ (18.09.2026). У площадки они из отчёта в
+    # отчёт одни и те же — «музыка, публичное исполнение, стриминг, РФ», — и
+    # вбивать их каждый раз заново незачем: правило помнит, форма подставляет,
+    # человек при надобности правит.
+    #
+    # СТРОКИ, А НЕ СПРАВОЧНИК: какие значения бывают, знает площадка, а не мы.
+    # Любой зафиксированный список разошёлся бы с первым же новым партнёром;
+    # подсказки в поле собираются по тому, что уже вводили.
+    content_type: Mapped[str | None] = mapped_column(String(120))
+    usage_type: Mapped[str | None] = mapped_column(String(120))
+    usage_kind: Mapped[str | None] = mapped_column(String(120))
+    territory: Mapped[str | None] = mapped_column(String(120))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -955,10 +967,22 @@ class PartnerReport(Base):
     # грузятся с нулями: терять из-за них весь квартальный отчёт нельзя, но и
     # молчать о них — тоже.
     problem_count: Mapped[int] = mapped_column(Integer, default=0)
+    # НЕРАЗНЕСЁННАЯ СУММА, а не только число строк (просьба владельца
+    # 18.09.2026): в отчёте важно, СКОЛЬКО ДЕНЕГ пока не на что отнести, —
+    # десять строк по рублю и одна на сто тысяч выглядят одинаково, если
+    # считать строки.
+    unmatched_amount: Mapped[Decimal] = mapped_column(Numeric(16, 4), default=0)
     total_quantity: Mapped[Decimal | None] = mapped_column(Numeric(16, 2))
     total_author: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
     total_related: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
     vat_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
+    # Параметры отчёта — СНИМКОМ, как и ставка НДС: в правиле они могут
+    # смениться, а загруженный отчёт обязан объяснять себя сам. Дальше они
+    # уйдут в отчёт правообладателю.
+    content_type: Mapped[str | None] = mapped_column(String(120))
+    usage_type: Mapped[str | None] = mapped_column(String(120))
+    usage_kind: Mapped[str | None] = mapped_column(String(120))
+    territory: Mapped[str | None] = mapped_column(String(120))
     uploaded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
