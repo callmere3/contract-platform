@@ -101,6 +101,11 @@ MAX_ISSUES = 100
 # Сколько строк показываем таблицей. Больше двух сотен никто глазами не
 # проверяет, а браузеру каждая строка — это тридцать ячеек.
 MAX_PREVIEW_ROWS = 200
+# Строки, которые НЕ ПРОЙДУТ, отдаются отдельным списком и целиком: их человек
+# и разбирает, а в первые двести строк файла попадают далеко не все (в одном
+# из боевых файлов их 309 на пять тысяч). Предел всё же есть — файл, где не
+# проходит вообще всё, разбирают не глазами, а в Excel.
+MAX_ERROR_PREVIEW = 2000
 
 
 def percent(value: Decimal | None) -> str | None:
@@ -695,6 +700,15 @@ def _plan(db: Session, rows: list) -> dict:
         "columns": _preview_columns(slots),
         "preview": [_preview_row(r, existing_skus, slots) for r in rows[:MAX_PREVIEW_ROWS]],
         "preview_limited": len(rows) > MAX_PREVIEW_ROWS,
+        # ОТДЕЛЬНЫЙ СПИСОК НЕПРОХОДЯЩИХ СТРОК, а не первые двести файла: по
+        # ссылке «не пройдёт: N» человек хочет увидеть именно эти строки, где
+        # бы они ни лежали. Формат тот же, что у preview, — таблица рисуется
+        # одним и тем же кодом.
+        "error_preview": [
+            _preview_row(r, existing_skus, slots)
+            for r in [x for x in rows if x.errors][:MAX_ERROR_PREVIEW]
+        ],
+        "error_preview_limited": len(errors) > MAX_ERROR_PREVIEW,
         "rows": len(rows),
         "ready": len(ok_rows),
         "tracks_new": len({r.track["sku"] for r in ok_rows} - existing),

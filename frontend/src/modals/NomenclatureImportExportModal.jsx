@@ -285,6 +285,11 @@ export function NomenclatureImportExportModal({ level, isTop, filters = {}, onIm
 
 /** Что получится, если применить файл: сводка, правообладатели и таблица строк. */
 function Plan({ plan, replace, setReplace, skipRows, setSkipRows }) {
+  // «Не пройдёт: N» — переключатель таблицы на непроходящие строки. В файле
+  // их бывает три сотни, а в начале файла — ни одной, и до них было не
+  // добраться вовсе (жалоба владельца 18.09.2026).
+  const [onlyErrors, setOnlyErrors] = useState(false);
+  const shown = onlyErrors ? plan.error_preview ?? [] : plan.preview;
   const toggleRow = (row) =>
     setSkipRows((prev) => (prev.includes(row) ? prev.filter((r) => r !== row) : [...prev, row]));
 
@@ -300,7 +305,19 @@ function Plan({ plan, replace, setReplace, skipRows, setSkipRows }) {
         {plan.error_rows > 0 && (
           <>
             {' '}
-            · <span className="text-danger">не пройдёт: {plan.error_rows}</span>
+            ·{' '}
+            <button
+              type="button"
+              onClick={() => setOnlyErrors((v) => !v)}
+              title={
+                onlyErrors
+                  ? 'Вернуться к началу файла'
+                  : 'Показать все строки, которые не пройдут'
+              }
+              className="text-danger bg-transparent border-0 p-0 cursor-pointer font-sans text-[13px] underline decoration-dotted underline-offset-4"
+            >
+              не пройдёт: {plan.error_rows}
+            </button>
           </>
         )}
       </div>
@@ -347,7 +364,18 @@ function Plan({ plan, replace, setReplace, skipRows, setSkipRows }) {
           попало (что «0.8» понято как 80%, а имя правообладателя не съехало на
           соседнее место), а не только перечень претензий. Список ошибок без
           самих данных читается как приговор без дела. */}
-      <div className="px-4 pt-3 pb-2 text-[13px] font-semibold text-text">Что прочитано</div>
+      <div className="px-4 pt-3 pb-2 text-[13px] font-semibold text-text flex items-center gap-3">
+        {onlyErrors ? 'Строки, которые не пройдут' : 'Что прочитано'}
+        {onlyErrors && (
+          <button
+            type="button"
+            onClick={() => setOnlyErrors(false)}
+            className="text-accent bg-transparent border-0 p-0 cursor-pointer font-sans text-[12px] font-normal"
+          >
+            показать начало файла
+          </button>
+        )}
+      </div>
       <div className="overflow-auto max-h-[340px] border-t border-border">
         <table className="text-[12px] border-collapse whitespace-nowrap">
           <thead className="sticky top-0 z-10">
@@ -362,7 +390,7 @@ function Plan({ plan, replace, setReplace, skipRows, setSkipRows }) {
             </tr>
           </thead>
           <tbody>
-            {plan.preview.map((r) => {
+            {shown.map((r) => {
               const skipped = !r.ok || skipRows.includes(r.row);
               const notes = [...r.errors, ...r.warnings];
               return (
@@ -422,7 +450,12 @@ function Plan({ plan, replace, setReplace, skipRows, setSkipRows }) {
         самой строкой. Галочку можно снять и у нормальной строки, если заливать её не нужно.
         Пустые места правообладателей в таблицу не выводятся: если вторых и третьих нет во всём
         файле, их столбцов здесь не будет.
-        {plan.preview_limited ? ` Показаны первые ${plan.preview.length} строк из ${plan.rows}.` : ''}
+        {onlyErrors
+          ? ` Показаны строки с ошибками: ${shown.length} из ${plan.error_rows}.`
+          : plan.preview_limited
+            ? ` Показаны первые ${plan.preview.length} строк из ${plan.rows}.` +
+              (plan.error_rows > 0 ? ' Чтобы увидеть все непроходящие, нажмите «не пройдёт».' : '')
+            : ''}
       </div>
     </div>
   );
