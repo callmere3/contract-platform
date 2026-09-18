@@ -405,7 +405,11 @@ export function PartnerReportsPage() {
     }`;
 
   return (
-    <div className="max-w-[1180px] mx-auto px-8 pt-12 pb-20">
+    // ШИРЕ ОСТАЛЬНЫХ ВКЛАДОК (просьба владельца 18.09.2026): в списке отчётов
+    // десять столбцов — партнёр, период, четыре параметра и три суммы, — и на
+    // 1180 они не помещались, а горизонтальная прокрутка в списке, который
+    // читают глазами сверху вниз, только мешает.
+    <div className="max-w-[1480px] mx-auto px-8 pt-12 pb-20">
       <PageHeader title="Отчёты партнёров">
         Отчёты площадок за месяц или квартал. Перетащите файл, проверьте, что колонки поняты
         верно, — и он ляжет в единый вид: артикул, количество, суммы авторских и смежных.
@@ -911,13 +915,12 @@ export function PartnerReportsPage() {
         )}
 
         {reports.length > 0 && (
-          <div className="overflow-x-auto">
+          <div>
             <table className="w-full border-collapse">
               <thead>
                 <tr>
                   <th className={th}>Партнёр</th>
                   <th className={th}>Период</th>
-                  <th className={th}>Файл</th>
                   {/* ЧЕТЫРЕ ОТДЕЛЬНЫХ СТОЛБЦА (просьба владельца 18.09.2026):
                       по ним сверяют отчёты между собой, а склеенные через «·»
                       они читались как одна подпись. Таблица от этого шире —
@@ -927,7 +930,6 @@ export function PartnerReportsPage() {
                       {a.label}
                     </th>
                   ))}
-                  <th className={th}>Строк</th>
                   <th className={th}>Не разнесено, ₽</th>
                   <th className={th}>Авторские, ₽</th>
                   <th className={th}>Смежные, ₽</th>
@@ -938,14 +940,16 @@ export function PartnerReportsPage() {
                 {reports.map((r) => (
                   <tr key={r.id}>
                     <td className={`${td} font-semibold text-text`}>{r.partner}</td>
+                    {/* Имя файла и число строк убраны из списка (просьба
+                        владельца 18.09.2026): имя площадки и период отвечают,
+                        что это за отчёт, а строки — служебное число. Имя файла
+                        осталось в журнале действий и в сообщении о загрузке. */}
                     <td className={td}>{r.period_label}</td>
-                    <td className={`${td} text-text-secondary`}>{r.file_name}</td>
                     {ATTRS.map((a) => (
                       <td key={a.name} className={`${td} text-text-secondary whitespace-nowrap`}>
                         {r[a.name] || '—'}
                       </td>
                     ))}
-                    <td className={`${td} tabular-nums`}>{r.rows_count}</td>
                     {/* СУММА, а не число строк (просьба владельца 18.09.2026):
                         десять строк по рублю и одна на сто тысяч выглядят
                         одинаково, если считать строки. */}
