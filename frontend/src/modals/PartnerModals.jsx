@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Modal, ModalAction } from '../components/ui/Modal';
 import { PencilIcon, TrashIcon } from '../components/ui/icons';
 import { Button } from '../components/ui/Button';
 import { useModal } from './ModalProvider';
 import { useAuth } from '../auth/AuthContext';
 import { canManagePartners } from '../auth/permissions';
+import { listReports } from '../api/partnerReports';
 import {
   createPartner,
   deletePartner,
@@ -32,12 +33,24 @@ export function PartnerCardModal({ partner, level, isTop, onChanged }) {
 
   const [name, setName] = useState(partner.name);
   const [distaId, setDistaId] = useState(partner.dista_id ?? '');
+  // ЧТО ОТ ПЛОЩАДКИ УЖЕ ЗАГРУЖЕНО — единственное, что про неё стоит знать,
+  // открыв карточку (просьба владельца 18.09.2026): вопрос к справочнику
+  // звучит «за какие периоды отчёты есть», а не «какой у неё код в Dista» —
+  // код нужен при сверке, и он в форме правки.
+  const [periods, setPeriods] = useState(null);
   const [editing, setEditing] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
   const manage = canManagePartners(role);
+
+  useEffect(() => {
+    listReports({ partnerId: partner.id })
+      .then((d) => setPeriods((d.reports ?? []).map((r) => r.period_label)))
+      // Молча: карточка не про отчёты, и падать из-за них ей незачем.
+      .catch(() => setPeriods([]));
+  }, [partner.id]);
 
   async function save() {
     setBusy(true);
@@ -120,11 +133,11 @@ export function PartnerCardModal({ partner, level, isTop, onChanged }) {
               {busy ? 'Сохраняем…' : 'Сохранить'}
             </Button>
           </>
-        ) : (
-          <Button variant="secondary" size="sm" onClick={closeModal}>
-            Закрыть
-          </Button>
-        )
+        ) : null
+        /* Кнопки «Закрыть» внизу нет: её работу делает крестик в шапке, а
+           дублировать одно действие двумя кнопками — повод гадать, есть ли
+           между ними разница (просьба владельца 18.09.2026). Внизу остаётся
+           только то, ради чего окно открывают дальше. */
       }
     >
       {editing ? (
@@ -133,12 +146,22 @@ export function PartnerCardModal({ partner, level, isTop, onChanged }) {
           <DistaField value={distaId} onChange={setDistaId} onSubmit={save} />
         </div>
       ) : (
-        /* Только код. Пояснение «почему у партнёра больше ничего нет» убрано
-           (просьба владельца 17.09.2026): его читают один раз, а висело оно в
-           каждой карточке. Причина по-прежнему записана в CLAUDE.md. */
         <div className="text-[13px]">
-          <span className="text-text-secondary">Код в Dista: </span>
-          <span className="text-text tabular-nums">{partner.dista_id || 'не проставлен'}</span>
+          <div className="text-text-secondary mb-1.5">Загруженные отчёты</div>
+          {periods === null && <div className="text-text-muted">Смотрим…</div>}
+          {periods?.length === 0 && <div className="text-text-muted">Отчётов пока нет</div>}
+          {periods?.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {periods.map((label, i) => (
+                <span
+                  key={`${label}-${i}`}
+                  className="px-2 py-1 rounded-input border border-border text-text"
+                >
+                  {label}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       )}
       {error && <div className="text-[13px] text-danger mt-3">{error}</div>}
