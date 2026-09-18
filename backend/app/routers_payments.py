@@ -47,7 +47,10 @@ payments_router = APIRouter(
 # Поля, которые можно править, и как их читать. Список ОДИН на создание и
 # правку: разойдись они, и через форму завелось бы то, чего правкой не
 # поправить.
-MONEY_FIELDS = ("amount", "vat_amount", "transfer_amount", "actual_amount")
+MONEY_FIELDS = ("amount", "transfer_amount", "actual_amount")
+# Ставки — курс и НДС: множители, а не деньги. Наружу уходят без хвоста
+# нулей и в итогах не складываются.
+RATE_FIELDS = ("rate", "vat_rate")
 TEXT_FIELDS = ("description",)
 MAX_DESCRIPTION = 2000
 
@@ -95,7 +98,7 @@ def _out(payment: PartnerPayment, partner_name: str | None) -> dict:
         "description": payment.description,
         "amount": _money(payment.amount),
         "rate": _rate(payment.rate),
-        "vat_amount": _money(payment.vat_amount),
+        "vat_rate": _rate(payment.vat_rate),
         "transfer_amount": _money(payment.transfer_amount),
         "transferred": payment.transferred,
         "actual_amount": _money(payment.actual_amount),
@@ -136,9 +139,10 @@ def _apply(payment: PartnerPayment, body: dict, db: Session) -> list[str]:
         if name in body:
             setattr(payment, name, _parse_money(body[name], "Сумма"))
             touched.append(name)
-    if "rate" in body:
-        payment.rate = _parse_money(body["rate"], "Курс")
-        touched.append("rate")
+    for name in RATE_FIELDS:
+        if name in body:
+            setattr(payment, name, _parse_money(body[name], "Ставка"))
+            touched.append(name)
     if "transferred" in body:
         payment.transferred = bool(body["transferred"])
         touched.append("transferred")
@@ -184,7 +188,6 @@ def list_payments(
         "payments": payments,
         "totals": {
             "amount": _money(total("amount")),
-            "vat_amount": _money(total("vat_amount")),
             "transfer_amount": _money(total("transfer_amount")),
             "actual_amount": _money(total("actual_amount")),
             # Сколько строк ещё не заведено: столбец с галочками читается

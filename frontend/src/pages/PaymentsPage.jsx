@@ -3,6 +3,7 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { PageHeader } from '../components/ui/PageHeader';
 import { TrashIcon } from '../components/ui/icons';
+import { PartnerPicker } from '../components/ui/PartnerPicker';
 import { useAuth } from '../auth/AuthContext';
 import { useModal } from '../modals/ModalProvider';
 import { canManagePayments } from '../auth/permissions';
@@ -244,25 +245,25 @@ export function PaymentsPage() {
                         className={`${cellInput} tabular-nums`}
                       />
                     </td>
-                    <td className={`${td} w-[200px]`}>
-                      {/* Площадку можно не выбирать: строку заводят по
-                          выписке, а чей платёж — иногда выясняют потом. */}
-                      <select
+                    <td className={`${td} w-[220px]`}>
+                      {/* ПОИСКОМ, а не списком: площадок больше сотни, и
+                          листать их до нужной буквы в каждой строке —
+                          худшее, что можно предложить. Компонент общий с
+                          загрузкой отчёта. Площадку можно не выбирать вовсе:
+                          строку заводят по выписке, а чей платёж — иногда
+                          выясняют потом. */}
+                      <PartnerPicker
+                        partners={partners}
                         value={r.partner_id ?? ''}
-                        disabled={!manage}
-                        onChange={(e) => {
-                          edit(r.id, 'partner_id', e.target.value);
-                          save(r.id, 'partner_id', e.target.value);
+                        allowEmpty
+                        placeholder="— не указан —"
+                        inputClassName={cellInput}
+                        onChange={(id) => {
+                          if (!manage) return;
+                          edit(r.id, 'partner_id', id);
+                          save(r.id, 'partner_id', id);
                         }}
-                        className={cellInput}
-                      >
-                        <option value="">— не указан —</option>
-                        {partners.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.name}
-                          </option>
-                        ))}
-                      </select>
+                      />
                     </td>
                     <td className={td}>
                       <input
@@ -274,7 +275,7 @@ export function PaymentsPage() {
                         className={cellInput}
                       />
                     </td>
-                    {['amount', 'rate', 'vat_amount', 'transfer_amount'].map((field) => (
+                    {['amount', 'rate', 'vat_rate', 'transfer_amount'].map((field) => (
                       <td key={field} className={`${td} w-[130px]`}>
                         <input
                           value={r[field] ?? ''}
@@ -331,8 +332,9 @@ export function PaymentsPage() {
               )}
               {totals && rows.length > 0 && (
                 <div className="text-[13px] text-text">
-                  Поступило <b className="tabular-nums">{formatMoney(totals.amount)}</b> · НДС{' '}
-                  <b className="tabular-nums">{formatMoney(totals.vat_amount)}</b> · завод{' '}
+                  {/* НДС в итогах нет: это ставка, а не деньги — складывать
+                      коэффициенты нечего. */}
+                  Поступило <b className="tabular-nums">{formatMoney(totals.amount)}</b> · завод{' '}
                   <b className="tabular-nums">{formatMoney(totals.transfer_amount)}</b> ·
                   фактически <b className="tabular-nums">{formatMoney(totals.actual_amount)}</b>
                   {totals.not_transferred > 0 && (

@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { PageHeader } from '../components/ui/PageHeader';
 import { ComboCell } from '../components/ui/ComboCell';
+import { PartnerPicker } from '../components/ui/PartnerPicker';
 import { TrashIcon } from '../components/ui/icons';
 import { useAuth } from '../auth/AuthContext';
 import { canManagePartnerReports } from '../auth/permissions';
@@ -75,108 +76,6 @@ const FIELDS = [
   { name: 'amount_author', label: 'Сумма авторских' },
   { name: 'amount_related', label: 'Сумма смежных' },
 ];
-
-/**
- * Выбор партнёра ПОИСКОМ, а не списком из сотни строк (просьба владельца
- * 18.09.2026). Стоит начать печатать — список сразу сужается до подходящих:
- * длинный перечень, который надо листать до нужной буквы, ровно та работа, от
- * которой поиск и избавляет. Ищем и по имени, и по коду Dista — у человека со
- * строчкой отчёта в руках чаще именно код.
- */
-function PartnerPicker({ partners, value, onChange, inputClass }) {
-  const [query, setQuery] = useState('');
-  const [open, setOpen] = useState(false);
-  const box = useRef(null);
-  const chosen = partners.find((p) => p.id === value) || null;
-
-  const found = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const list = q
-      ? partners.filter(
-          (p) =>
-            (p.name || '').toLowerCase().includes(q) ||
-            (p.dista_id || '').toLowerCase().includes(q),
-        )
-      : partners;
-    return list.slice(0, 50);
-  }, [partners, query]);
-
-  // Нажатие мимо закрывает список и возвращает в поле имя выбранного: поле
-  // показывает выбор, а не остатки поиска.
-  useEffect(() => {
-    if (!open) return undefined;
-    const away = (e) => {
-      if (box.current && !box.current.contains(e.target)) {
-        setOpen(false);
-        setQuery('');
-      }
-    };
-    document.addEventListener('mousedown', away);
-    return () => document.removeEventListener('mousedown', away);
-  }, [open]);
-
-  function pick(partner) {
-    onChange(partner.id);
-    setOpen(false);
-    setQuery('');
-  }
-
-  return (
-    <div className="relative" ref={box}>
-      <input
-        value={open ? query : chosen?.name ?? ''}
-        placeholder={chosen ? chosen.name : '— начните вводить —'}
-        onFocus={() => {
-          setOpen(true);
-          setQuery('');
-        }}
-        onChange={(e) => {
-          setQuery(e.target.value);
-          setOpen(true);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && found.length) pick(found[0]);
-          if (e.key === 'Escape') {
-            setOpen(false);
-            setQuery('');
-          }
-        }}
-        className={`${inputClass} min-w-[240px]`}
-      />
-      {open && (
-        <div className="absolute z-50 mt-1 w-[320px] max-h-[280px] overflow-y-auto bg-surface border border-border rounded-card shadow-lg">
-          {found.length === 0 && (
-            <div className="px-3 py-2 text-[12.5px] text-text-muted">Ничего не нашлось</div>
-          )}
-          {found.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => pick(p)}
-              className={`block w-full text-left px-3 py-2 text-[13px] bg-transparent border-0 cursor-pointer font-sans ${
-                p.id === value ? 'text-accent' : 'text-text'
-              } hover:bg-hover`}
-            >
-              {p.name}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** Сумма для ячейки таблицы: те же тысячи, но без «₽» — он в шапке колонки. */
-function amount(value) {
-  return formatMoney(value).replace(' ₽', '');
-}
-
-/** Российская дата: 2026-07-01 → 01.07.2026. */
-function ru(isoDate) {
-  const [y, m, d] = String(isoDate || '').split('-');
-  return y && m && d ? `${d}.${m}.${y}` : isoDate;
-}
 
 const iso = (d) => d.toISOString().slice(0, 10);
 const monthRange = (year, month) => ({
@@ -452,7 +351,7 @@ export function PartnerReportsPage() {
               <PartnerPicker
                 partners={partners}
                 value={partnerId}
-                inputClass={inputClass}
+                inputClassName={`${inputClass} min-w-[240px]`}
                 onChange={(id) => {
                   setPartnerId(id);
                   setMapping({});
