@@ -25,10 +25,22 @@ import { formatMoney } from '../api/finance';
  * гадать, почему нужной строки нет.
  */
 const ROMAN = ['I', 'II', 'III', 'IV'];
+const MONTHS = [
+  'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
+  'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь',
+];
+const SHORT = [
+  'янв', 'фев', 'мар', 'апр', 'мая', 'июн',
+  'июл', 'авг', 'сен', 'окт', 'ноя', 'дек',
+];
 const iso = (d) => d.toISOString().slice(0, 10);
 const quarterRange = (year, quarter) => ({
   from: iso(new Date(Date.UTC(year, (quarter - 1) * 3, 1))),
   to: iso(new Date(Date.UTC(year, quarter * 3, 0))),
+});
+const monthRange = (year, month) => ({
+  from: iso(new Date(Date.UTC(year, month, 1))),
+  to: iso(new Date(Date.UTC(year, month + 1, 0))),
 });
 const ru = (isoDate) => {
   const [y, m, d] = String(isoDate || '').split('-');
@@ -40,12 +52,20 @@ export function LinkReportPaymentModal({ report, level, isTop, onChanged }) {
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
   const [quarter, setQuarter] = useState(Math.floor(today.getMonth() / 3) + 1);
+  // НОМЕР ПОСТУПЛЕНИЯ СВОЙ У КАЖДОГО МЕСЯЦА, а в квартале месяцев три — и
+  // «№1» встречается трижды (замечание владельца 23.09.2026). Поэтому здесь
+  // есть выбор месяца, а пока смотрят квартал целиком, рядом с номером
+  // подписан месяц: иначе строки не различить.
+  const [monthOffset, setMonthOffset] = useState(null);   // null — весь квартал
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
-  const range = quarterRange(year, quarter);
+  const range =
+    monthOffset === null
+      ? quarterRange(year, quarter)
+      : monthRange(year, (quarter - 1) * 3 + monthOffset);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -135,6 +155,23 @@ export function LinkReportPaymentModal({ report, level, isTop, onChanged }) {
         />
       </div>
 
+      <div className="text-[12px] text-text-secondary mb-1.5">Месяц</div>
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <button type="button" className={tab(monthOffset === null)} onClick={() => setMonthOffset(null)}>
+          Весь квартал
+        </button>
+        {[0, 1, 2].map((offset) => (
+          <button
+            key={offset}
+            type="button"
+            className={tab(offset === monthOffset)}
+            onClick={() => setMonthOffset(offset)}
+          >
+            {MONTHS[(quarter - 1) * 3 + offset]}
+          </button>
+        ))}
+      </div>
+
       {loading && <div className="text-[13px] text-text-muted">Загрузка…</div>}
       {error && <div className="text-[13px] text-danger mb-3">{error}</div>}
 
@@ -169,10 +206,16 @@ export function LinkReportPaymentModal({ report, level, isTop, onChanged }) {
                       различает, за месяц её повторяет половина строк. Сама
                       дата осталась в подсказке. */}
                   <span
-                    className="text-text tabular-nums w-[34px] shrink-0"
+                    className="text-text tabular-nums shrink-0"
                     title={`Поступление от ${ru(p.occurred_on)}`}
                   >
                     {p.number ? `№${p.number}` : '—'}
+                    {monthOffset === null && (
+                      <span className="text-text-muted">
+                        {' '}
+                        {SHORT[Number(String(p.occurred_on).slice(5, 7)) - 1]}
+                      </span>
+                    )}
                   </span>
                   <span className={otherPartner ? 'text-danger' : 'text-text-secondary'}>
                     {p.partner || 'площадка не указана'}
