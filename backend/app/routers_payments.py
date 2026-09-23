@@ -101,6 +101,36 @@ def _linked_reports(db: Session, payment_ids: list) -> dict:
     return {payment_id: count for payment_id, count in rows}
 
 
+def payment_numbers(db: Session) -> dict:
+    """
+    Порядковый номер каждого поступления ВНУТРИ СВОЕГО МЕСЯЦА.
+
+    НУМЕРУЕМ ПО ПОРЯДКУ ЗАВЕДЕНИЯ (`created_at`), а не по дате платежа
+    (просьба владельца 23.09.2026: «по порядку как заведены»). Это важно:
+    номером ссылаются из вкладки «Отчёты», и номер, который меняется от того,
+    что у соседней строки поправили дату, ссылкой быть не может. По дате
+    строки только ПОКАЗЫВАЮТСЯ.
+
+    Считаем в Python, а не оконной функцией: `date_trunc` есть в PostgreSQL и
+    нет в SQLite, на котором гоняются проверки, а строк тут десятки — их
+    заводят руками по выписке.
+    """
+    rows = db.execute(
+        select(PartnerPayment.id, PartnerPayment.occurred_on, PartnerPayment.created_at)
+    ).all()
+    by_month: dict = {}
+    for payment_id, occurred_on, created_at in rows:
+        key = (occurred_on.year, occurred_on.month)
+        by_month.setdefault(key, []).append((created_at, payment_id))
+    numbers = {}
+    for items in by_month.values():
+        # created_at может совпасть у строк, заведённых подряд, поэтому вторым
+        # ключом идёт id — иначе порядок «плавал» бы от запроса к запросу.
+        for i, (_, payment_id) in enumerate(sorted(items, key=lambda x: (x[0], str(x[1]))), 1):
+            numbers[payment_id] = i
+    return numbers
+
+
 def _difference(payment: PartnerPayment):
     """
     Завод минус фактический завод, либо None.
@@ -114,9 +144,13 @@ def _difference(payment: PartnerPayment):
     return _money(payment.transfer_amount - payment.actual_amount)
 
 
-def _out(payment: PartnerPayment, partner_name: str | None, linked: int = 0) -> dict:
+def _out(payment: PartnerPayment, partner_name: str | None, linked: int = 0,
+         number: int | None = None) -> dict:
     return {
         "id": str(payment.id),
+        # Порядковый номер в своём месяце — им ссылаются из вкладки «Отчёты»
+        # (см. payment_numbers).
+        "number": number,
         "occurred_on": payment.occurred_on.isoformat(),
         "partner_id": str(payment.partner_id) if payment.partner_id else None,
         "partner": partner_name,
@@ -215,7 +249,8 @@ def list_payments(
         query.order_by(PartnerPayment.occurred_on, PartnerPayment.created_at)
     ).all()
     linked = _linked_reports(db, [p.id for p, _ in rows])
-    payments = [_out(p, name, linked.get(p.id, 0)) for p, name in rows]
+    numbers = payment_numbers(db)
+    payments = [_out(p, name, linked.get(p.id, 0), numbers.get(p.id)) for p, name in rows]
 
     def total(field):
         return sum((getattr(p, field) or Decimal(0) for p, _ in rows), Decimal(0))
@@ -277,7 +312,8 @@ def create_payment(
         },
     )
     db.commit()
-    return {"payment": _out(payment, partner.name if partner else None)}
+    return {"payment": _out(payment, partner.name if partner else None,
+                            number=payment_numbers(db).get(payment.id))}
 
 
 @payments_router.patch(

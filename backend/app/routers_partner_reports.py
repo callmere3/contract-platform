@@ -69,6 +69,7 @@ from app.partner_reports import (
     suggest_mapping,
 )
 from app.roles import CAN_MANAGE_PARTNER_REPORTS, CAN_VIEW_PARTNER_REPORTS
+from app.routers_payments import payment_numbers
 
 partner_reports_router = APIRouter(
     prefix="/partner-reports",
@@ -411,7 +412,32 @@ def _sync_payment_actual(db: Session, payment: PartnerPayment | None) -> None:
     )
 
 
-def _report_out(report: PartnerReport, partner_name: str, payment_date=None) -> dict:
+def _payment_label(occurred_on, partner_name: str | None, number: int | None) -> str | None:
+    """
+    Как поступление выглядит в списке отчётов: «№3 · МТС · 3 кв. 26».
+
+    НЕ ДАТА (просьба владельца 23.09.2026). Дата платежа ничего не говорит:
+    отчётов за месяц несколько, платежи идут вперемешку, и «01.07.2026»
+    повторяется у половины строк. Номер же — то, чем человек называет строку
+    вслух, глядя в таблицу поступлений, а площадка и квартал позволяют узнать
+    её, не открывая соседнюю вкладку.
+
+    Квартал КОРОТКО («3 кв. 26»): столбец узкий, а год в отчётах и так один.
+    """
+    if occurred_on is None:
+        return None
+    parts = []
+    if number:
+        parts.append(f"№{number}")
+    if partner_name:
+        parts.append(partner_name)
+    quarter = (occurred_on.month - 1) // 3 + 1
+    parts.append(f"{quarter} кв. {occurred_on.year % 100:02d}")
+    return " · ".join(parts)
+
+
+def _report_out(report: PartnerReport, partner_name: str, payment_date=None,
+                payment_label: str | None = None) -> dict:
     return {
         "id": str(report.id),
         "partner_id": str(report.partner_id),
@@ -438,6 +464,8 @@ def _report_out(report: PartnerReport, partner_name: str, payment_date=None) -> 
         # Дата привязанного поступления: в списке отчётов её показывают
         # столбцом, и ходить за ней вторым запросом ради одной ячейки незачем.
         "payment_date": payment_date.isoformat() if payment_date else None,
+        # Подпись для столбца «Поступление»: «№3 · МТС · 3 кв. 26».
+        "payment_label": payment_label,
         **{name: getattr(report, name) for name in REPORT_ATTRS},
         "uploaded_at": report.uploaded_at.isoformat() if report.uploaded_at else None,
     }
@@ -458,7 +486,8 @@ def list_reports(
     находить и июльский отчёт МТС.
     """
     query = (
-        select(PartnerReport, Partner.name, PartnerPayment.occurred_on)
+        select(PartnerReport, Partner.name, PartnerPayment.occurred_on,
+               PartnerPayment.id, PartnerPayment.partner_id)
         .join(Partner, Partner.id == PartnerReport.partner_id)
         .join(PartnerPayment, PartnerPayment.id == PartnerReport.payment_id, isouter=True)
     )
@@ -470,7 +499,22 @@ def list_reports(
         query = query.where(PartnerReport.period_from <= _date(period_to, "period_to"))
 
     rows = db.execute(query.order_by(PartnerReport.uploaded_at.desc()).limit(200)).all()
-    reports = [_report_out(r, name, paid_on) for r, name, paid_on in rows]
+    # Номер поступления и площадка платежа — для подписи в столбце
+    # «Поступление». Площадка у платежа СВОЯ: обычно она совпадает с площадкой
+    # отчёта (привязка это проверяет), но у строки её могут и не проставить.
+    numbers = payment_numbers(db)
+    partner_names = {
+        pid: name
+        for pid, name in db.execute(select(Partner.id, Partner.name))
+    }
+    reports = [
+        _report_out(
+            r, name, paid_on,
+            _payment_label(paid_on, partner_names.get(pay_partner) or name,
+                           numbers.get(pay_id)),
+        )
+        for r, name, paid_on, pay_id, pay_partner in rows
+    ]
     return {
         "reports": reports,
         # Итог по показанному — чтобы сверять квартал целиком, не складывая
@@ -694,7 +738,11 @@ def link_payment(
     )
     db.commit()
     return {
-        "report": _report_out(report, partner.name if partner else "", payment.occurred_on),
+        "report": _report_out(
+            report, partner.name if partner else "", payment.occurred_on,
+            _payment_label(payment.occurred_on, partner.name if partner else None,
+                           payment_numbers(db).get(payment.id)),
+        ),
         "payment_actual": _money(payment.actual_amount),
     }
 

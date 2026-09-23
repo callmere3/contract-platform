@@ -294,6 +294,7 @@ export function PaymentsPage() {
             <table className="w-full border-collapse">
               <thead>
                 <tr>
+                  <th className={th}>№</th>
                   <th className={th}>Дата поступления</th>
                   <th className={th}>Партнёр</th>
                   <th className={th}>Описание платежа</th>
@@ -310,13 +311,23 @@ export function PaymentsPage() {
               <tbody>
                 {rows.length === 0 && (
                   <tr>
-                    <td className={`${td} text-[13px] text-text-muted`} colSpan={11}>
+                    <td className={`${td} text-[13px] text-text-muted`} colSpan={12}>
                       За этот месяц поступлений нет.
                     </td>
                   </tr>
                 )}
                 {rows.map((r) => (
                   <tr key={r.id}>
+                    {/* НОМЕР СЧИТАЕТ СЕРВЕР, и считает по ПОРЯДКУ ЗАВЕДЕНИЯ,
+                        а не по дате: на него ссылается столбец «Поступление»
+                        во вкладке «Отчёты», и номер, который меняется от
+                        правки даты у соседней строки, ссылкой быть не может.
+                        У каждого месяца нумерация своя. */}
+                    <td className={`${td} w-[52px] text-right`}>
+                      <span className="inline-block px-2 py-1.5 text-[13px] text-text-muted tabular-nums">
+                        {r.number ?? ''}
+                      </span>
+                    </td>
                     <td className={`${td} w-[150px]`}>
                       <input
                         type="date"

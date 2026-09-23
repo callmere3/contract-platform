@@ -179,10 +179,10 @@ export function LinkReportPaymentModal({ report, level, isTop, onChanged }) {
                       хотя число просто ещё не занесли. */}
                   {p.transfer_amount ? (
                     <span className="text-text tabular-nums">
-                      завод {formatMoney(p.transfer_amount)}
+                      {formatMoney(p.transfer_amount)}
                     </span>
                   ) : (
-                    <span className="text-text-muted">завод не указан</span>
+                    <span className="text-text-muted">—</span>
                   )}
                 </div>
                 <div className="text-[11.5px] text-text-muted mt-0.5">
