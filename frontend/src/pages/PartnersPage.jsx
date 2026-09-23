@@ -4,7 +4,7 @@ import { Card } from '../components/ui/Card';
 import { PageHeader } from '../components/ui/PageHeader';
 import { useModal } from '../modals/ModalProvider';
 import { useAuth } from '../auth/AuthContext';
-import { canManagePartners } from '../auth/permissions';
+import { canImportPartners, canManagePartners } from '../auth/permissions';
 import { listPartners } from '../api/partners';
 
 /**
@@ -89,7 +89,9 @@ export function PartnersPage() {
                 size="sm"
                 onClick={() => openModal('partnersImportExport', { onImported: load })}
               >
-                Импорт/экспорт
+                {/* Подпись по праву: у кого импорта нет, тому кнопка
+                    «Импорт/экспорт» обещает то, чего в окне не будет. */}
+                {canImportPartners(role) ? 'Импорт/экспорт' : 'Экспорт'}
               </Button>
             </>
           )}

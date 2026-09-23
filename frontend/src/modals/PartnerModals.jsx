@@ -4,7 +4,7 @@ import { PencilIcon, TrashIcon } from '../components/ui/icons';
 import { Button } from '../components/ui/Button';
 import { useModal } from './ModalProvider';
 import { useAuth } from '../auth/AuthContext';
-import { canManagePartners } from '../auth/permissions';
+import { canImportPartners, canManagePartners } from '../auth/permissions';
 import { listReports } from '../api/partnerReports';
 import {
   createPartner,
@@ -229,6 +229,8 @@ export function NewPartnerModal({ level, isTop, onSaved }) {
  */
 export function PartnersImportExportModal({ level, isTop, onImported }) {
   const { closeModal } = useModal();
+  const { role } = useAuth();
+  const canImport = canImportPartners(role);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [report, setReport] = useState(null);
@@ -270,13 +272,17 @@ export function PartnersImportExportModal({ level, isTop, onImported }) {
 
   return (
     <Modal
-      title="Импорт / экспорт партнёров"
+      title={canImport ? 'Импорт / экспорт партнёров' : 'Экспорт партнёров'}
       onClose={closeModal}
       level={level}
       isTop={isTop}
       width={480}
     >
-      <div className="mb-6 pb-6 border-b border-border">
+      {/* Импорт есть не у всех: финансовому менеджеру заливать справочник
+          файлом нельзя (он правит сотню строк разом и молча), а выгружать —
+          можно. Поэтому у него окно состоит из одного экспорта, и рамку
+          снизу рисовать не за чем. */}
+      <div className={canImport ? 'mb-6 pb-6 border-b border-border' : ''}>
         <div className="text-sm font-semibold text-text mb-1.5">Экспорт</div>
         <div className="text-[13px] text-text-secondary mb-3">
           Выгрузить справочник в Excel — ровно в том виде, в каком его принимает импорт: код
@@ -287,6 +293,8 @@ export function PartnersImportExportModal({ level, isTop, onImported }) {
         </Button>
       </div>
 
+      {canImport && (
+        <>
       <div className="text-sm font-semibold text-text mb-1.5">Импорт</div>
       <div className="text-[13px] text-text-secondary mb-3">
         Две колонки: сначала код Dista, потом название — по строке на партнёра. Шапка
@@ -320,6 +328,8 @@ export function PartnersImportExportModal({ level, isTop, onImported }) {
             </div>
           )}
         </div>
+      )}
+        </>
       )}
       {error && <div className="text-[13px] text-danger mt-3">{error}</div>}
     </Modal>

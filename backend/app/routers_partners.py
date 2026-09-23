@@ -37,7 +37,7 @@ from app.audit import log_action
 from app.auth import get_current_user, require_role
 from app.db import get_session
 from app.models import Partner, User
-from app.roles import CAN_MANAGE_PARTNERS, CAN_VIEW_PARTNERS
+from app.roles import CAN_IMPORT_PARTNERS, CAN_MANAGE_PARTNERS, CAN_VIEW_PARTNERS
 
 partners_router = APIRouter(
     prefix="/partners",
@@ -154,7 +154,7 @@ def list_partners(
 
 
 @partners_router.post(
-    "/import", dependencies=[Depends(require_role(*CAN_MANAGE_PARTNERS))]
+    "/import", dependencies=[Depends(require_role(*CAN_IMPORT_PARTNERS))]
 )
 def import_partners(
     file: UploadFile = File(...),

@@ -127,7 +127,7 @@ export const canViewNomenclature = (role) => is(role, ADMIN, DIRECTOR, FINANCE_M
 // backend: CAN_EXPORT_NOMENCLATURE / CAN_IMPORT_NOMENCLATURE. Выгрузить
 // каталог могут оба, залить — только admin: импорт замещает состав прав у
 // каждого трека из файла, и цена ошибки тут выше, чем у чтения.
-export const canExportNomenclature = (role) => is(role, ADMIN, DIRECTOR);
+export const canExportNomenclature = (role) => is(role, ADMIN, DIRECTOR, FINANCE_MANAGER);
 export const canImportNomenclature = (role) => is(role, ADMIN);
 
 // backend: CAN_EDIT_NOMENCLATURE. Правка карточки трека руками — шире
@@ -139,6 +139,11 @@ export const canEditNomenclature = (role) => is(role, ADMIN, DIRECTOR);
 // которых приходят деньги: смотрят и ведут те же, кто видит ML Finance.
 export const canViewPartners = (role) => is(role, ADMIN, DIRECTOR, FINANCE_MANAGER);
 export const canManagePartners = (role) => is(role, ADMIN, DIRECTOR, FINANCE_MANAGER);
+// backend: CAN_IMPORT_PARTNERS. Заливать справочник файлом финансовому
+// менеджеру нельзя: импорт правит сотню строк разом и молча (переименовывает
+// по коду, проставляет коды по имени). Завести и переименовать руками — можно,
+// выгрузить — тоже.
+export const canImportPartners = (role) => is(role, ADMIN, DIRECTOR);
 
 // backend: CAN_VIEW_PARTNER_REPORTS / CAN_MANAGE_PARTNER_REPORTS. Отчёты
 // площадок: смотреть и загружать. Право заведено отдельно от финансов — отчёт
