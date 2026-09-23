@@ -65,9 +65,11 @@ from app.nomenclature_import import (
     RELATED,
     RIGHT_LABELS,
     RIGHT_SLOTS,
+    TEXT_FIELDS,
     OwnerIndex,
     check_required,
     check_shares,
+    keep_if_richer,
     parse_date,
     read_pasted,
     read_rows,
@@ -846,10 +848,13 @@ def import_apply(
             created_owners.append(name)
         db.flush()
 
+    # Тянем и ТЕКСТ уже лежащих треков, а не только id: он нужен, чтобы
+    # выгрузка Dista не затёрла восстановленные буквы своей же испорченной
+    # копией (см. keep_if_richer).
     existing = {
-        sku: track_id
-        for sku, track_id in db.execute(
-            select(Track.sku, Track.id).where(
+        row.sku: row
+        for row in db.execute(
+            select(Track.sku, Track.id, *(getattr(Track, f) for f in TEXT_FIELDS)).where(
                 Track.sku.in_([r.track["sku"] for r in ready])
             )
         )
@@ -861,9 +866,19 @@ def import_apply(
     touched: list[uuid.UUID] = []
     rights_rows: list[dict] = []
 
+    kept_letters = 0
     for row in ready:
         sku = row.track["sku"]
-        track_id = existing.get(sku)
+        was = existing.get(sku)
+        track_id = was.id if was is not None else None
+        if was is not None:
+            # НЕ ЗАТИРАТЬ ЦЕЛОЕ ИСПОРЧЕННЫМ: если пришедшее название — это
+            # ровно наше, пропущенное через cp1251, новостей в нём нет.
+            for field_name in TEXT_FIELDS:
+                kept = keep_if_richer(row.track.get(field_name), getattr(was, field_name))
+                if kept != row.track.get(field_name):
+                    row.track[field_name] = kept
+                    kept_letters += 1
         if track_id is None:
             track_id = uuid.uuid4()
             db.add(
@@ -940,6 +955,10 @@ def import_apply(
             "unchecked": len(skipped_by_hand),
             "owners_created": created_owners[:20],
             "owners_replaced": len(mapping),
+            # Сколько раз файл пытался затереть целое написание своей же
+            # испорченной копией. В журнале это видно, чтобы было понятно,
+            # почему название в базе не совпадает со строкой выгрузки.
+            "kept_letters": kept_letters,
         },
     )
     db.commit()
@@ -951,6 +970,7 @@ def import_apply(
         "skipped_rows": len(skipped),
         "skipped": skipped[:MAX_ISSUES],
         "owners_created": created_owners,
+        "kept_letters": kept_letters,
     }
 
 

@@ -41,6 +41,7 @@
 import argparse
 import sys
 import uuid
+from types import SimpleNamespace
 from collections import Counter
 from datetime import datetime, timezone
 
@@ -49,7 +50,7 @@ from sqlalchemy import delete, insert, select, update
 
 from app.db import SessionLocal
 from app.models import Track, TrackRight
-from app.nomenclature_import import read_rows
+from app.nomenclature_import import TEXT_FIELDS, keep_if_richer, read_rows
 
 BATCH = 2000
 
@@ -81,7 +82,15 @@ def main() -> int:
 
     db = SessionLocal()
     try:
-        existing = dict(db.execute(select(Track.sku, Track.id)).all())
+        # Берём и ТЕКСТ, а не только id: выгрузка Dista приходит без букв,
+        # которых нет в cp1251, и не должна затирать ими восстановленные
+        # написания (см. keep_if_richer).
+        existing = {
+            row.sku: row
+            for row in db.execute(
+                select(Track.sku, Track.id, *(getattr(Track, f) for f in TEXT_FIELDS))
+            )
+        }
         print(f"в базе уже {len(existing)} треков")
 
         seen: set[str] = set()
@@ -141,10 +150,20 @@ def main() -> int:
                 stats["дублей артикула в файле"] += 1
             seen.add(sku)
 
-            track_id = existing.get(sku)
+            was = existing.get(sku)
+            track_id = was.id if was is not None else None
+            if was is not None:
+                # НЕ ЗАТИРАТЬ ЦЕЛОЕ ИСПОРЧЕННЫМ (см. keep_if_richer).
+                for field_name in TEXT_FIELDS:
+                    kept = keep_if_richer(track.get(field_name), getattr(was, field_name))
+                    if kept != track.get(field_name):
+                        track[field_name] = kept
+                        stats["сохранено букв"] += 1
             if track_id is None:
                 track_id = uuid.uuid4()
-                existing[sku] = track_id
+                existing[sku] = SimpleNamespace(
+                    id=track_id, **{f: track.get(f) for f in TEXT_FIELDS}
+                )
                 new_tracks.append(
                     {
                         "id": track_id,

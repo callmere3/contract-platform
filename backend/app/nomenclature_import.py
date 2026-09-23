@@ -47,6 +47,7 @@
 import csv
 import io
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
@@ -560,3 +561,54 @@ class OwnerIndex:
         if best is not None and best_ratio >= TYPO_RATIO:
             return "similar", best
         return "new", None
+
+
+# --------------------------------------------- защита починенных написаний
+
+# Поля, которые импорт может затереть испорченной копией. Числа и коды сюда не
+# входят: «?» бывает только в тексте.
+TEXT_FIELDS = ("title", "artist", "authors", "album")
+
+
+def _to_cp1251(text: str) -> str:
+    """Как выглядела бы строка, пройди она через cp1251."""
+    return text.encode("cp1251", errors="replace").decode("cp1251")
+
+
+def keep_if_richer(incoming, stored):
+    """
+    Не давать импорту затереть ЦЕЛОЕ написание ИСПОРЧЕННЫМ.
+
+    ЗАЧЕМ. Выгрузка Dista приходит без казахских, турецких и прочих букв,
+    которых нет в cp1251: «Көбелектер» в ней выглядит как «К?белектер»
+    (23.09.2026 таких позиций в каталоге было 8 430). Часть из них
+    восстановлена по отчётам площадок — и следующая же выгрузка затёрла бы
+    починку обратно, потому что строка файла несёт полное состояние трека.
+
+    ПРАВИЛО УЗКОЕ И ПРОВЕРЯЕМОЕ: оставляем своё, только если пришедшее — это
+    РОВНО НАШЕ, пропущенное через cp1251. Тогда это не другое название, а его
+    обеднённая копия, и новостей в ней нет. Любая настоящая правка названия в
+    Dista через эту проверку проходит и применяется как обычно.
+    """
+    if not incoming or not stored or incoming == stored:
+        return incoming
+    if "?" not in incoming or incoming.count("?") <= stored.count("?"):
+        return incoming
+    for form in (unicodedata.normalize("NFC", stored),
+                 unicodedata.normalize("NFD", stored), stored):
+        if _to_cp1251(form) == incoming:
+            return stored
+    # Строка могла собраться из кусков, и через cp1251 прошла лишь часть слов
+    # (в каталоге есть «Шәмші ?алдая?ов», где «ә» цело, а «қ» потеряно).
+    # Поэтому то же сравнение — пословно, при совпадающем числе слов.
+    old_words, new_words = stored.split(" "), incoming.split(" ")
+    if len(old_words) != len(new_words):
+        return incoming
+    for old, new in zip(old_words, new_words):
+        if old == new:
+            continue
+        if not any(_to_cp1251(f) == new for f in
+                   (unicodedata.normalize("NFC", old),
+                    unicodedata.normalize("NFD", old), old)):
+            return incoming
+    return stored
