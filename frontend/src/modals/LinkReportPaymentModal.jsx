@@ -47,6 +47,25 @@ const ru = (isoDate) => {
   return y && m && d ? `${d}.${m}.${y}` : isoDate;
 };
 
+/**
+ * Одна ли это сумма. СРАВНИВАЕМ КАК СТРОКИ, приведя к копейкам.
+ *
+ * `Number()` на деньгах — тот самый способ получить 1234.0999999999999, от
+ * которого мы бережёмся по всему ML Finance. Складывать и делить здесь нечего,
+ * нужен ровно вопрос «одно и то же число или нет», а на него отвечает
+ * приведение к виду «целое.дд».
+ */
+const kopecks = (value) => {
+  const text = String(value ?? '').replace(/\s/g, '').replace(',', '.');
+  if (!/^-?\d+(\.\d*)?$/.test(text)) return null;
+  const [whole, fraction = ''] = text.split('.');
+  return `${whole}.${(fraction + '00').slice(0, 2)}`;
+};
+const sameMoney = (a, b) => {
+  const one = kopecks(a);
+  return one !== null && one === kopecks(b);
+};
+
 export function LinkReportPaymentModal({ report, level, isTop, onChanged }) {
   const { closeModal } = useModal();
   const today = new Date();
@@ -109,6 +128,25 @@ export function LinkReportPaymentModal({ report, level, isTop, onChanged }) {
       setBusy(false);
     }
   }
+
+  // РЕКОМЕНДУЕМАЯ СТРОКА ИДЁТ ПЕРВОЙ (просьба владельца 24.09.2026).
+  // Совпали площадка и сумма завода — это и есть тот платёж, и искать его
+  // глазами в списке из тридцати строк незачем.
+  //
+  // Сверяем именно СУММУ ЗАВОДА: привязка нужна затем, чтобы она сошлась с
+  // фактическим заводом, и итог отчёта сравнивают с ней. Сумма поступления к
+  // сверке отношения не имеет — это то, что упало на счёт, вместе с чужими
+  // деньгами и до всех пересчётов.
+  //
+  // Совпадений может быть несколько (одна площадка платит дважды на ту же
+  // сумму) — тогда наверху окажутся все: выбрать всё равно человеку.
+  const advised = (p) =>
+    p.id !== report.payment_id &&
+    !!p.partner_id &&
+    p.partner_id === report.partner_id &&
+    sameMoney(p.transfer_amount, report.total);
+  const ordered = [...rows.filter(advised), ...rows.filter((p) => !advised(p))];
+  const adviceCount = rows.filter(advised).length;
 
   const tab = (active) =>
     `px-3 py-1.5 text-[12.5px] rounded-input border cursor-pointer bg-transparent font-sans ${
@@ -181,21 +219,32 @@ export function LinkReportPaymentModal({ report, level, isTop, onChanged }) {
         </div>
       )}
 
+      {!loading && adviceCount > 0 && (
+        <div className="text-[12px] text-accent mb-1.5">
+          {adviceCount === 1
+            ? 'Похоже, это первая строка — площадка и сумма завода совпали.'
+            : `Наверху ${adviceCount} строки, где совпали площадка и сумма завода.`}
+        </div>
+      )}
+
       {!loading && rows.length > 0 && (
         <div className="border border-border rounded-card divide-y divide-border max-h-[320px] overflow-y-auto">
-          {rows.map((p) => {
+          {ordered.map((p) => {
             // Чужая площадка — строку видно, но выбрать нельзя: сервер такую
             // связку не примет, и лучше сказать об этом здесь, чем дать
             // нажать и показать отказ.
             const otherPartner = p.partner_id && p.partner_id !== report.partner_id;
             const current = p.id === report.payment_id;
+            const advice = advised(p);
             return (
               <button
                 key={p.id}
                 type="button"
                 disabled={busy || otherPartner || current}
                 onClick={() => link(p)}
-                className={`block w-full text-left px-3 py-2.5 bg-transparent border-0 font-sans ${
+                className={`block w-full text-left px-3 py-2.5 border-0 font-sans ${
+                  advice ? 'bg-accent-soft' : 'bg-transparent'
+                } ${
                   otherPartner || current ? 'cursor-default' : 'cursor-pointer hover:bg-hover'
                 }`}
               >
@@ -239,14 +288,25 @@ export function LinkReportPaymentModal({ report, level, isTop, onChanged }) {
                     <span className="text-text-muted">—</span>
                   )}
                 </div>
-                <div className="text-[11.5px] text-text-muted mt-0.5">
-                  {current
-                    ? 'отчёт уже привязан к этой строке'
-                    : otherPartner
-                      ? 'другая площадка — привязать нельзя'
-                      : `фактический завод: ${
-                          p.actual_amount ? formatMoney(p.actual_amount) : 'пока пусто'
-                        }`}
+                <div className="text-[11.5px] mt-0.5">
+                  {current ? (
+                    <span className="text-text-muted">отчёт уже привязан к этой строке</span>
+                  ) : otherPartner ? (
+                    <span className="text-text-muted">другая площадка — привязать нельзя</span>
+                  ) : advice ? (
+                    /* Говорим, ПОЧЕМУ строка наверху: подсказка, за которой
+                       не видно основания, — это гадание, а человек отвечает
+                       за то, к чему привязал деньги. */
+                    <span className="text-accent">
+                      похоже, эта: площадка и сумма завода совпали
+                    </span>
+                  ) : (
+                    <span className="text-text-muted">
+                      {`фактический завод: ${
+                        p.actual_amount ? formatMoney(p.actual_amount) : 'пока пусто'
+                      }`}
+                    </span>
+                  )}
                 </div>
               </button>
             );
