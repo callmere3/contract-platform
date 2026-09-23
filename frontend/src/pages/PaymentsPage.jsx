@@ -167,7 +167,7 @@ function MoneyCell({ value, disabled, onSave, className }) {
 }
 
 /**
- * Ячейка со ставкой — курс или НДС.
+ * Ячейка со ставкой — НДС.
  *
  * РАЗДЕЛИТЕЛЬ ДРОБНОЙ ЧАСТИ — ЗАПЯТАЯ (замечание владельца 23.09.2026): она
  * стоит во всех суммах таблицы, и точка у одного только курса выглядит
@@ -346,7 +346,7 @@ export function PaymentsPage() {
   return (
     <div className="max-w-[1480px] mx-auto px-8 pt-12 pb-20">
       <PageHeader title="Поступления">
-        Деньги, которые пришли от площадок: сумма, курс и сколько из неё завели.
+        Деньги, которые пришли от площадок: сумма, НДС и сколько из неё завели.
       </PageHeader>
 
       <Card>
@@ -541,7 +541,7 @@ export function PaymentsPage() {
                       />
                     </td>
                     {/* СВЕРКА ПО ФОРМУЛЕ (владелец 23.09.2026):
-                        поступление / курс / (1 + НДС) должно дать сумму
+                        поступление / (1 + НДС) должно дать сумму
                         завода. Считает сервер — делить деньги на экране
                         нельзя, они там строки.
 
@@ -556,12 +556,14 @@ export function PaymentsPage() {
                         onSave={(v) => save(r.id, 'transfer_amount', v)}
                         className={`${cellInput} tabular-nums text-right`}
                       />
-                      {r.expected_transfer != null &&
-                        r.transfer_amount != null &&
-                        Number(r.expected_transfer) !== Number(r.transfer_amount) && (
+                      {/* РАСХОЖДЕНИЕ СЧИТАЕТ СЕРВЕР, и он же решает, велико
+                          ли оно: копейка набегает от округления и ошибкой не
+                          является (см. TRANSFER_TOLERANCE). Сравнивать здесь
+                          через Number() нельзя — деньги приходят строками. */}
+                      {r.transfer_mismatch && (
                           <Tooltip
                             text={`По формуле должно быть ${amount(r.expected_transfer)} ₽
-сумма поступления / курс / (1 + НДС)`}
+сумма поступления / (1 + НДС)`}
                             className="absolute right-1 top-0"
                           >
                             <span className="text-[11px] text-danger cursor-help">≠</span>

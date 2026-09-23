@@ -205,6 +205,30 @@ def _expected_transfer(payment: PartnerPayment):
     return _money(value.quantize(Decimal("0.01")))
 
 
+# НА СКОЛЬКО СУММА ЗАВОДА МОЖЕТ РАЗОЙТИСЬ С ФОРМУЛОЙ И ЭТО НЕ ОШИБКА.
+#
+# Копейка набегает сама собой: мы храним деньги с точностью до копеек и делим
+# УЖЕ ОКРУГЛЁННУЮ сумму, а в исходной таблице делили полную. Настоящий случай
+# (владелец, 24.09.2026): в строке 898 038,99 ₽ и завод 871 882,52 — обратное
+# умножение даёт 898 039,00, то есть исходная сумма была на копейку больше.
+# Показывать из-за этого «≠» значит приучить не обращать на него внимания.
+TRANSFER_TOLERANCE = Decimal("0.01")
+
+
+def _transfer_mismatch(payment: PartnerPayment):
+    """
+    Разошлась ли сумма завода с формулой больше, чем на копейку.
+
+    Считает СЕРВЕР, а не экран: деньги уходят строками, и сравнивать их через
+    Number() — тот же способ получить 1234.0999999999999, от которого мы
+    бережёмся везде.
+    """
+    expected = _expected_transfer(payment)
+    if expected is None or payment.transfer_amount is None:
+        return None
+    return abs(Decimal(expected) - payment.transfer_amount) > TRANSFER_TOLERANCE
+
+
 def _out(payment: PartnerPayment, partner_name: str | None, linked: int = 0,
          number: int | None = None) -> dict:
     return {
@@ -239,6 +263,8 @@ def _out(payment: PartnerPayment, partner_name: str | None, linked: int = 0,
         # СКОЛЬКО ДОЛЖНО ЗАВЕСТИСЬ ПО ФОРМУЛЕ: поступление / курс / (1+НДС).
         # Считает сервер — на экране деньги не делят, они там строки.
         "expected_transfer": _expected_transfer(payment),
+        # Разошлось ли с формулой заметно — решает сервер: см. TRANSFER_TOLERANCE.
+        "transfer_mismatch": _transfer_mismatch(payment),
         # Сколько отчётов привязано. Пока хоть один есть, фактический завод
         # СЧИТАЕТСЯ по ним, и руками его править нельзя — ни на экране, ни
         # через API: правку всё равно затёрло бы при следующей привязке.
@@ -468,7 +494,7 @@ def update_payment(
 
 # --------------------------------------------------------------- импорт
 
-def _match_partners(db: Session, rows: list) -> dict:
+def _match_partners(rows: list, index: PartnerIndex) -> dict:
     """
     Имя из выписки → площадка справочника, если нашлась.
 
@@ -476,7 +502,6 @@ def _match_partners(db: Session, rows: list) -> dict:
     четыре и почему неоднозначность считается отказом. Здесь только запрос к
     справочнику.
     """
-    index = PartnerIndex(db.execute(select(Partner.id, Partner.name)).all())
     # Ключ — НОМЕР СТРОКИ, а не имя: у Apple одно и то же имя плательщика
     # ведёт к разным площадкам в зависимости от суммы платежа.
     return {
@@ -486,45 +511,108 @@ def _match_partners(db: Session, rows: list) -> dict:
     }
 
 
-def _existing_keys(db: Session, rows: list) -> set:
+def _existing(db: Session, rows: list, index: PartnerIndex) -> dict:
     """
     Что уже заведено — чтобы повторный импорт того же файла не задвоил строки.
 
-    Ключ — дата, сумма и описание: своего номера у платежа в файле нет, а эти
-    три вместе повторяются только у настоящего дубля. Совпало — строку
-    пропускаем и говорим об этом; молча пройти мимо нельзя, иначе человек
-    решит, что импорт не сработал.
+    СВЕРКА ПО ДАТЕ, ПЛОЩАДКЕ И СУММЕ (просьба владельца 24.09.2026, после того
+    как в таблице нашлись дубли). Описание в неё НЕ входит: его пишет банк, и
+    у одного и того же платежа оно гуляет — во второй выгрузке к нему спереди
+    приклеился номер документа («NT-054905 · MAY 2026 YOUTUBE ROYALTY»), и все
+    восемь строк прошли как новые. Дата, площадка и сумма вместе повторяются
+    только у настоящего дубля: два платежа от одной площадки в один день на ту
+    же копейку — это и есть один платёж, занесённый дважды.
+
+    Возвращаем не множество ключей, а пары «дата + сумма» → список площадок:
+    площадки сравниваются не буква в букву (см. `_partner_same`).
     """
     dates = {row.occurred_on for row in rows if row.occurred_on}
     if not dates:
-        return set()
+        return {}
     found = db.execute(
-        select(PartnerPayment.occurred_on, PartnerPayment.amount, PartnerPayment.description)
-        .where(PartnerPayment.occurred_on.in_(dates))
+        select(
+            PartnerPayment.occurred_on,
+            PartnerPayment.partner_id,
+            PartnerPayment.partner_name,
+            PartnerPayment.amount,
+        ).where(PartnerPayment.occurred_on.in_(dates))
     ).all()
-    return {
-        _key(occurred_on, amount, description)
-        for occurred_on, amount, description in found
-    }
+    seen: dict = {}
+    for occurred_on, partner_id, partner_name, amount in found:
+        key = (occurred_on, _amount_key(amount))
+        seen.setdefault(key, []).append(
+            _partner_key(partner_id, partner_name, index)
+        )
+    return seen
 
 
-def _key(occurred_on, amount, description) -> tuple:
+def _amount_key(amount) -> str:
     """
-    Ключ дубля. Сумма ОКРУГЛЯЕТСЯ ДО КОПЕЕК, и это не мелочь: в файле она
+    Сумма для сверки, ОКРУГЛЁННАЯ ДО КОПЕЕК. Это не мелочь: в файле она
     записана со всей точностью деления («642390.4048780487»), а в базе колонка
     двузначная. Без округления повторный импорт считал дублями только те
     строки, где копейки и так сошлись, — на образце 44 из 69, а остальные
     заводились по второму разу.
     """
-    return (
-        occurred_on,
-        str(Decimal(amount).quantize(Decimal("0.01"))) if amount is not None else "",
-        (description or "").strip(),
+    if amount is None:
+        return ""
+    return str(Decimal(amount).quantize(Decimal("0.01")))
+
+
+def _partner_key(partner_id, partner_name, index: PartnerIndex) -> str:
+    """
+    Чей это платёж, одной строкой.
+
+    Площадка справочника узнаётся по id, мелкий партнёр — по очищенному имени.
+    Имя прогоняется через ТО ЖЕ сопоставление, что и при импорте: строку могли
+    завести, когда площадки в справочнике ещё не было, и тогда у неё в базе имя
+    текстом, а у новой строки — id.
+    """
+    if partner_id:
+        return "id:%s" % partner_id
+    found = index.match(partner_name) if partner_name else None
+    if found:
+        return "id:%s" % found
+    return clean_name(partner_name or "").casefold()
+
+
+def _partner_same(one: str, other: str) -> bool:
+    """
+    Одна ли это площадка.
+
+    У площадки справочника сравниваются id, а у имени текстом — СЛОВА, и
+    ОДНО ИМЯ МОЖЕТ БЫТЬ НАЧАЛОМ ДРУГОГО: в базе лежит «Муз ТВ», потому что
+    владелец укоротил имя руками, а из файла приедет «Муз ТВ Операционная
+    компания». Буквальное сравнение завело бы третью строку тому же платежу.
+
+    Послабление безопасно ровно потому, что площадка здесь — не единственный
+    признак: дата и сумма до копейки уже совпали. Два РАЗНЫХ плательщика,
+    приславших в один день одинаковую до копейки сумму, да ещё и названных
+    так, что одно имя начинает другое, — это не тот случай, ради которого
+    стоит городить точность.
+    """
+    if one.startswith("id:") or other.startswith("id:"):
+        return one == other
+    first, second = one.split(), other.split()
+    if not first or not second:
+        return one == other
+    short, long = sorted((first, second), key=len)
+    return long[: len(short)] == short
+
+
+def _is_duplicate(seen: dict, row, partner_id, index: PartnerIndex) -> bool:
+    """Есть ли уже такая строка. `seen` пополняется в `_remember`."""
+    key = (row.occurred_on, _amount_key(row.amount))
+    mine = _partner_key(partner_id, row.partner_raw, index)
+    return any(_partner_same(mine, other) for other in seen.get(key, ()))
+
+
+def _remember(seen: dict, row, partner_id, index: PartnerIndex) -> None:
+    """Запомнить только что заведённую строку: дубль внутри файла — тоже дубль."""
+    key = (row.occurred_on, _amount_key(row.amount))
+    seen.setdefault(key, []).append(
+        _partner_key(partner_id, row.partner_raw, index)
     )
-
-
-def _row_key(row) -> tuple:
-    return _key(row.occurred_on, row.amount, row.description)
 
 
 def _preview(row, partner_id, partner_name, duplicate: bool) -> dict:
@@ -565,7 +653,11 @@ def _prepare(db: Session, file, pasted: str) -> tuple:
         raise HTTPException(400, "В файле не нашлось ни одной строки поступления")
     if len(rows) > MAX_IMPORT_ROWS:
         raise HTTPException(400, f"Строк больше {MAX_IMPORT_ROWS} — похоже, это не тот файл")
-    return rows, _match_partners(db, rows), _existing_keys(db, rows), name
+    # Справочник площадок читается ОДИН раз: он нужен и сопоставлению имён,
+    # и ключу дубля — в нём теперь есть площадка.
+    index = PartnerIndex(db.execute(select(Partner.id, Partner.name)).all())
+    matched = _match_partners(rows, index)
+    return rows, matched, _existing(db, rows, index), name, index
 
 
 @payments_router.post(
@@ -583,12 +675,12 @@ def import_check(
     нём попадаются пустые строки, подписи и «синхра» вместо «да». Увидеть это
     надо до того, как строки лягут в таблицу, а не после.
     """
-    rows, matched, seen, name = _prepare(db, file, pasted)
+    rows, matched, seen, name, index = _prepare(db, file, pasted)
     partners = {pid: pname for pid, pname in db.execute(select(Partner.id, Partner.name))}
     preview, duplicates = [], 0
     for row in rows:
         partner_id = matched.get(row.line)
-        duplicate = _row_key(row) in seen
+        duplicate = _is_duplicate(seen, row, partner_id, index)
         duplicates += duplicate
         preview.append(
             # Показываем то же имя, что и запишем: очищенное от формы
@@ -635,16 +727,16 @@ def import_apply(
     Дубли по умолчанию пропускаются: файл обычно заливают повторно, чтобы
     добрать новые строки, а не чтобы завести те же второй раз.
     """
-    rows, matched, seen, name = _prepare(db, file, pasted)
+    rows, matched, seen, name, index = _prepare(db, file, pasted)
     created = skipped = duplicates = 0
     for row in rows:
         if row.problems:
             skipped += 1
             continue
-        if skip_duplicates and _row_key(row) in seen:
+        partner_id = matched.get(row.line)
+        if skip_duplicates and _is_duplicate(seen, row, partner_id, index):
             duplicates += 1
             continue
-        partner_id = matched.get(row.line)
         db.add(
             PartnerPayment(
                 id=uuid.uuid4(),
@@ -665,7 +757,7 @@ def import_apply(
                 created_by=current_user.id,
             )
         )
-        seen.add(_row_key(row))      # дубль внутри самого файла — тоже дубль
+        _remember(seen, row, partner_id, index)
         created += 1
     log_action(
         db, current_user, "payment.import", entity_type="payment",
