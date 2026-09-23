@@ -123,6 +123,10 @@ class ParseResult:
     header_row: int
     rows: list
     problems: list = field(default_factory=list)
+    # ПРЕДУПРЕЖДЕНИЯ — НЕ ОШИБКИ: файл разобран, загрузить его можно, но с ним
+    # что-то не так, и человек должен это увидеть до загрузки. `problems`
+    # для этого не годятся: они отказывают в загрузке.
+    warnings: list = field(default_factory=list)
 
     @property
     def totals(self) -> dict:
@@ -339,8 +343,21 @@ def parse_number(value) -> Decimal | None:
     """
     if value is None:
         return None
+    # ЛОГИЧЕСКАЯ ЯЧЕЙКА — НЕ ЧИСЛО, и это не придирка: в Python `bool` —
+    # подкласс `int`, поэтому ИСТИНА из Excel проходила проверку «это число» и
+    # роняла `Decimal('True')`, а вместе с ним и разбор всего файла с ошибкой
+    # 500. Настоящий случай: отчёт Believe KZ (23.09.2026).
+    if isinstance(value, bool):
+        return None
     if isinstance(value, (int, float, Decimal)):
-        return Decimal(str(value))
+        # NaN и бесконечность Decimal принимает молча, и дальше они отравили бы
+        # итоги: сумма с NaN — это NaN, и объяснить её человеку будет нечем.
+        if value != value or value in (float("inf"), float("-inf")):
+            return None
+        try:
+            return Decimal(str(value))
+        except InvalidOperation:
+            return None
     raw = _clean(value).replace(" ", "").replace(" ", "")
     if not raw:
         return None
@@ -578,7 +595,53 @@ def parse_report(
                 continue
         result.rows.append(row)
 
+    _warn_if_lossy(result)
     return result
+
+
+# «?» ВНУТРИ СЛОВА — след потерянной буквы, а не знак вопроса. Настоящий
+# вопросительный знак стоит в конце («Кто?», «Где ты?»), а между двумя буквами
+# он оказывается тогда, когда файл сохранили в кодировку, которая эту букву не
+# вмещает: так пропадают казахские ә, ғ, қ, ң, ө, ұ, ү, і, турецкие ı и ğ,
+# скандинавские ø и å, немецкое ä.
+LOST_LETTER = re.compile(r"\w\?\w", re.UNICODE)
+# Порог: и по числу строк, и по доле. Одна-две такие строки бывают и в
+# честном файле (название вида «Что?Где?Когда»), а вот сотые доли процента на
+# большом отчёте — это уже потеря.
+LOSSY_MIN_ROWS = 10
+LOSSY_MIN_SHARE = 0.002
+
+
+def _warn_if_lossy(result: ParseResult) -> None:
+    """
+    Сказать человеку, если файл приехал с уже потерянными буквами.
+
+    ПРОВЕРЕНО НА НАСТОЯЩИХ ФАЙЛАХ (23.09.2026): у одного и того же отчёта
+    версия .txt и версия .xlsx различаются именно этим. В Spotify за январь
+    текстовый вариант содержит 21 015 строк с «?» вместо букв, а книга Excel —
+    две, и в ней целы Ğ, ş, ö, Ø. То же у Believe KZ (8 357 против нуля) и у
+    ОМА. Текстовый вариант сохранён в cp1251, а в ней этих букв просто нет.
+
+    Починить такой файл нечем: «?» не помнит, какая буква там была. Поэтому
+    единственное полезное действие — предупредить ДО загрузки, пока человек
+    может взять другой вариант того же отчёта.
+    """
+    if not result.rows:
+        return
+    lost = sum(
+        1 for row in result.rows
+        if (row.title and LOST_LETTER.search(row.title))
+        or (row.artist and LOST_LETTER.search(row.artist))
+    )
+    if lost < LOSSY_MIN_ROWS or lost < len(result.rows) * LOSSY_MIN_SHARE:
+        return
+    result.warnings.append(
+        f"В файле {lost} строк, где буквы заменены на «?» — он сохранён в "
+        "кодировке, которая их не вмещает (так получается при сохранении в "
+        "«Текст с разделителями»). Загрузить можно, но названия и исполнители "
+        "приедут испорченными. Если у этого отчёта есть вариант .xlsx, "
+        "возьмите его: в нём буквы обычно целы."
+    )
 
 
 def _apply_formula(expr: str, numbers: dict, row: ReportRow, label: str):

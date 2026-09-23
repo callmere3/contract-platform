@@ -742,6 +742,24 @@ export function PartnerReportsPage() {
                 </div>
               )}
 
+              {/* ПРЕДУПРЕЖДЕНИЕ — НЕ ОТКАЗ: файл разобран и грузится, но с ним
+                  что-то не так. Сейчас это «буквы в файле уже потеряны» —
+                  решение принимает человек, потому что у него, возможно,
+                  лежит рядом тот же отчёт в .xlsx, где они целы. Красным не
+                  красим: красный здесь означал бы «загрузить нельзя». */}
+              {(preview.warnings || []).length > 0 && (
+                <div className="mt-4 flex flex-col gap-1.5">
+                  {preview.warnings.map((w) => (
+                    <div
+                      key={w}
+                      className="rounded-md border border-accent/40 bg-accent-soft px-3 py-2 text-[13px] text-text"
+                    >
+                      {w}
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {preview.preview.length > 0 && (
                 <>
                   {/* СТРОКИ, КОТОРЫХ НЕТ В НОМЕНКЛАТУРЕ, — отдельным взглядом:

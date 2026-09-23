@@ -958,6 +958,9 @@ def preview(
             else None
         ),
         "problems": result.problems,
+        # Предупреждения не мешают загрузке, но должны быть видны до неё:
+        # сейчас это «файл потерял буквы» (см. _warn_if_lossy).
+        "warnings": result.warnings,
         "preview": [_preview_row(r, resolved) for r in head],
         "unmatched_rows": [_preview_row(r, resolved) for r in missing],
         "preview_limited": totals["rows"] > len(head),
