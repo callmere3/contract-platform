@@ -4,6 +4,7 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useTheme } from '../theme/ThemeContext';
 import { useAuth } from '../auth/AuthContext';
 import {
+  canHaveAchievements,
   canUseDocs,
   canViewPartnerReports,
   canViewPayments,
@@ -119,11 +120,14 @@ export function Header({ companyName = 'ML Docs' }) {
   // всплывашки — её легко пропустить.
   const [freshAchievements, setFreshAchievements] = useState(0);
   useEffect(() => {
-    const refresh = () => setFreshAchievements(unopenedCodes().length);
+    // У кого достижений нет (роли второго продукта), у того и точки быть не
+    // должно: в локальном хранилище могло остаться чужое с этого браузера.
+    const refresh = () =>
+      setFreshAchievements(canHaveAchievements(user?.role) ? unopenedCodes().length : 0);
     refresh();
     window.addEventListener(ACHIEVEMENTS_CHANGED_EVENT, refresh);
     return () => window.removeEventListener(ACHIEVEMENTS_CHANGED_EVENT, refresh);
-  }, []);
+  }, [user?.role]);
 
   // Вкладки ML Finance. Своих «Пользователей» и «Уведомлений» у него нет —
   // администрирование одно на оба продукта и живёт в ML Docs.

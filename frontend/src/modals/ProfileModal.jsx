@@ -4,6 +4,7 @@ import { Button } from '../components/ui/Button';
 import { ChampionBadge } from '../components/ui/ChampionBadge';
 import { useModal } from './ModalProvider';
 import { useAuth } from '../auth/AuthContext';
+import { canHaveAchievements } from '../auth/permissions';
 import { fetchMyAchievements } from '../api/profile';
 import { AchievementCard } from '../achievements/AchievementCard';
 import {
@@ -34,6 +35,7 @@ export function ProfileModal({ level, isTop }) {
   // с сервера, а не собирается здесь: кому она положена — решение о людях, и
   // жить оно должно рядом с самими достижениями.
   const [note, setNote] = useState(null);
+  const hasAchievements = canHaveAchievements(user?.role);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   // Что подсветить: значки, полученные с прошлого открытия профиля. Список
@@ -61,6 +63,10 @@ export function ProfileModal({ level, isTop }) {
   );
 
   useEffect(() => {
+    if (!hasAchievements) {
+      setLoading(false);
+      return undefined;
+    }
     let alive = true;
     fetchMyAchievements()
       .then((data) => {
@@ -75,7 +81,7 @@ export function ProfileModal({ level, isTop }) {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [hasAchievements]);
 
   return (
     <Modal title="Профиль" onClose={closeModal} level={level} isTop={isTop} width={640}>
@@ -118,6 +124,11 @@ export function ProfileModal({ level, isTop }) {
           </Button>
         </div>
 
+        {/* ДОСТИЖЕНИЯ ЕСТЬ НЕ У ВСЕХ: они про работу с документами, и роли
+            второго продукта их не за что получать. Пустой раздел с серыми
+            плитками объяснял бы человеку, чего он лишён, вместо того чтобы
+            помогать. */}
+        {hasAchievements && (
         <section className="flex flex-col gap-2.5">
           <div className="text-[11px] font-semibold tracking-[0.08em] uppercase text-text-muted">
             Достижения
@@ -146,6 +157,7 @@ export function ProfileModal({ level, isTop }) {
             </div>
           )}
         </section>
+        )}
       </div>
     </Modal>
   );

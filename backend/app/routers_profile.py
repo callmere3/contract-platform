@@ -17,6 +17,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.achievements import honorary_note, user_achievements
+from app.roles import CAN_HAVE_ACHIEVEMENTS
 from app.auth import get_current_user
 from app.db import get_session
 from app.models import User, UserEvent
@@ -44,6 +45,11 @@ def my_achievements(
     count, secret}, …]} — и полученные, и ещё нет (у вторых заполнен
     progress). Секретное, пока не получено, приходит «замком» без условия.
     """
+    # Достижения — про работу с документами: у ролей второго продукта их не
+    # за что получать, и эндпоинт им отвечает отказом, а не пустым списком.
+    # Пустой список читался бы как «пока ничего не набрал».
+    if current_user.role not in CAN_HAVE_ACHIEVEMENTS:
+        raise HTTPException(403, "Достижения считаются по работе с документами")
     return {
         "achievements": user_achievements(db, current_user),
         # Подпись над списком — у почётных учёток (см. achievements.py).

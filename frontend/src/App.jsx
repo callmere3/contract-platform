@@ -61,8 +61,10 @@ function AppShell() {
   // за документ, а по итогам месяца (кубок) — тогда узнать о нём больше
   // неоткуда. Второй раз проверяем после генерации (см. DocFormPage).
   useEffect(() => {
-    refreshAchievements();
-  }, []);
+    // Только у ролей, которым достижения положены: остальным эндпоинт
+    // отвечает отказом, и дёргать его на каждом входе незачем.
+    if (canUseDocs(user?.role)) refreshAchievements();
+  }, [user?.role]);
 
   return (
     <div className="min-h-screen bg-bg text-text font-sans">

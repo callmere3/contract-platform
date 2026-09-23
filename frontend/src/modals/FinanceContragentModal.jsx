@@ -217,7 +217,13 @@ export function FinanceContragentModal({ contragentId, level, isTop, onChanged }
       {!loading && card && (
         <div className="flex flex-col gap-5">
           {/* Баланс крупно: за ним сюда и приходят. Рядом — из чего сложился,
-              иначе «−3 000» ничего не объясняет. */}
+              иначе «−3 000» ничего не объясняет.
+
+              БАЛАНС И ОПЕРАЦИИ ВИДЯТ НЕ ВСЕ (19.09.2026): финансовый менеджер
+              работает со справочниками, и сколько кому выплачено, ему знать
+              не нужно. Сервер таких чисел и не присылает — здесь мы только не
+              рисуем пустую рамку. */}
+          {card.shows_balances !== false && (
           <div className="flex items-end justify-between gap-4 p-4 rounded-input border border-border">
             <div>
               <div className="text-[11px] font-semibold tracking-[0.08em] uppercase text-text-muted">
@@ -236,6 +242,7 @@ export function FinanceContragentModal({ contragentId, level, isTop, onChanged }
               <div>расходы: {formatMoney(card.expense_total)}</div>
             </div>
           </div>
+          )}
 
           <section className="flex flex-col gap-1.5">
             <Row label="ФИО / название" value={card.name} />
@@ -264,6 +271,7 @@ export function FinanceContragentModal({ contragentId, level, isTop, onChanged }
             defaultOpen
           />
 
+          {card.shows_balances !== false && (
           <section className="flex flex-col gap-2">
             <div className="text-[11px] font-semibold tracking-[0.08em] uppercase text-text-muted">
               Операции
@@ -285,6 +293,7 @@ export function FinanceContragentModal({ contragentId, level, isTop, onChanged }
               />
             ))}
           </section>
+          )}
         </div>
       )}
     </Modal>

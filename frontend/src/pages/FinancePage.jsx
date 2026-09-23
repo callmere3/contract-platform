@@ -4,6 +4,8 @@ import { PageHeader } from '../components/ui/PageHeader';
 import { Button } from '../components/ui/Button';
 import { useTags } from '../api/TagsContext';
 import { useModal } from '../modals/ModalProvider';
+import { useAuth } from '../auth/AuthContext';
+import { canViewBalances } from '../auth/permissions';
 import { formatMoney, listFinanceContragents } from '../api/finance';
 
 /**
@@ -24,6 +26,7 @@ import { formatMoney, listFinanceContragents } from '../api/finance';
 const PAGE_SIZE = 100;
 
 export function FinancePage() {
+  const { role } = useAuth();
   const [q, setQ] = useState('');
   const [country, setCountry] = useState('');
   const [contragentType, setContragentType] = useState('');
@@ -127,6 +130,7 @@ export function FinancePage() {
             <FinanceRow
               key={c.id}
               contragent={c}
+              showBalance={canViewBalances(role)}
               onClick={() =>
                 openModal('financeContragent', { contragentId: c.id, onChanged: load })
               }
@@ -175,7 +179,7 @@ export function FinancePage() {
  * обычным текстом. Красить плюс зелёным не стали: в списке из сотни строк
  * два цвета сразу превращаются в ёлку, а искать глазом надо именно минусы.
  */
-function FinanceRow({ contragent, onClick }) {
+function FinanceRow({ contragent, onClick, showBalance }) {
   const negative = Number(contragent.balance) < 0;
   const zero = Number(contragent.balance) === 0;
 
@@ -195,13 +199,18 @@ function FinanceRow({ contragent, onClick }) {
             .join(' · ')}
         </span>
       </span>
-      <span
-        className={`text-[15px] font-semibold tabular-nums flex-shrink-0 ${
-          negative ? 'text-danger' : zero ? 'text-text-muted' : 'text-text'
-        }`}
-      >
-        {formatMoney(contragent.balance)}
-      </span>
+      {/* Баланс видят не все: у кого права нет, тому сервер его и не
+          присылает, а строка остаётся справочной — кто это и какие у него
+          псевдонимы. */}
+      {showBalance && (
+        <span
+          className={`text-[15px] font-semibold tabular-nums flex-shrink-0 ${
+            negative ? 'text-danger' : zero ? 'text-text-muted' : 'text-text'
+          }`}
+        >
+          {formatMoney(contragent.balance)}
+        </span>
+      )}
     </button>
   );
 }

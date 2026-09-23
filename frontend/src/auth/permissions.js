@@ -115,6 +115,11 @@ export const canUseFinance = (role) => is(role, ADMIN, DIRECTOR, FINANCE_MANAGER
 // backend: CAN_ADD_FINANCE_OPERATIONS = (ADMIN, DIRECTOR) — вносить деньги
 // могут оба, а вот удалять (CAN_DELETE_FINANCE_OPERATIONS) — только admin.
 // Правки операции нет вовсе: ошибочную удаляют и вносят заново.
+// backend: CAN_VIEW_BALANCES. Баланс и операции по контрагенту — отдельно от
+// доступа к продукту: финансовый менеджер работает со справочниками, а
+// сколько кому выплачено, ему знать не нужно.
+export const canViewBalances = (role) => is(role, ADMIN, DIRECTOR);
+
 export const canAddFinanceOperations = (role) => is(role, ADMIN, DIRECTOR);
 export const canDeleteFinanceOperations = (role) => is(role, ADMIN);
 
@@ -166,6 +171,11 @@ export const canExport = (role) => is(role, ADMIN, DIRECTOR);
 // видят соревнующиеся, не соревнование. Чисел доска не показывает — только
 // порядок мест и шкалу относительно лидера.
 export const canViewChampionBoard = (role) => canUseDocs(role);
+
+// backend: CAN_HAVE_ACHIEVEMENTS. Достижения — про работу с документами.
+// Финансовому менеджеру их не за что получать, и раздел в профиле ему не
+// показываем: пустые серые плитки объясняли бы, чего он лишён.
+export const canHaveAchievements = (role) => canUseDocs(role);
 
 // backend: CAN_IMPORT = (ADMIN,)
 export const canImport = (role) => is(role, ADMIN);

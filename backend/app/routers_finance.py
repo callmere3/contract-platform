@@ -59,6 +59,7 @@ from app.roles import (
     CAN_ADD_FINANCE_OPERATIONS,
     CAN_DELETE_FINANCE_OPERATIONS,
     CAN_USE_FINANCE,
+    CAN_VIEW_BALANCES,
 )
 from app.routers_contragents import search_contragents
 
@@ -80,6 +81,7 @@ def list_with_balances(
     page: int = 1,
     page_size: int = 100,
     db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     """
     Список контрагентов с балансом у каждого.
@@ -101,15 +103,24 @@ def list_with_balances(
     )
 
     items = found["contragents"]
-    by_id = balances(db, [uuid.UUID(item["id"]) for item in items])
-    for item in items:
-        item["balance"] = money(by_id.get(uuid.UUID(item["id"]), Decimal("0")))
+    # БАЛАНС ВИДЯТ НЕ ВСЕ: у кого права нет, тому его не считаем вовсе — не
+    # «скрываем на экране», а не отдаём. Список контрагентов при этом тот же:
+    # справочник нужен и без сумм.
+    if current_user.role in CAN_VIEW_BALANCES:
+        by_id = balances(db, [uuid.UUID(item["id"]) for item in items])
+        for item in items:
+            item["balance"] = money(by_id.get(uuid.UUID(item["id"]), Decimal("0")))
+    found["shows_balances"] = current_user.role in CAN_VIEW_BALANCES
 
     return found
 
 
 @finance_router.get("/contragents/{contragent_id}")
-def finance_card(contragent_id: uuid.UUID, db: Session = Depends(get_session)) -> dict:
+def finance_card(
+    contragent_id: uuid.UUID,
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> dict:
     """
     Карточка контрагента глазами финансов: ФИО, никнеймы, реквизиты, баланс и
     все операции.
@@ -125,7 +136,11 @@ def finance_card(contragent_id: uuid.UUID, db: Session = Depends(get_session)) -
     if contragent is None:
         raise HTTPException(status_code=404, detail="Контрагент не найден")
 
-    sums = totals(db, contragent_id)
+    # Суммы и операции — только тем, кому положено (см. CAN_VIEW_BALANCES).
+    # Карточку как справочник (реквизиты, псевдонимы, треки) видят все, у
+    # кого есть продукт: она нужна и без денег.
+    shows_money = current_user.role in CAN_VIEW_BALANCES
+    sums = totals(db, contragent_id) if shows_money else None
     # Сколько треков каталога принадлежит этому контрагенту — по ССЫЛКЕ, а не
     # по совпадению имени: у карточки бывает несколько написаний в выгрузке
     # Dista, и счёт по титлу показал бы не все. DISTINCT обязателен: у трека
@@ -144,7 +159,7 @@ def finance_card(contragent_id: uuid.UUID, db: Session = Depends(get_session)) -
         # прыгал между обновлениями страницы.
         .order_by(FinanceOperation.occurred_on.desc(), FinanceOperation.created_at.desc())
         .all()
-    )
+    ) if shows_money else []
 
     return {
         "id": str(contragent.id),
@@ -161,9 +176,12 @@ def finance_card(contragent_id: uuid.UUID, db: Session = Depends(get_session)) -
         "reg_number": contragent.reg_number,
         "nicknames": [n.nickname for n in contragent.nicknames],
         "requisites": contragent.requisites or {},
-        "balance": money(sums["balance"]),
-        "income_total": money(sums["income"]),
-        "expense_total": money(sums["expense"]),
+        # Денег в ответе нет вовсе, если их не положено видеть: пустые поля
+        # экран нарисовал бы нулями, а ноль — это тоже сумма.
+        "shows_balances": shows_money,
+        "balance": money(sums["balance"]) if shows_money else None,
+        "income_total": money(sums["income"]) if shows_money else None,
+        "expense_total": money(sums["expense"]) if shows_money else None,
         "operations": [_operation(row) for row in operations],
     }
 

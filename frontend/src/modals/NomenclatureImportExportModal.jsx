@@ -146,7 +146,9 @@ export function NomenclatureImportExportModal({ level, isTop, filters = {}, onIm
 
   return (
     <Modal
-      title="Импорт / экспорт номенклатуры"
+      title={
+        canImportNomenclature(role) ? 'Импорт / экспорт номенклатуры' : 'Экспорт номенклатуры'
+      }
       onClose={closeModal}
       level={level}
       isTop={isTop}
