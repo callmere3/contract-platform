@@ -113,6 +113,45 @@ function MoneyCell({ value, disabled, onSave, className }) {
   );
 }
 
+/**
+ * Ячейка со ставкой — курс или НДС.
+ *
+ * РАЗДЕЛИТЕЛЬ ДРОБНОЙ ЧАСТИ — ЗАПЯТАЯ (замечание владельца 23.09.2026): она
+ * стоит во всех суммах таблицы, и точка у одного только курса выглядит
+ * опиской. Сервер хранит и отдаёт число точкой — это машинный вид, — поэтому
+ * запятую подставляем на экране, а обратно принимаем любую: `_parse_money` и
+ * `_parse_percent` понимают оба разделителя.
+ *
+ * Знак процента у НДС дорисован по той же причине, что запятая: чтобы не
+ * гадать, ставку тут ждут или коэффициент. При правке оба украшения убираем —
+ * иначе курсор спотыкается о лишний символ.
+ */
+function RateCell({ value, disabled, onSave, className, suffix = '', placeholder }) {
+  const [text, setText] = useState(value ?? '');
+  const [editing, setEditing] = useState(false);
+
+  useEffect(() => {
+    if (!editing) setText(value ?? '');
+  }, [value, editing]);
+
+  const shown = value ? `${String(value).replace('.', ',')}${suffix}` : '';
+
+  return (
+    <input
+      value={editing ? text : shown}
+      disabled={disabled}
+      placeholder={placeholder}
+      onFocus={() => setEditing(true)}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={() => {
+        setEditing(false);
+        if (text !== (value ?? '')) onSave(text);
+      }}
+      className={className}
+    />
+  );
+}
+
 /** Сумма для ячейки: те же тысячи, но без «₽» — он в шапке колонки. */
 function amount(value) {
   return formatMoney(value).replace(' ₽', '');
@@ -349,12 +388,24 @@ export function PaymentsPage() {
                         partners={partners}
                         value={r.partner_id ?? ''}
                         allowEmpty
+                        // Мелкие партнёры по синхронизации отчётов не
+                        // присылают, в справочнике площадок их нет и быть не
+                        // должно — а деньги от них приходят, и строку надо
+                        // подписать. Имя хранится у поступления отдельным
+                        // полем, справочник при этом не засоряется.
+                        allowCustom
+                        customValue={r.partner_name ?? ''}
                         placeholder="— не указан —"
                         inputClassName={cellInput}
                         onChange={(id) => {
                           if (!manage) return;
                           edit(r.id, 'partner_id', id);
                           save(r.id, 'partner_id', id);
+                        }}
+                        onCustom={(name) => {
+                          if (!manage) return;
+                          edit(r.id, 'partner_name', name);
+                          save(r.id, 'partner_name', name);
                         }}
                       />
                     </td>
@@ -376,26 +427,56 @@ export function PaymentsPage() {
                         className={`${cellInput} tabular-nums text-right`}
                       />
                     </td>
-                    {/* Курс и НДС — множители, а не деньги: тысяч в них не
-                        бывает, и разделять там нечего. */}
-                    {['rate', 'vat_rate'].map((field) => (
-                      <td key={field} className={`${td} w-[110px]`}>
-                        <input
-                          value={r[field] ?? ''}
-                          disabled={!manage}
-                          onChange={(e) => edit(r.id, field, e.target.value)}
-                          onBlur={(e) => save(r.id, field, e.target.value)}
-                          className={`${cellInput} tabular-nums text-right`}
-                        />
-                      </td>
-                    ))}
-                    <td className={`${td} w-[140px]`}>
+                    {/* Курс — множитель, а не деньги: тысяч в нём не бывает,
+                        и разделять там нечего. */}
+                    <td className={`${td} w-[110px]`}>
+                      <RateCell
+                        value={r.rate}
+                        disabled={!manage}
+                        onSave={(v) => save(r.id, 'rate', v)}
+                        className={`${cellInput} tabular-nums text-right`}
+                      />
+                    </td>
+                    {/* НДС — СТАВКА В ПРОЦЕНТАХ (уточнение владельца
+                        23.09.2026): «22» значит 22%. Коэффициент человек не
+                        набирает — он знает ставку. Знак процента дорисован
+                        для того, чтобы не гадать, что здесь ждут. */}
+                    <td className={`${td} w-[110px]`}>
+                      <RateCell
+                        value={r.vat_rate}
+                        suffix="%"
+                        placeholder="22%"
+                        disabled={!manage}
+                        onSave={(v) => save(r.id, 'vat_rate', v)}
+                        className={`${cellInput} tabular-nums text-right`}
+                      />
+                    </td>
+                    {/* СВЕРКА ПО ФОРМУЛЕ (владелец 23.09.2026):
+                        поступление / курс / (1 + НДС) должно дать сумму
+                        завода. Считает сервер — делить деньги на экране
+                        нельзя, они там строки.
+
+                        Расхождение показываем ЗНАЧКОМ, а не отдельным
+                        столбцом: это не ещё одно число для таблицы, а
+                        подсказка «проверьте ввод». Молчим, пока сумма
+                        поступления не заполнена: сверять не с чем. */}
+                    <td className={`${td} w-[140px] relative`}>
                       <MoneyCell
                         value={r.transfer_amount}
                         disabled={!manage}
                         onSave={(v) => save(r.id, 'transfer_amount', v)}
                         className={`${cellInput} tabular-nums text-right`}
                       />
+                      {r.expected_transfer != null &&
+                        r.transfer_amount != null &&
+                        Number(r.expected_transfer) !== Number(r.transfer_amount) && (
+                          <span
+                            className="absolute right-1 top-0 text-[11px] text-danger cursor-help"
+                            title={`По формуле должно быть ${amount(r.expected_transfer)}: сумма поступления / курс / (1 + НДС)`}
+                          >
+                            ≠
+                          </span>
+                        )}
                     </td>
                     <td className={`${td} w-[90px] text-center`}>
                       <input

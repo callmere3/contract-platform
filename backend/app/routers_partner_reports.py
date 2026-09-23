@@ -702,7 +702,24 @@ def link_payment(
     if payment is None:
         raise HTTPException(404, "Поступление не найдено")
 
-    if payment.partner_id is None:
+    if payment.partner_id is None and payment.partner_name:
+        # У строки вписана площадка, которой нет в справочнике (мелкий партнёр
+        # по синхронизации). Сверяем по имени: молча подменить её ссылкой на
+        # площадку отчёта нельзя — это стёрло бы то, что человек написал, а
+        # заодно скрыло бы ошибку, если платёж и правда чужой.
+        report_partner = db.get(Partner, report.partner_id)
+        written = " ".join(payment.partner_name.split()).casefold()
+        expected = " ".join((report_partner.name if report_partner else "").split()).casefold()
+        if written != expected:
+            raise HTTPException(
+                409,
+                "Площадки не совпадают: отчёт от «%s», а в поступлении вписано «%s»."
+                % (report_partner.name if report_partner else "—", payment.partner_name),
+            )
+        # Имя совпало — значит, это та же площадка, и теперь у неё есть ссылка.
+        payment.partner_id = report.partner_id
+        payment.partner_name = None
+    elif payment.partner_id is None:
         payment.partner_id = report.partner_id
     elif payment.partner_id != report.partner_id:
         report_partner = db.get(Partner, report.partner_id)

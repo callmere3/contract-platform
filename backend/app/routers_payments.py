@@ -48,8 +48,9 @@ payments_router = APIRouter(
 # правку: разойдись они, и через форму завелось бы то, чего правкой не
 # поправить.
 MONEY_FIELDS = ("amount", "transfer_amount", "actual_amount")
-# Ставки — курс и НДС: множители, а не деньги. Наружу уходят без хвоста
-# нулей и в итогах не складываются.
+# Ставки — курс и НДС. Наружу уходят без хвоста нулей и в итогах не
+# складываются: это не деньги. Разбираются РАЗНЫМИ функциями — курс это
+# множитель, а НДС с 23.09.2026 проценты («22» — это 22%).
 RATE_FIELDS = ("rate", "vat_rate")
 TEXT_FIELDS = ("description",)
 MAX_DESCRIPTION = 2000
@@ -80,6 +81,28 @@ def _parse_money(value, label: str) -> Decimal | None:
         return Decimal(text)
     except InvalidOperation:
         raise HTTPException(400, f"{label}: «{value}» — это не число")
+
+
+def _parse_percent(value) -> Decimal | None:
+    """
+    НДС — СТАВКА В ПРОЦЕНТАХ: «22», «22%», «22,5» → 22 (уточнение владельца
+    23.09.2026).
+
+    Коэффициент («1.22») человек не набирает: он знает ставку, а не множитель.
+    Знак процента принимаем и отбрасываем — его пишут по привычке, и отвергать
+    из-за него строку было бы придиркой.
+    """
+    text = str(value if value is not None else "").replace(" ", " ").strip()
+    text = text.replace("%", "").replace(" ", "").replace(",", ".")
+    if not text:
+        return None
+    try:
+        percent = Decimal(text)
+    except InvalidOperation:
+        raise HTTPException(400, f"НДС: «{value}» — это не число")
+    if percent < 0 or percent > 100:
+        raise HTTPException(400, f"НДС: «{value}» — ставка бывает от 0 до 100%")
+    return percent
 
 
 def _parse_date(value, label: str) -> date:
@@ -144,6 +167,27 @@ def _difference(payment: PartnerPayment):
     return _money(payment.transfer_amount - payment.actual_amount)
 
 
+def _expected_transfer(payment: PartnerPayment):
+    """
+    Сколько ДОЛЖНО завестись: сумма поступления / курс / (1 + НДС/100)
+    (формула владельца 23.09.2026).
+
+    Пусто, если не заполнена сама сумма: считать не из чего. А вот пустые курс
+    и НДС — не помеха: у рублёвого платежа без налога курс равен единице, а
+    ставка нулю, и требовать их заполнения значило бы просить набрать
+    очевидное.
+    """
+    if payment.amount is None:
+        return None
+    rate = payment.rate if payment.rate else Decimal(1)
+    vat = payment.vat_rate or Decimal(0)
+    try:
+        value = payment.amount / rate / (Decimal(1) + vat / Decimal(100))
+    except (InvalidOperation, ZeroDivisionError):
+        return None
+    return _money(value.quantize(Decimal("0.01")))
+
+
 def _out(payment: PartnerPayment, partner_name: str | None, linked: int = 0,
          number: int | None = None) -> dict:
     return {
@@ -153,7 +197,11 @@ def _out(payment: PartnerPayment, partner_name: str | None, linked: int = 0,
         "number": number,
         "occurred_on": payment.occurred_on.isoformat(),
         "partner_id": str(payment.partner_id) if payment.partner_id else None,
-        "partner": partner_name,
+        # Как строка подписана: имя из справочника либо набранное руками.
+        "partner": partner_name or payment.partner_name,
+        # Отдельно — набранное руками: полю ввода надо знать, что показывать,
+        # когда площадки в справочнике нет.
+        "partner_name": payment.partner_name,
         "description": payment.description,
         "amount": _money(payment.amount),
         "rate": _rate(payment.rate),
@@ -167,6 +215,9 @@ def _out(payment: PartnerPayment, partner_name: str | None, linked: int = 0,
         # нельзя. Пусто, пока не заполнены оба числа: разница с неизвестным —
         # не ноль и не «весь завод», а просто «ещё не с чем сверять».
         "difference": _difference(payment),
+        # СКОЛЬКО ДОЛЖНО ЗАВЕСТИСЬ ПО ФОРМУЛЕ: поступление / курс / (1+НДС).
+        # Считает сервер — на экране деньги не делят, они там строки.
+        "expected_transfer": _expected_transfer(payment),
         # Сколько отчётов привязано. Пока хоть один есть, фактический завод
         # СЧИТАЕТСЯ по ним, и руками его править нельзя — ни на экране, ни
         # через API: правку всё равно затёрло бы при следующей привязке.
@@ -193,10 +244,24 @@ def _apply(payment: PartnerPayment, body: dict, db: Session) -> list[str]:
             if db.get(Partner, partner_id) is None:
                 raise HTTPException(404, "Партнёр не найден")
             payment.partner_id = partner_id
+            # Выбор из справочника главнее набранного руками: иначе строка
+            # оказалась бы подписана дважды и по-разному.
+            payment.partner_name = None
         else:
             # Пусто — «ещё не разобрались, чей платёж», а не ошибка.
             payment.partner_id = None
         touched.append("partner_id")
+    if "partner_name" in body:
+        # ПЛОЩАДКА, КОТОРОЙ НЕТ В СПРАВОЧНИКЕ: мелкие партнёры по
+        # синхронизации. Имя набирают руками, и ссылка на справочник при этом
+        # снимается — иначе строка была бы подписана дважды.
+        name = str(body["partner_name"] or "").strip()
+        if len(name) > 200:
+            raise HTTPException(400, "Название площадки слишком длинное")
+        payment.partner_name = name or None
+        if name:
+            payment.partner_id = None
+        touched.append("partner_name")
     for name in TEXT_FIELDS:
         if name in body:
             text = str(body[name] or "").strip()
@@ -208,10 +273,12 @@ def _apply(payment: PartnerPayment, body: dict, db: Session) -> list[str]:
         if name in body:
             setattr(payment, name, _parse_money(body[name], "Сумма"))
             touched.append(name)
-    for name in RATE_FIELDS:
-        if name in body:
-            setattr(payment, name, _parse_money(body[name], "Ставка"))
-            touched.append(name)
+    if "rate" in body:
+        payment.rate = _parse_money(body["rate"], "Курс")
+        touched.append("rate")
+    if "vat_rate" in body:
+        payment.vat_rate = _parse_percent(body["vat_rate"])
+        touched.append("vat_rate")
     if "transferred" in body:
         payment.transferred = bool(body["transferred"])
         touched.append("transferred")
@@ -354,6 +421,9 @@ def update_payment(
             payment,
             partner.name if partner else None,
             _linked_reports(db, [payment.id]).get(payment.id, 0),
+            # НОМЕР ОБЯЗАТЕЛЕН И ЗДЕСЬ: страница подставляет ответ на место
+            # строки, и без номера он пропадал из таблицы до перезагрузки.
+            payment_numbers(db).get(payment.id),
         )
     }
 

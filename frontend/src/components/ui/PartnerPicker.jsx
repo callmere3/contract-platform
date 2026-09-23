@@ -7,9 +7,16 @@ import { createPortal } from 'react-dom';
  * избавляет. Стоит начать печатать — перечень сразу сужается до подходящих.
  *
  * Ищет и по имени, и по коду Dista: у человека со строчкой отчёта в руках
- * чаще именно код. Выбрать можно ТОЛЬКО существующую площадку — значение
- * наружу это её id, а не набранный текст: поступление привязывается к
+ * чаще именно код. Обычно выбрать можно ТОЛЬКО существующую площадку —
+ * значение наружу это её id, а не набранный текст: отчёт привязывается к
  * справочнику, а не к тому, как его назвали в поле.
+ *
+ * ИСКЛЮЧЕНИЕ — `allowCustom` (таблица поступлений, 23.09.2026). Мелкие
+ * партнёры по синхронизации отчётов не присылают, в справочнике площадок их
+ * нет и быть не должно, а деньги от них приходят и строку подписать надо.
+ * Тогда набранное имя можно оставить как есть — оно уходит через `onCustom`
+ * и хранится у поступления отдельным полем. Заводить ради этого площадку
+ * нельзя: справочник — это те, по кому мы разбираем отчёты.
  *
  * ОДИН КОМПОНЕНТ НА ДВА ЭКРАНА — загрузка отчёта и таблица поступлений.
  * Второй такой же со своим поведением разошёлся бы с первым при первой же
@@ -26,6 +33,9 @@ export function PartnerPicker({
   inputClassName,
   placeholder = '— начните вводить —',
   allowEmpty = false,
+  allowCustom = false,
+  customValue = '',
+  onCustom,
 }) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
@@ -34,6 +44,9 @@ export function PartnerPicker({
   const input = useRef(null);
   const dropdown = useRef(null);
   const chosen = partners.find((p) => p.id === value) || null;
+  // Набранное руками имя показывается так же, как выбранное из справочника:
+  // для человека это одно и то же — чей платёж.
+  const shown = chosen?.name ?? (allowCustom ? customValue : '') ?? '';
 
   const found = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -82,12 +95,18 @@ export function PartnerPicker({
     setQuery('');
   }
 
+  function keepTyped() {
+    onCustom?.(query.trim());
+    setOpen(false);
+    setQuery('');
+  }
+
   return (
     <div className="relative" ref={box}>
       <input
         ref={input}
-        value={open ? query : chosen?.name ?? ''}
-        placeholder={chosen ? chosen.name : placeholder}
+        value={open ? query : shown}
+        placeholder={shown || placeholder}
         onFocus={() => {
           place();
           setQuery('');
@@ -100,6 +119,8 @@ export function PartnerPicker({
         }}
         onKeyDown={(e) => {
           if (e.key === 'Enter' && found.length) pick(found[0]);
+          // Ничего не нашлось, но имя набрано — оставляем как есть.
+          else if (e.key === 'Enter' && allowCustom && query.trim()) keepTyped();
           if (e.key === 'Escape') {
             setOpen(false);
             setQuery('');
@@ -125,7 +146,18 @@ export function PartnerPicker({
                 — не указан —
               </button>
             )}
-            {found.length === 0 && (
+            {allowCustom && query.trim() && (
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={keepTyped}
+                className="block w-full text-left px-3 py-2 text-[13px] bg-transparent border-0 cursor-pointer font-sans text-text hover:bg-hover"
+              >
+                Оставить как есть: <b>{query.trim()}</b>
+                <span className="text-text-muted"> — площадки нет в справочнике</span>
+              </button>
+            )}
+            {found.length === 0 && !(allowCustom && query.trim()) && (
               <div className="px-3 py-2 text-[12.5px] text-text-muted">Ничего не нашлось</div>
             )}
             {found.map((p) => (
