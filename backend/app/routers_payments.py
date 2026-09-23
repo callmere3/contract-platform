@@ -28,7 +28,7 @@ import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -36,6 +36,7 @@ from app.audit import log_action
 from app.auth import get_current_user, require_role
 from app.db import get_session
 from app.models import Partner, PartnerPayment, PartnerReport, User
+from app.payments_import import parse_rows
 from app.roles import CAN_MANAGE_PAYMENTS, CAN_VIEW_PAYMENTS
 
 payments_router = APIRouter(
@@ -47,13 +48,16 @@ payments_router = APIRouter(
 # Поля, которые можно править, и как их читать. Список ОДИН на создание и
 # правку: разойдись они, и через форму завелось бы то, чего правкой не
 # поправить.
-MONEY_FIELDS = ("amount", "transfer_amount", "actual_amount")
+MONEY_FIELDS = ("amount", "currency_amount", "transfer_amount", "actual_amount")
 # Ставки — курс и НДС. Наружу уходят без хвоста нулей и в итогах не
 # складываются: это не деньги. Разбираются РАЗНЫМИ функциями — курс это
 # множитель, а НДС с 23.09.2026 проценты («22» — это 22%).
 RATE_FIELDS = ("rate", "vat_rate")
 TEXT_FIELDS = ("description",)
 MAX_DESCRIPTION = 2000
+# Предел на импорт: квартал — это семь десятков строк, тысячи означают,
+# что выбрали не тот файл.
+MAX_IMPORT_ROWS = 5000
 
 
 def _money(value) -> str | None:
@@ -178,20 +182,21 @@ def _difference(payment: PartnerPayment):
 
 def _expected_transfer(payment: PartnerPayment):
     """
-    Сколько ДОЛЖНО завестись: сумма поступления / курс / (1 + НДС/100)
-    (формула владельца 23.09.2026).
+    Сколько ДОЛЖНО завестись: сумма поступления / (1 + НДС/100).
 
-    Пусто, если не заполнена сама сумма: считать не из чего. А вот пустые курс
-    и НДС — не помеха: у рублёвого платежа без налога курс равен единице, а
-    ставка нулю, и требовать их заполнения значило бы просить набрать
-    очевидное.
+    КУРСА В ФОРМУЛЕ НЕТ (уточнение владельца 23.09.2026): все суммы приходят
+    сразу в рублях, пересчитывать нечего. Валютная сумма у строки есть, но она
+    справочная.
+
+    Пусто, если не заполнена сама сумма: считать не из чего. А вот пустой НДС
+    не помеха — у платежа без налога ставка нулевая, и требовать её заполнения
+    значило бы просить набрать очевидное.
     """
     if payment.amount is None:
         return None
-    rate = payment.rate if payment.rate else Decimal(1)
     vat = payment.vat_rate or Decimal(0)
     try:
-        value = payment.amount / rate / (Decimal(1) + vat / Decimal(100))
+        value = payment.amount / (Decimal(1) + vat / Decimal(100))
     except (InvalidOperation, ZeroDivisionError):
         return None
     return _money(value.quantize(Decimal("0.01")))
@@ -213,6 +218,9 @@ def _out(payment: PartnerPayment, partner_name: str | None, linked: int = 0,
         "partner_name": payment.partner_name,
         "description": payment.description,
         "amount": _money(payment.amount),
+        # Справочная валютная сумма: в расчётах не участвует.
+        "currency_amount": _money(payment.currency_amount),
+        "currency": payment.currency,
         "rate": _rate(payment.rate),
         "vat_rate": _rate(payment.vat_rate),
         "transfer_amount": _money(payment.transfer_amount),
@@ -282,6 +290,12 @@ def _apply(payment: PartnerPayment, body: dict, db: Session) -> list[str]:
         if name in body:
             setattr(payment, name, _parse_money(body[name], "Сумма"))
             touched.append(name)
+    if "currency" in body:
+        code = str(body["currency"] or "").strip()
+        if len(code) > 16:
+            raise HTTPException(400, "Валюта: слишком длинное обозначение")
+        payment.currency = code or None
+        touched.append("currency")
     if "rate" in body:
         payment.rate = _parse_money(body["rate"], "Курс")
         touched.append("rate")
@@ -435,6 +449,218 @@ def update_payment(
             payment_numbers(db).get(payment.id),
         )
     }
+
+
+# --------------------------------------------------------------- импорт
+
+def _normalized(name: str) -> str:
+    """Имя площадки для сравнения: регистр и лишние пробелы не в счёт."""
+    return " ".join(str(name or "").split()).casefold()
+
+
+def _match_partners(db: Session, rows: list) -> dict:
+    """
+    Имя из файла → площадка справочника, если нашлась.
+
+    ТОЛЬКО ТОЧНОЕ СОВПАДЕНИЕ (после приведения регистра и пробелов). В выписке
+    плательщик записан как «ОБЩЕСТВО С ОГРАНИЧЕННОЙ ОТВЕТСТВЕННОСТЬЮ …», а в
+    справочнике площадка называется коротко, и угадывать тут нельзя: привязать
+    деньги к чужой площадке хуже, чем оставить строку подписанной текстом.
+    Что не нашлось — ложится в `partner_name`, ровно для этого он и заведён.
+    """
+    known = {
+        _normalized(name): pid
+        for pid, name in db.execute(select(Partner.id, Partner.name))
+    }
+    return {
+        row.partner_raw: known.get(_normalized(row.partner_raw))
+        for row in rows
+        if row.partner_raw
+    }
+
+
+def _existing_keys(db: Session, rows: list) -> set:
+    """
+    Что уже заведено — чтобы повторный импорт того же файла не задвоил строки.
+
+    Ключ — дата, сумма и описание: своего номера у платежа в файле нет, а эти
+    три вместе повторяются только у настоящего дубля. Совпало — строку
+    пропускаем и говорим об этом; молча пройти мимо нельзя, иначе человек
+    решит, что импорт не сработал.
+    """
+    dates = {row.occurred_on for row in rows if row.occurred_on}
+    if not dates:
+        return set()
+    found = db.execute(
+        select(PartnerPayment.occurred_on, PartnerPayment.amount, PartnerPayment.description)
+        .where(PartnerPayment.occurred_on.in_(dates))
+    ).all()
+    return {
+        _key(occurred_on, amount, description)
+        for occurred_on, amount, description in found
+    }
+
+
+def _key(occurred_on, amount, description) -> tuple:
+    """
+    Ключ дубля. Сумма ОКРУГЛЯЕТСЯ ДО КОПЕЕК, и это не мелочь: в файле она
+    записана со всей точностью деления («642390.4048780487»), а в базе колонка
+    двузначная. Без округления повторный импорт считал дублями только те
+    строки, где копейки и так сошлись, — на образце 44 из 69, а остальные
+    заводились по второму разу.
+    """
+    return (
+        occurred_on,
+        str(Decimal(amount).quantize(Decimal("0.01"))) if amount is not None else "",
+        (description or "").strip(),
+    )
+
+
+def _row_key(row) -> tuple:
+    return _key(row.occurred_on, row.amount, row.description)
+
+
+def _preview(row, partner_id, partner_name, duplicate: bool) -> dict:
+    return {
+        "line": row.line,
+        "sheet": row.sheet,
+        "occurred_on": row.occurred_on.isoformat() if row.occurred_on else None,
+        "partner": partner_name,
+        "partner_known": partner_id is not None,
+        "partner_raw": row.partner_raw,
+        "description": row.description,
+        "amount": _money(row.amount),
+        "currency_amount": _money(row.currency_amount),
+        "currency": row.currency,
+        "vat_rate": _rate(row.vat_rate),
+        "transfer_amount": _money(row.transfer_amount),
+        "transferred": row.transferred,
+        "duplicate": duplicate,
+        "problems": row.problems,
+    }
+
+
+def _read_import(file, pasted: str) -> tuple:
+    if file is not None and file.filename:
+        name = file.filename
+        if not name.lower().endswith((".xlsx", ".xlsm", ".csv", ".txt", ".tsv")):
+            raise HTTPException(400, "Ожидается файл .xlsx или текстовый")
+        return file.file.read(), name
+    if pasted.strip():
+        return pasted, "вставка"
+    raise HTTPException(400, "Нечего разбирать: выберите файл или вставьте строки")
+
+
+def _prepare(db: Session, file, pasted: str) -> tuple:
+    content, name = _read_import(file, pasted)
+    rows = parse_rows(content, name)
+    if not rows:
+        raise HTTPException(400, "В файле не нашлось ни одной строки поступления")
+    if len(rows) > MAX_IMPORT_ROWS:
+        raise HTTPException(400, f"Строк больше {MAX_IMPORT_ROWS} — похоже, это не тот файл")
+    return rows, _match_partners(db, rows), _existing_keys(db, rows), name
+
+
+@payments_router.post(
+    "/import/check", dependencies=[Depends(require_role(*CAN_MANAGE_PAYMENTS))]
+)
+def import_check(
+    file: UploadFile | None = File(default=None),
+    pasted: str = Form(default=""),
+    db: Session = Depends(get_session),
+) -> dict:
+    """
+    Разобрать файл или вставку БЕЗ записи: показать, что получится.
+
+    ДВА ШАГА, как у номенклатуры, и по той же причине: файл собран руками, в
+    нём попадаются пустые строки, подписи и «синхра» вместо «да». Увидеть это
+    надо до того, как строки лягут в таблицу, а не после.
+    """
+    rows, matched, seen, name = _prepare(db, file, pasted)
+    partners = {pid: pname for pid, pname in db.execute(select(Partner.id, Partner.name))}
+    preview, duplicates = [], 0
+    for row in rows:
+        partner_id = matched.get(row.partner_raw)
+        duplicate = _row_key(row) in seen
+        duplicates += duplicate
+        preview.append(
+            _preview(row, partner_id,
+                     partners.get(partner_id) or row.partner_raw or None, duplicate)
+        )
+    return {
+        "file_name": name,
+        "rows": preview,
+        "totals": {
+            "rows": len(rows),
+            "ok": sum(1 for r in rows if r.ok),
+            "problems": sum(1 for r in rows if r.problems),
+            "duplicates": duplicates,
+            # Сколько имён не нашлось в справочнике: они лягут текстом, и это
+            # нормально — мелких партнёров там и не должно быть.
+            "unknown_partners": sum(
+                1 for r in rows if r.partner_raw and not matched.get(r.partner_raw)
+            ),
+            "amount": _money(sum((r.amount or Decimal(0) for r in rows), Decimal(0))),
+            "transfer_amount": _money(
+                sum((r.transfer_amount or Decimal(0) for r in rows), Decimal(0))
+            ),
+        },
+    }
+
+
+@payments_router.post(
+    "/import/apply", dependencies=[Depends(require_role(*CAN_MANAGE_PAYMENTS))]
+)
+def import_apply(
+    file: UploadFile | None = File(default=None),
+    pasted: str = Form(default=""),
+    skip_duplicates: bool = Form(default=True),
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """
+    Записать разобранное. Строки с замечаниями не пишутся вовсе.
+
+    Дубли по умолчанию пропускаются: файл обычно заливают повторно, чтобы
+    добрать новые строки, а не чтобы завести те же второй раз.
+    """
+    rows, matched, seen, name = _prepare(db, file, pasted)
+    created = skipped = duplicates = 0
+    for row in rows:
+        if row.problems:
+            skipped += 1
+            continue
+        if skip_duplicates and _row_key(row) in seen:
+            duplicates += 1
+            continue
+        partner_id = matched.get(row.partner_raw)
+        db.add(
+            PartnerPayment(
+                id=uuid.uuid4(),
+                occurred_on=row.occurred_on,
+                partner_id=partner_id,
+                # Имя из выписки, если площадки нет в справочнике: мелкие
+                # партнёры по синхронизации туда и не попадут.
+                partner_name=None if partner_id else (row.partner_raw or None),
+                description=row.description or None,
+                amount=row.amount,
+                currency_amount=row.currency_amount,
+                currency=row.currency,
+                vat_rate=row.vat_rate,
+                transfer_amount=row.transfer_amount,
+                transferred=row.transferred,
+                created_by=current_user.id,
+            )
+        )
+        seen.add(_row_key(row))      # дубль внутри самого файла — тоже дубль
+        created += 1
+    log_action(
+        db, current_user, "payment.import", entity_type="payment",
+        meta={"file": name, "created": created, "skipped": skipped,
+              "duplicates": duplicates},
+    )
+    db.commit()
+    return {"created": created, "skipped": skipped, "duplicates": duplicates}
 
 
 @payments_router.delete(

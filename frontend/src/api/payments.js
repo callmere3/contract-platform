@@ -45,3 +45,32 @@ export function updatePayment(paymentId, patch) {
 export function deletePayment(paymentId) {
   return apiJson(`${API}/payments/${paymentId}`, { method: 'DELETE' });
 }
+
+/**
+ * Импорт поступлений: файл или вставленные строки.
+ *
+ * ДВА ШАГА, как у номенклатуры: сначала «проверить» — что получится, потом
+ * «применить». Файл собран руками, в нём попадаются пустые строки и пометки
+ * вроде «синхра» вместо «да», и увидеть это надо до записи.
+ */
+function importBody({ file, pasted, skipDuplicates }) {
+  const form = new FormData();
+  if (file) form.append('file', file);
+  if (pasted) form.append('pasted', pasted);
+  if (skipDuplicates !== undefined) form.append('skip_duplicates', String(skipDuplicates));
+  return form;
+}
+
+export function checkPaymentsImport(options) {
+  return apiJson(`${API}/payments/import/check`, {
+    method: 'POST',
+    body: importBody(options),
+  });
+}
+
+export function applyPaymentsImport(options) {
+  return apiJson(`${API}/payments/import/apply`, {
+    method: 'POST',
+    body: importBody(options),
+  });
+}

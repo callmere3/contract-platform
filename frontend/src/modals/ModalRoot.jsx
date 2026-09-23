@@ -19,6 +19,7 @@ import { FinanceContragentModal } from './FinanceContragentModal';
 import { NewFinanceOperationModal } from './NewFinanceOperationModal';
 import { TrackCardModal } from './TrackCardModal';
 import { NomenclatureImportExportModal } from './NomenclatureImportExportModal';
+import { PaymentsImportModal } from './PaymentsImportModal';
 import {
   NewPartnerModal,
   PartnerCardModal,
@@ -52,6 +53,7 @@ const REGISTRY = {
   newFinanceOperation: NewFinanceOperationModal,
   trackCard: TrackCardModal,
   nomenclatureImportExport: NomenclatureImportExportModal,
+  paymentsImport: PaymentsImportModal,
   partnerCard: PartnerCardModal,
   newPartner: NewPartnerModal,
   partnersImportExport: PartnersImportExportModal,

@@ -40,6 +40,19 @@ const MONTHS = [
 const ROMAN = ['I', 'II', 'III', 'IV'];
 
 const iso = (d) => d.toISOString().slice(0, 10);
+
+// ПЛОЩАДКИ, КОТОРЫЕ ПЛАТЯТ В ВАЛЮТЕ (просьба владельца 23.09.2026). Список
+// нужен только для того, чтобы не показывать лишнее поле у рублёвых строк:
+// сама возможность ввести валютную сумму есть у любой строки, где она уже
+// заполнена. Сравниваем по вхождению и без учёта регистра — в выписке
+// площадка названа длиннее, чем в справочнике («BELIEVE INTERNATIONAL»,
+// «CHOIS MUSIC, INC»).
+const CURRENCY_PARTNERS = ['chois', 'tiktok', 'believe', 'белив', 'spotify', 'аманат'];
+
+function inCurrency(row) {
+  const name = `${row.partner || ''} ${row.partner_name || ''}`.toLowerCase();
+  return CURRENCY_PARTNERS.some((key) => name.includes(key));
+}
 // ОТКРЫТЫЙ ПЕРИОД ЗАПОМИНАЕТСЯ (просьба владельца 23.09.2026). Поступления
 // заносят задним числом — за прошлый месяц, а то и за прошлый квартал, — и
 // возвращаться к нужному месяцу после каждой перезагрузки страницы значит
@@ -386,7 +399,6 @@ export function PaymentsPage() {
                   <th className={th}>Партнёр</th>
                   <th className={th}>Описание платежа</th>
                   <th className={th}>Сумма поступления</th>
-                  <th className={th}>Курс</th>
                   <th className={th}>НДС</th>
                   <th className={th}>Сумма завода</th>
                   <th className={th}>Заведено</th>
@@ -398,7 +410,7 @@ export function PaymentsPage() {
               <tbody>
                 {rows.length === 0 && (
                   <tr>
-                    <td className={`${td} text-[13px] text-text-muted`} colSpan={12}>
+                    <td className={`${td} text-[13px] text-text-muted`} colSpan={11}>
                       За этот месяц поступлений нет.
                     </td>
                   </tr>
@@ -475,23 +487,37 @@ export function PaymentsPage() {
                         />
                       </Tooltip>
                     </td>
-                    <td className={`${td} w-[140px]`}>
+                    {/* ПОД СУММОЙ — СУММА В ВАЛЮТЕ (просьба владельца
+                        23.09.2026). У CHOIS, TikTok, Believe, Spotify и
+                        Аманата платёж приходит в валюте, а на счёт падает уже
+                        в рублях; сверять строку с письмом площадки удобнее по
+                        валютной сумме. В расчётах она НЕ участвует — это
+                        справка.
+
+                        Поле показываем не всем подряд: у рублёвых платежей
+                        оно дублировало бы сумму выше. Но если значение уже
+                        стоит, показываем всегда — данные не должны пропадать
+                        из-за того, что площадку переименовали. */}
+                    <td className={`${td} w-[150px]`}>
                       <MoneyCell
                         value={r.amount}
                         disabled={!manage}
                         onSave={(v) => save(r.id, 'amount', v)}
                         className={`${cellInput} tabular-nums text-right`}
                       />
-                    </td>
-                    {/* Курс — множитель, а не деньги: тысяч в нём не бывает,
-                        и разделять там нечего. */}
-                    <td className={`${td} w-[110px]`}>
-                      <RateCell
-                        value={r.rate}
-                        disabled={!manage}
-                        onSave={(v) => save(r.id, 'rate', v)}
-                        className={`${cellInput} tabular-nums text-right`}
-                      />
+                      {(r.currency_amount || inCurrency(r)) && (
+                        <div className="flex items-center gap-1 mt-0.5">
+                          <MoneyCell
+                            value={r.currency_amount}
+                            disabled={!manage}
+                            onSave={(v) => save(r.id, 'currency_amount', v)}
+                            className={`${cellInput} tabular-nums text-right text-[12px] text-text-muted`}
+                          />
+                          <span className="text-[11px] text-text-muted w-[26px] shrink-0">
+                            {r.currency || ''}
+                          </span>
+                        </div>
+                      )}
                     </td>
                     {/* НДС — СТАВКА В ПРОЦЕНТАХ (уточнение владельца
                         23.09.2026): «22» значит 22%. Коэффициент человек не
@@ -614,6 +640,18 @@ export function PaymentsPage() {
             </table>
 
             <div className="px-5 py-4 flex flex-wrap items-center gap-4 border-t border-border">
+              {/* ИМПОРТ РЯДОМ С «ДОБАВИТЬ СТРОКУ», а не в шапке вкладки:
+                  это два способа одного и того же — пополнить таблицу, и
+                  разводить их по разным углам экрана незачем. */}
+              {manage && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => openModal('paymentsImport', { onDone: load })}
+                >
+                  Импорт
+                </Button>
+              )}
               {manage && (
                 <Button variant="secondary" size="sm" onClick={addRow}>
                   Добавить строку
