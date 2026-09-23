@@ -167,7 +167,15 @@ export function LinkReportPaymentModal({ report, level, isTop, onChanged }) {
                     {p.partner || 'площадка не указана'}
                   </span>
                   <span className="text-text-muted flex-1 truncate">{p.description || ''}</span>
-                  <span className="text-text tabular-nums">{formatMoney(p.amount)}</span>
+                  {/* ПУСТО И НОЛЬ — РАЗНЫЕ ВЕЩИ. formatMoney(null) рисует
+                      «0,00 ₽», и строка выглядит как поступление на нулевую
+                      сумму, хотя сумму просто ещё не занесли: строку заводят
+                      по дате из выписки, а числа дозаполняют позже. */}
+                  {p.amount ? (
+                    <span className="text-text tabular-nums">{formatMoney(p.amount)}</span>
+                  ) : (
+                    <span className="text-text-muted">сумма не указана</span>
+                  )}
                 </div>
                 <div className="text-[11.5px] text-text-muted mt-0.5">
                   {current

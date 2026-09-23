@@ -39,6 +39,41 @@ const MONTHS = [
 const ROMAN = ['I', 'II', 'III', 'IV'];
 
 const iso = (d) => d.toISOString().slice(0, 10);
+// ОТКРЫТЫЙ ПЕРИОД ЗАПОМИНАЕТСЯ (просьба владельца 23.09.2026). Поступления
+// заносят задним числом — за прошлый месяц, а то и за прошлый квартал, — и
+// возвращаться к нужному месяцу после каждой перезагрузки страницы значит
+// делать одну и ту же работу по десять раз за вечер.
+//
+// Не в адресе, а в localStorage: это не «что я показываю другому», а «где я
+// сейчас работаю». Ссылка на квартал никому не пересылается, зато состояние
+// должно пережить и перезагрузку, и уход на соседнюю вкладку.
+const PERIOD_KEY = 'ml_payments_period';
+
+function readPeriod() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(PERIOD_KEY) || 'null');
+    if (!saved) return null;
+    const { year, quarter, monthOffset } = saved;
+    // Мусор в хранилище не должен ломать страницу: проверяем, что это
+    // действительно период, а не что-то постороннее.
+    const ok =
+      Number.isInteger(year) && year > 2000 && year < 2100 &&
+      Number.isInteger(quarter) && quarter >= 1 && quarter <= 4 &&
+      Number.isInteger(monthOffset) && monthOffset >= 0 && monthOffset <= 2;
+    return ok ? { year, quarter, monthOffset } : null;
+  } catch {
+    return null;                 // приватное окно или запрещённые данные сайта
+  }
+}
+
+function savePeriod(period) {
+  try {
+    localStorage.setItem(PERIOD_KEY, JSON.stringify(period));
+  } catch {
+    /* не беда: просто в следующий раз откроется текущий месяц */
+  }
+}
+
 const monthRange = (year, month) => ({
   from: iso(new Date(Date.UTC(year, month, 1))),
   to: iso(new Date(Date.UTC(year, month + 1, 0))),
@@ -89,11 +124,14 @@ export function PaymentsPage() {
   const manage = canManagePayments(role);
 
   const today = new Date();
-  const [year, setYear] = useState(today.getFullYear());
-  const [quarter, setQuarter] = useState(Math.floor(today.getMonth() / 3) + 1);
+  const opened = readPeriod();
+  const [year, setYear] = useState(opened?.year ?? today.getFullYear());
+  const [quarter, setQuarter] = useState(
+    opened?.quarter ?? Math.floor(today.getMonth() / 3) + 1
+  );
   // Месяц внутри квартала: 0, 1 или 2. Храним смещение, а не номер месяца, —
   // тогда переключение квартала не оставляет открытым чужой месяц.
-  const [monthOffset, setMonthOffset] = useState(today.getMonth() % 3);
+  const [monthOffset, setMonthOffset] = useState(opened?.monthOffset ?? today.getMonth() % 3);
 
   const [partners, setPartners] = useState([]);
   const [rows, setRows] = useState([]);
@@ -103,6 +141,10 @@ export function PaymentsPage() {
 
   const month = (quarter - 1) * 3 + monthOffset;
   const range = monthRange(year, month);
+
+  useEffect(() => {
+    savePeriod({ year, quarter, monthOffset });
+  }, [year, quarter, monthOffset]);
 
   useEffect(() => {
     listPartners({ pageSize: 500 })
