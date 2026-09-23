@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { CloseIcon } from './icons';
 
 /**
@@ -36,6 +36,21 @@ export function Modal({
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [onClose, isTop]);
 
+  // ФОКУС ПЕРЕЕЗЖАЕТ В ОКНО, ИНАЧЕ ENTER НАЖИМАЕТ КНОПКУ ПОД НИМ (замечание
+  // владельца 24.09.2026). Окно открывают кнопкой, и фокус остаётся на ней:
+  // нажатие Enter в открытом окне подтверждения снова жало мусорку в строке и
+  // открывало ВТОРОЕ такое же окно поверх первого. То же было бы у любого
+  // окна, открытого кнопкой.
+  //
+  // Только если фокус СНАРУЖИ: окно с полем ввода наводит фокус само, и
+  // перетягивать его на рамку значило бы ломать ввод. И только у верхнего
+  // окна стека — нижние фокус себе не забирают.
+  const card = useRef(null);
+  useEffect(() => {
+    if (!isTop || !card.current) return;
+    if (!card.current.contains(document.activeElement)) card.current.focus();
+  }, [isTop]);
+
   return (
     <div
       onClick={onClose}
@@ -43,9 +58,13 @@ export function Modal({
       className="fixed inset-0 bg-black/50 flex items-center justify-center px-4"
     >
       <div
+        ref={card}
+        // tabIndex −1 делает рамку окна годной целью для фокуса, но не
+        // добавляет её в обход по Tab: это не элемент управления.
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
         style={{ width, maxWidth: '100%' }}
-        className="bg-surface border border-border rounded-card shadow-card max-h-[85vh] flex flex-col"
+        className="bg-surface border border-border rounded-card shadow-card max-h-[85vh] flex flex-col outline-none"
       >
         <div className="flex items-center justify-between gap-4 px-6 py-5 border-b border-border">
           <span className="text-[15px] font-semibold text-text min-w-0 truncate">{title}</span>

@@ -14,6 +14,11 @@ import { useModal } from './ModalProvider';
  *
  * Действие выполняет ВЫЗЫВАЮЩИЙ (`onConfirm`), а окно лишь держит «сейчас
  * выполняем» и текст ошибки: удалять умеет страница, а не диалог.
+ *
+ * ФОКУС СРАЗУ НА КНОПКЕ ДЕЙСТВИЯ (просьба владельца 24.09.2026): окно и
+ * состоит из одного вопроса, и ответ на него — Enter. Escape отменяет, это
+ * умеет сама `Modal`. Именно кнопка, а не рамка окна: рамку `Modal`
+ * забирает себе только там, где фокусу деваться некуда.
  */
 export function ConfirmModal({
   title = 'Подтвердите действие',
@@ -51,7 +56,7 @@ export function ConfirmModal({
           <Button variant="secondary" size="sm" onClick={closeModal} disabled={busy}>
             Отмена
           </Button>
-          <Button variant="accent" size="sm" onClick={run} disabled={busy}>
+          <Button variant="accent" size="sm" onClick={run} disabled={busy} autoFocus>
             {busy ? 'Выполняем…' : confirmLabel}
           </Button>
         </>
