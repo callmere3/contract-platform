@@ -85,8 +85,8 @@ class ImportRow:
     partner_raw: str = ""
     description: str = ""
     amount: Decimal | None = None
-    currency_amount: Decimal | None = None
-    currency: str | None = None
+    # Текстом, вместе с валютой: «8 247,81 доллар». См. пояснение в модели.
+    currency_amount: str | None = None
     vat_rate: Decimal | None = None
     transfer_amount: Decimal | None = None
     transferred: bool = False
@@ -158,6 +158,30 @@ def _currency(value) -> str | None:
     return CURRENCIES.get(key)
 
 
+def _currency_note(amount_cell, currency_cell) -> str | None:
+    """
+    Сумма в валюте так, как она записана в файле: «8 247,81 доллар».
+
+    Рублёвые строки пропускаем: у них эта колонка дословно повторяет сумму
+    поступления. Валюту дописываем словом из файла, но только если в самой
+    сумме нет знака валюты — иначе вышло бы «$16 803,73 доллар».
+    """
+    code = _currency(currency_cell)
+    if not code or code == "RUB":
+        return None
+    if isinstance(amount_cell, (int, float, Decimal)) and not isinstance(amount_cell, bool):
+        # Число из ячейки Excel: приводим к привычному виду с запятой.
+        written = f"{Decimal(str(amount_cell)):.2f}".replace(".", ",")
+    else:
+        written = _clean(amount_cell)
+    if not written:
+        return None
+    word = _clean(currency_cell)
+    if any(sign in written for sign in ("$", "€", "₸")) or word.lower() in written.lower():
+        return written[:64]
+    return f"{written} {word}"[:64]
+
+
 def read_table(content: bytes, filename: str) -> list:
     """Файл → список (имя листа, строка). Excel читаем ПО ВСЕМ ЛИСТАМ."""
     name = (filename or "").lower()
@@ -205,11 +229,12 @@ def parse_rows(content, filename: str) -> list:
         # всегда, но у рублёвых платежей она дословно повторяет сумму
         # поступления, и переносить её значило бы завести в таблице второе
         # такое же число «для справки» — справки в нём никакой.
-        row.currency = _currency(cell(COL_CURRENCY))
-        if row.currency and row.currency != "RUB":
-            row.currency_amount = parse_money(cell(COL_CURRENCY_AMOUNT))
-        else:
-            row.currency = None
+        #
+        # Переносим КАК НАПИСАНО и дописываем валюту из соседней колонки:
+        # поле справочное, и человек хочет видеть в нём ту же запись, что в
+        # письме площадки, а не приведённое к копейкам число.
+        row.currency_amount = _currency_note(cell(COL_CURRENCY_AMOUNT),
+                                             cell(COL_CURRENCY))
         row.vat_rate = vat_percent(cell(COL_VAT))
         row.transfer_amount = parse_money(cell(COL_TRANSFER))
         row.transferred = _clean(cell(COL_TRANSFERRED)).lower() in YES

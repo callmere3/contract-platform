@@ -491,11 +491,17 @@ export function PaymentsPage() {
                       </Tooltip>
                     </td>
                     {/* ПОД СУММОЙ — СУММА В ВАЛЮТЕ (просьба владельца
-                        23.09.2026). У CHOIS, TikTok, Believe, Spotify и
-                        Аманата платёж приходит в валюте, а на счёт падает уже
-                        в рублях; сверять строку с письмом площадки удобнее по
-                        валютной сумме. В расчётах она НЕ участвует — это
-                        справка.
+                        23.09.2026). У CHOIS, TikTok, Believe, Spotify,
+                        YouTube и Аманата платёж приходит в валюте, а на счёт
+                        падает уже в рублях; сверять строку с письмом площадки
+                        удобнее по валютной сумме. В расчётах она НЕ участвует.
+
+                        ПОЛЕ ТЕКСТОВОЕ, валюта пишется прямо в нём: «8 247,81
+                        доллар». Числом его делать не за чем — складывать и
+                        делить эту сумму не с чем, а вставляют её как есть из
+                        письма площадки. Отдельной подписи с кодом валюты тоже
+                        нет: она сбивала выравнивание, а теперь валюта внутри
+                        самой строки.
 
                         Поле показываем не всем подряд: у рублёвых платежей
                         оно дублировало бы сумму выше. Но если значение уже
@@ -509,17 +515,15 @@ export function PaymentsPage() {
                         className={`${cellInput} tabular-nums text-right`}
                       />
                       {(r.currency_amount || inCurrency(r)) && (
-                        <div className="flex items-center gap-1 mt-0.5">
-                          <MoneyCell
-                            value={r.currency_amount}
-                            disabled={!manage}
-                            onSave={(v) => save(r.id, 'currency_amount', v)}
-                            className={`${cellInput} tabular-nums text-right text-[12px] text-text-muted`}
-                          />
-                          <span className="text-[11px] text-text-muted w-[26px] shrink-0">
-                            {r.currency || ''}
-                          </span>
-                        </div>
+                        <input
+                          value={r.currency_amount ?? ''}
+                          disabled={!manage}
+                          placeholder="в валюте"
+                          onChange={(e) => edit(r.id, 'currency_amount', e.target.value)}
+                          onKeyDown={commitKeys()}
+                          onBlur={(e) => save(r.id, 'currency_amount', e.target.value)}
+                          className={`${cellInput} text-right text-[12px] text-text-muted`}
+                        />
                       )}
                     </td>
                     {/* НДС — СТАВКА В ПРОЦЕНТАХ (уточнение владельца

@@ -48,7 +48,7 @@ payments_router = APIRouter(
 # Поля, которые можно править, и как их читать. Список ОДИН на создание и
 # правку: разойдись они, и через форму завелось бы то, чего правкой не
 # поправить.
-MONEY_FIELDS = ("amount", "currency_amount", "transfer_amount", "actual_amount")
+MONEY_FIELDS = ("amount", "transfer_amount", "actual_amount")
 # Ставки — курс и НДС. Наружу уходят без хвоста нулей и в итогах не
 # складываются: это не деньги. Разбираются РАЗНЫМИ функциями — курс это
 # множитель, а НДС с 23.09.2026 проценты («22» — это 22%).
@@ -218,9 +218,9 @@ def _out(payment: PartnerPayment, partner_name: str | None, linked: int = 0,
         "partner_name": payment.partner_name,
         "description": payment.description,
         "amount": _money(payment.amount),
-        # Справочная валютная сумма: в расчётах не участвует.
-        "currency_amount": _money(payment.currency_amount),
-        "currency": payment.currency,
+        # Справочная валютная сумма — ТЕКСТОМ, вместе с валютой: «8 247,81
+        # доллар». В расчётах не участвует.
+        "currency_amount": payment.currency_amount,
         "rate": _rate(payment.rate),
         "vat_rate": _rate(payment.vat_rate),
         "transfer_amount": _money(payment.transfer_amount),
@@ -290,12 +290,13 @@ def _apply(payment: PartnerPayment, body: dict, db: Session) -> list[str]:
         if name in body:
             setattr(payment, name, _parse_money(body[name], "Сумма"))
             touched.append(name)
-    if "currency" in body:
-        code = str(body["currency"] or "").strip()
-        if len(code) > 16:
-            raise HTTPException(400, "Валюта: слишком длинное обозначение")
-        payment.currency = code or None
-        touched.append("currency")
+    if "currency_amount" in body:
+        # Как написали, так и храним: поле справочное, разбирать его не на что.
+        note = " ".join(str(body["currency_amount"] or "").split())
+        if len(note) > 64:
+            raise HTTPException(400, "Сумма в валюте: слишком длинная запись")
+        payment.currency_amount = note or None
+        touched.append("currency_amount")
     if "rate" in body:
         payment.rate = _parse_money(body["rate"], "Курс")
         touched.append("rate")
@@ -530,8 +531,8 @@ def _preview(row, partner_id, partner_name, duplicate: bool) -> dict:
         "partner_raw": row.partner_raw,
         "description": row.description,
         "amount": _money(row.amount),
-        "currency_amount": _money(row.currency_amount),
-        "currency": row.currency,
+        # Текстом, как в файле: «8 247,81 доллар».
+        "currency_amount": row.currency_amount,
         "vat_rate": _rate(row.vat_rate),
         "transfer_amount": _money(row.transfer_amount),
         "transferred": row.transferred,
@@ -645,7 +646,6 @@ def import_apply(
                 description=row.description or None,
                 amount=row.amount,
                 currency_amount=row.currency_amount,
-                currency=row.currency,
                 vat_rate=row.vat_rate,
                 transfer_amount=row.transfer_amount,
                 transferred=row.transferred,

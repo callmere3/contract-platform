@@ -146,17 +146,6 @@ export function PartnerPicker({
                 — не указан —
               </button>
             )}
-            {allowCustom && query.trim() && (
-              <button
-                type="button"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={keepTyped}
-                className="block w-full text-left px-3 py-2 text-[13px] bg-transparent border-0 cursor-pointer font-sans text-text hover:bg-hover"
-              >
-                Оставить как есть: <b>{query.trim()}</b>
-                <span className="text-text-muted"> — площадки нет в справочнике</span>
-              </button>
-            )}
             {found.length === 0 && !(allowCustom && query.trim()) && (
               <div className="px-3 py-2 text-[12.5px] text-text-muted">Ничего не нашлось</div>
             )}
@@ -173,6 +162,24 @@ export function PartnerPicker({
                 {p.name}
               </button>
             ))}
+            {/* «ОСТАВИТЬ КАК ЕСТЬ» — ПОСЛЕДНИМ (замечание владельца
+                23.09.2026). Сначала человек должен увидеть подходящие
+                площадки: набранное имя чаще всего есть в справочнике, и
+                предлагать «оставить как есть» первой строкой значит
+                подталкивать к выбору, который справочник обходит. */}
+            {allowCustom && query.trim() && (
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={keepTyped}
+                className={`block w-full text-left px-3 py-2 text-[13px] bg-transparent border-0 cursor-pointer font-sans text-text hover:bg-hover ${
+                  found.length ? 'border-t border-border' : ''
+                }`}
+              >
+                Оставить как есть: <b>{query.trim()}</b>
+                <span className="text-text-muted"> — площадки нет в справочнике</span>
+              </button>
+            )}
           </div>,
           document.body,
         )}
