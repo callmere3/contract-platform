@@ -335,9 +335,14 @@ export function PaymentsPage() {
 
   const th =
     'text-left font-semibold text-[11px] uppercase tracking-[0.04em] text-text-muted px-3 py-2 whitespace-nowrap';
-  const td = 'px-3 py-1.5 align-middle border-t border-border';
+  // ВЫРАВНИВАНИЕ ПО ВЕРХУ, А НЕ ПО СЕРЕДИНЕ (замечание владельца
+  // 24.09.2026). У валютных строк под суммой стоит вторая строчка, и при
+  // выравнивании по центру вся строка таблицы уезжала вниз: главные числа —
+  // поступление, НДС, завод — переставали лежать на одном уровне с соседними
+  // строками. Сверху они совпадают всегда, сколько бы строчек ни было ниже.
+  const td = 'px-3 py-0.5 align-top border-t border-border';
   const cellInput =
-    'w-full bg-transparent border border-transparent hover:border-border focus:border-accent rounded-input px-2 py-1.5 text-[13px] text-text outline-none font-sans';
+    'w-full bg-transparent border border-transparent hover:border-border focus:border-accent rounded-input px-2 py-1 text-[13px] text-text outline-none font-sans';
   const tab = (active) =>
     `px-3 py-1.5 text-[12.5px] rounded-input border cursor-pointer bg-transparent font-sans ${
       active ? 'border-accent text-accent' : 'border-border text-text-secondary'
@@ -426,7 +431,7 @@ export function PaymentsPage() {
                         правки даты у соседней строки, ссылкой быть не может.
                         У каждого месяца нумерация своя. */}
                     <td className={`${td} w-[52px] text-right`}>
-                      <span className="inline-block px-2 py-1.5 text-[13px] text-text-muted tabular-nums">
+                      <span className="inline-block px-2 py-1 text-[13px] text-text-muted tabular-nums">
                         {r.number ?? ''}
                       </span>
                     </td>
@@ -522,7 +527,7 @@ export function PaymentsPage() {
                           onChange={(e) => edit(r.id, 'currency_amount', e.target.value)}
                           onKeyDown={commitKeys()}
                           onBlur={(e) => save(r.id, 'currency_amount', e.target.value)}
-                          className={`${cellInput} text-right text-[12px] text-text-muted`}
+                          className={`${cellInput} text-right !text-[11px] !py-0 text-text-muted`}
                         />
                       )}
                     </td>
@@ -602,7 +607,7 @@ export function PaymentsPage() {
                           text={`Сумма ${r.linked_reports} привязанных отчётов.
 Чтобы поправить — отвяжите отчёт во вкладке «Отчёты».`}
                         >
-                          <span className="inline-block px-2 py-1.5 text-[13px] text-text tabular-nums cursor-help">
+                          <span className="inline-block px-2 py-1 text-[13px] text-text tabular-nums cursor-help">
                             {amount(r.actual_amount)}
                             <span className="text-text-muted"> ↩</span>
                           </span>
@@ -625,12 +630,12 @@ export function PaymentsPage() {
                         не на что. */}
                     <td className={`${td} w-[130px] text-right`}>
                       {r.difference == null ? (
-                        <span className="inline-block px-2 py-1.5 text-[13px] text-text-muted">
+                        <span className="inline-block px-2 py-1 text-[13px] text-text-muted">
                           —
                         </span>
                       ) : (
                         <span
-                          className={`inline-block px-2 py-1.5 text-[13px] tabular-nums ${
+                          className={`inline-block px-2 py-1 text-[13px] tabular-nums ${
                             Number(r.difference) === 0 ? 'text-text-muted' : 'text-danger'
                           }`}
                           title="Сумма завода минус сумма фактического завода"
