@@ -394,6 +394,29 @@ export function PaymentsPage() {
               {MONTHS[(quarter - 1) * 3 + offset]}
             </button>
           ))}
+
+          {/* ПОПОЛНИТЬ ТАБЛИЦУ — СВЕРХУ, У ПРАВОГО КРАЯ (просьба владельца
+              24.09.2026). Снизу эти кнопки уезжали под последнюю строку, и до
+              них приходилось листать всю таблицу — ровно та прокрутка, от
+              которой её и уплотняли. Сверху они на месте всегда, а заодно
+              стоят там же, где импорт у «Партнёров» и «Номенклатуры».
+
+              Импорт рядом с «Добавить строку»: это два способа одного и того
+              же, и разводить их по разным углам экрана незачем. */}
+          {manage && (
+            <div className="ml-auto flex items-center gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => openModal('paymentsImport', { onDone: load })}
+              >
+                Импорт
+              </Button>
+              <Button variant="secondary" size="sm" onClick={addRow}>
+                Добавить строку
+              </Button>
+            </div>
+          )}
         </div>
 
         {loading && <div className="px-5 py-4 text-[13px] text-text-muted">Загрузка…</div>}
@@ -664,25 +687,10 @@ export function PaymentsPage() {
               </tbody>
             </table>
 
-            <div className="px-4 py-2.5 flex flex-wrap items-center gap-3 border-t border-border">
-              {/* ИМПОРТ РЯДОМ С «ДОБАВИТЬ СТРОКУ», а не в шапке вкладки:
-                  это два способа одного и того же — пополнить таблицу, и
-                  разводить их по разным углам экрана незачем. */}
-              {manage && (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => openModal('paymentsImport', { onDone: load })}
-                >
-                  Импорт
-                </Button>
-              )}
-              {manage && (
-                <Button variant="secondary" size="sm" onClick={addRow}>
-                  Добавить строку
-                </Button>
-              )}
-              {totals && rows.length > 0 && (
+            {/* Под таблицей остались ТОЛЬКО ИТОГИ: им место как раз там, где
+                строки кончились, — это их сумма, а не действие. */}
+            {totals && rows.length > 0 && (
+              <div className="px-4 py-2.5 flex flex-wrap items-center gap-3 border-t border-border">
                 <div className="text-[12.5px] text-text">
                   {/* НДС в итогах нет: это ставка, а не деньги — складывать
                       коэффициенты нечего. */}
@@ -709,8 +717,8 @@ export function PaymentsPage() {
                     <span className="text-text-muted"> · не заведено строк: {totals.not_transferred}</span>
                   )}
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </>
         )}
       </Card>
