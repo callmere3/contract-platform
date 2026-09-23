@@ -488,69 +488,86 @@ def parse_report(
     if limit is not None:
         data = islice(data, limit)
 
+    # ВСЁ, ЧТО НЕ ЗАВИСИТ ОТ СТРОКИ, СЧИТАЕМ ОДИН РАЗ — ЗДЕСЬ.
+    #
+    # Раньше это жило внутри цикла и пересчитывалось на каждой строке: список
+    # денежных колонок, разбор формул на упомянутые колонки, нормализация
+    # названий. На отчёте МТС в 657 строк такого не заметить, на Believe в 584
+    # тысячи — это и есть основное время.
+    #
+    # И главное: `parse_number` звался на ВСЕХ колонках файла, хотя правилу
+    # нужны шесть. У Believe колонок 21, у Apple — 65.
+    fields = [
+        (key, by_key[key])
+        for key in dict.fromkeys(normalize_header(c) for c in wanted)
+        if key in by_key
+    ]
+    sku_col = normalize_header(mapping["sku"].get("column", ""))
+    text_plan = [
+        (field, normalize_header(spec["column"]))
+        for field, spec in (
+            (f, (mapping or {}).get(f) or {}) for f in ("title", "artist")
+        )
+        if spec.get("column")
+    ]
+    # Колонки, по которым решается «в строке есть хоть одно число».
+    presence_keys = [
+        normalize_header(c)
+        for key, spec in (mapping or {}).items()
+        if key in (*MONEY_FIELDS, "quantity") and isinstance(spec, dict)
+        for c in ([spec["column"]] if spec.get("column") else [])
+        + formula_columns(spec.get("formula", ""))
+    ]
+    qty_spec = (mapping or {}).get("quantity") or {}
+    qty_col = normalize_header(qty_spec["column"]) if qty_spec.get("column") else None
+    qty_formula = qty_spec.get("formula") if not qty_col else None
+    money_plan = []
+    for money_key in MONEY_FIELDS:
+        spec = (mapping or {}).get(money_key) or {}
+        money_plan.append((
+            money_key,
+            normalize_header(spec["column"]) if spec.get("column") else None,
+            spec.get("formula") if not spec.get("column") else None,
+            FIELD_LABELS[money_key].lower(),
+        ))
+
     for offset, raw in enumerate(data):
         row_num = header_row + 2 + offset        # как в Excel: с единицы, с шапкой
-        if all(_clean(c) == "" for c in raw):
+        if not any(c is not None and str(c).strip() for c in raw):
             continue
-        values = {}
-        for key, index in by_key.items():
-            values[key] = raw[index] if index < len(raw) else None
+        size = len(raw)
+        values = {key: (raw[i] if i < size else None) for key, i in fields}
 
         row = ReportRow(row_num=row_num)
-        row.sku = _clean(values.get(normalize_header(mapping["sku"].get("column", "")))) or None
-        for text_field in ("title", "artist"):
-            spec = (mapping or {}).get(text_field) or {}
-            if spec.get("column"):
-                setattr(
-                    row,
-                    text_field,
-                    _clean(values.get(normalize_header(spec["column"]))) or None,
-                )
+        row.sku = _clean(values.get(sku_col)) or None
+        for text_field, column in text_plan:
+            setattr(row, text_field, _clean(values.get(column)) or None)
 
-        numbers = {k: parse_number(v) for k, v in values.items()}
+        numbers = {key: parse_number(value) for key, value in values.items()}
 
         # СТРОКА БЕЗ ЕДИНОГО ЧИСЛА — НЕ ДАННЫЕ. В конце отчёта МТС идёт блок
         # подписи: «ОТ ЛИЦЕНЗИАРА», «_______ /_______/», «М.П.» — они попадают
         # в таблицу как строки с мусором вместо артикула. Пустая ячейка и ноль
         # здесь разные вещи: ноль — это данные (площадка честно сообщает, что
         # денег не было), пустота — оформление.
-        used_numeric = [
-            spec.get("column")
-            for key, spec in (mapping or {}).items()
-            if key in (*MONEY_FIELDS, "quantity") and isinstance(spec, dict) and spec.get("column")
-        ]
-        formula_cols = [
-            c
-            for key, spec in (mapping or {}).items()
-            if key in (*MONEY_FIELDS, "quantity") and isinstance(spec, dict)
-            for c in formula_columns(spec.get("formula", ""))
-        ]
-        if not any(
-            numbers.get(normalize_header(c)) is not None
-            for c in [*used_numeric, *formula_cols]
-        ):
+        if not any(numbers.get(key) is not None for key in presence_keys):
             continue
 
-        qty_spec = (mapping or {}).get("quantity") or {}
-        if qty_spec.get("column"):
-            row.quantity = numbers.get(normalize_header(qty_spec["column"]))
-        elif qty_spec.get("formula"):
-            row.quantity = _apply_formula(qty_spec["formula"], numbers, row, "количество")
+        if qty_col:
+            row.quantity = numbers.get(qty_col)
+        elif qty_formula:
+            row.quantity = _apply_formula(qty_formula, numbers, row, "количество")
 
-        for money_key in MONEY_FIELDS:
-            spec = (mapping or {}).get(money_key) or {}
+        for money_key, column, formula, label in money_plan:
             value = None
-            if spec.get("column"):
-                value = numbers.get(normalize_header(spec["column"]))
-                if value is None and _clean(values.get(normalize_header(spec["column"]))):
+            if column:
+                value = numbers.get(column)
+                if value is None and _clean(values.get(column)):
                     row.problems.append(
-                        f"{FIELD_LABELS[money_key].lower()}: «"
-                        f"{_clean(values.get(normalize_header(spec['column'])))}» — это не число"
+                        f"{label}: «{_clean(values.get(column))}» — это не число"
                     )
-            elif spec.get("formula"):
-                value = _apply_formula(
-                    spec["formula"], numbers, row, FIELD_LABELS[money_key].lower()
-                )
+            elif formula:
+                value = _apply_formula(formula, numbers, row, label)
             setattr(row, money_key, money((value or Decimal(0)) / divisor))
 
         # Итоговая строка в конце файла — не данные: пропускаем целиком, иначе
