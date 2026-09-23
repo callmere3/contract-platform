@@ -24,6 +24,13 @@
   MANAGER      — рабочая роль: генерация документов, создание контрагентов.
                  Без РЕДАКТИРОВАНИЯ уже заведённых карточек, без удаления,
                  без импорта/экспорта, без шаблонов, без audit_log.
+  FINANCE_MANAGER — единственная роль ВТОРОГО ПРОДУКТА (19.09.2026, просьба
+                 владельца). Живёт только в ML Finance и только в трёх
+                 вкладках: «Номенклатура», «Контрагенты», «Партнёры». ML Docs
+                 для неё не существует вовсе — ни вкладок, ни переключателя
+                 продуктов, и входит она сразу в финансы. Денег «внутрь» она
+                 не трогает: отчёты, поступления и внесение операций ей
+                 закрыты.
 
 ROLES — единственный источник правды, как COUNTRIES/CONTRAGENT_TYPES в
 app/tags.py: любая новая роль добавляется здесь и сразу используется во
@@ -39,8 +46,25 @@ DIRECTOR = "director"
 TOP_MANAGER = "top_manager"
 TESTER = "tester"
 MANAGER = "manager"
+# 15 символов — влезает в varchar(16) колонки users.role (см. докстринг).
+FINANCE_MANAGER = "finance_manager"
 
-ROLES = (ADMIN, DIRECTOR, TOP_MANAGER, TESTER, MANAGER)
+ROLES = (ADMIN, DIRECTOR, TOP_MANAGER, TESTER, MANAGER, FINANCE_MANAGER)
+
+# РОЛИ ML DOCS — все, кроме финансового менеджера.
+#
+# Нужна эта константа вот зачем: права «рабочих» действий с документами
+# записаны как `= ROLES` НАМЕРЕННО (см. длинный комментарий у CAN_GENERATE) —
+# чтобы новая роль получала их сама собой и не повторилась история с TESTER,
+# который не смог сгенерировать документ. С появлением роли, которой ML Docs
+# не положен вовсе, «все роли» и «все, кто работает с документами» перестали
+# совпадать, и `= ROLES` в этих местах стало значить не то, что задумано.
+#
+# Поэтому: ROLES — по-прежнему «все роли» (любой залогиненный), а документные
+# права считаются от DOCS_ROLES. Новая роль ML Docs добавляется в ROLES и
+# попадает в DOCS_ROLES сама; новая роль второго продукта добавляется в
+# исключение здесь же, одной строкой.
+DOCS_ROLES = tuple(role for role in ROLES if role != FINANCE_MANAGER)
 
 # Общие сокращения для Depends(require_role(...)) в роутерах — чтобы не
 # перечислять одни и те же тройки/пары ролей в каждом файле по-разному.
@@ -57,7 +81,7 @@ CAN_VIEW_AUDIT_LOG = (ADMIN, DIRECTOR)                    # просмотр aud
 # (SEES_ALL_GENERATION_HISTORY), остальные (top_manager/tester/manager) — только
 # свои документы, сервер жёстко ограничивает выдачу их user_id (см. ниже и
 # routers_generation_history.py). Поэтому здесь = ROLES, а не перечисление.
-CAN_VIEW_GENERATION_HISTORY = ROLES
+CAN_VIEW_GENERATION_HISTORY = DOCS_ROLES
 # Кто видит историю ВСЕХ пользователей. Остальные из CAN_VIEW_GENERATION_HISTORY
 # (top_manager/tester/manager) видят и пересоздают лишь свои записи. Ограничение
 # серверное, а не UX: без него любой из них по filter_type=user или прямым
@@ -89,7 +113,13 @@ CAN_SEND_NOTIFICATIONS = (ADMIN,)
 # вся история генерации, список сотрудников), а деньги по контрагентам —
 # ровно его предмет. Менеджеру переключатель не показывается вовсе: для него
 # второго продукта не существует.
-CAN_USE_FINANCE = (ADMIN, DIRECTOR)
+#
+# FINANCE_MANAGER — с 19.09.2026: для него это единственный продукт. Само
+# право открывает переключатель (которого он не увидит — второго продукта у
+# него нет), вкладку «Контрагенты» с балансами и карточки. ВНОСИТЬ операции,
+# грузить отчёты и вести поступления ему при этом нельзя: смотреть деньги и
+# двигать их — разные вещи, и права под них разные.
+CAN_USE_FINANCE = (ADMIN, DIRECTOR, FINANCE_MANAGER)
 # Вносить поступления и расходы — тоже оба (решение владельца 16.09.2026).
 CAN_ADD_FINANCE_OPERATIONS = (ADMIN, DIRECTOR)
 # А УДАЛЯТЬ — только Admin. Правки операции нет вовсе: ошибочную удаляют и
@@ -102,7 +132,7 @@ CAN_DELETE_FINANCE_OPERATIONS = (ADMIN,)
 # треки, скорее всего, будет не тот человек, которому положено видеть суммы
 # выплат. Когда такой появится, право расходится в одну строку, а не
 # вычленяется задним числом из финансов.
-CAN_VIEW_NOMENCLATURE = (ADMIN, DIRECTOR)
+CAN_VIEW_NOMENCLATURE = (ADMIN, DIRECTOR, FINANCE_MANAGER)
 # Выгрузить каталог в Excel — оба, как и экспорт контрагентов.
 CAN_EXPORT_NOMENCLATURE = (ADMIN, DIRECTOR)
 # А ЗАЛИТЬ — только Admin, как и импорт контрагентов: загрузка данных внутрь
@@ -122,8 +152,10 @@ CAN_EDIT_NOMENCLATURE = (ADMIN, DIRECTOR)
 # отличие от контрагентов и номенклатуры: там файл несёт сотни полей и
 # перезаписывает карточки, а тут одна колонка с названиями, и цена ошибки —
 # лишняя строка в списке, которую видно сразу.
-CAN_VIEW_PARTNERS = (ADMIN, DIRECTOR)
-CAN_MANAGE_PARTNERS = (ADMIN, DIRECTOR)
+CAN_VIEW_PARTNERS = (ADMIN, DIRECTOR, FINANCE_MANAGER)
+# Вести справочник площадок финансовому менеджеру можно: это и есть его
+# работа, а цена ошибки — лишняя строка в списке, которую видно сразу.
+CAN_MANAGE_PARTNERS = (ADMIN, DIRECTOR, FINANCE_MANAGER)
 
 # Отчёты площадок: загрузка файлов и правила их разбора (18.09.2026). Право
 # своё, хоть пока и совпадает с финансовым: отчёт — это деньги площадки до
@@ -156,7 +188,7 @@ CAN_MANAGE_PAYMENTS = (ADMIN, DIRECTOR)
 # видеть её сама собой. Не путать с COMPETING_ROLES в champion.py — ТАМ
 # список перечислительный (менеджеры и топ-менеджеры), и новая роль в зачёт
 # сама не попадёт. Видеть доску и участвовать в ней — разные вещи.
-CAN_VIEW_CHAMPION_BOARD = ROLES
+CAN_VIEW_CHAMPION_BOARD = DOCS_ROLES
 
 # Вкладка «Dista Connect»: сверка нашей базы контрагентов с выгрузкой из Dista
 # Music (проставить связку dista_id, завести новых из Dista). Только Admin —
@@ -174,8 +206,8 @@ CAN_USE_DISTA_SYNC = (ADMIN,)
 # роли и про пятую не знал. Комментарий рядом при этом честно гласил
 # "доступно всем ролям" — то есть намерение и код разошлись, а поймал это
 # только пользователь на проде. С `= ROLES` разойтись уже нечему.
-CAN_GENERATE = ROLES
-CAN_CREATE_CONTRAGENTS = ROLES
+CAN_GENERATE = DOCS_ROLES
+CAN_CREATE_CONTRAGENTS = DOCS_ROLES
 
 # Редактирование существующей карточки. В обычном режиме — НЕ для Manager:
 # он заводит новых контрагентов и генерирует по ним документы, а правка уже
@@ -188,7 +220,7 @@ CAN_CREATE_CONTRAGENTS = ROLES
 # permissions.js (canEditContragents). Это ЕДИНСТВЕННЫЕ две строки отката —
 # поле-guard в update_contragent и restricted-режим модалки трогать не нужно,
 # они снова включатся сами, как только manager выйдет из этого кортежа.
-CAN_EDIT_CONTRAGENTS = ROLES
+CAN_EDIT_CONTRAGENTS = DOCS_ROLES
 
 # Тип договора (contract_family) карточки может менять ЛЮБАЯ роль, включая
 # manager — по просьбе владельца: менеджеру нужно уметь переключить тип
@@ -197,7 +229,7 @@ CAN_EDIT_CONTRAGENTS = ROLES
 # этим ролям, но тем, кого нет в CAN_EDIT_CONTRAGENTS (сейчас — manager),
 # разрешено передать ТОЛЬКО contract_family (и requisites, см. ниже); любое
 # другое поле → 403.
-CAN_EDIT_CONTRACT_FAMILY = ROLES
+CAN_EDIT_CONTRACT_FAMILY = DOCS_ROLES
 
 # Реквизиты карточки (requisites — адреса, банк, паспорт СГ и т.п.) может
 # править ЛЮБАЯ роль, включая manager (по просьбе владельца): реквизиты — не
@@ -205,7 +237,7 @@ CAN_EDIT_CONTRACT_FAMILY = ROLES
 # contract_family, поле-уровневая проверка в update_contragent пропускает
 # requisites даже для тех, кого нет в CAN_EDIT_CONTRAGENTS, а остальные поля
 # им по-прежнему запрещены.
-CAN_EDIT_REQUISITES = ROLES
+CAN_EDIT_REQUISITES = DOCS_ROLES
 
 # Рег. номер (ИНН/ОГРНИП/ОГРН/БИН) правит ЛЮБАЯ роль (по просьбе владельца
 # 04.08.2026): он показан в блоке реквизитов карточки «всё в одном месте», и
@@ -214,7 +246,7 @@ CAN_EDIT_REQUISITES = ROLES
 # уникальность/длину по-прежнему валидирует сервер (normalize_reg_number +
 # проверка конфликта в update_contragent), так что «испортить» идентификатор
 # кривым вводом нельзя — только заменить на другой валидный.
-CAN_EDIT_REG_NUMBER = ROLES
+CAN_EDIT_REG_NUMBER = DOCS_ROLES
 
 # Номер договора (contract_number) карточки правит ЛЮБАЯ роль, включая manager
 # (по просьбе владельца 08.08.2026): у части карточек номер пуст, и его
@@ -224,7 +256,7 @@ CAN_EDIT_REG_NUMBER = ROLES
 # прочие поля менеджеру по-прежнему закрыты. Держится отдельно от временного
 # CAN_EDIT_CONTRAGENTS=ROLES: даже когда тот вернут к списку без manager, право
 # на номер договора у менеджера сохранится.
-CAN_EDIT_CONTRACT_NUMBER = ROLES
+CAN_EDIT_CONTRACT_NUMBER = DOCS_ROLES
 
 # Титл карточки правит ТОЛЬКО admin (по просьбе владельца 11.08.2026). Проверка
 # в update_contragent отдельная и НЕ зависит от CAN_EDIT_CONTRAGENTS (даже когда
@@ -237,7 +269,7 @@ CAN_EDIT_TITLE = (ADMIN,)
 # в карточке. Как и contract_family/requisites/reg_number — поле-guard в
 # update_contragent пропускает nicknames для всех ролей, прочие поля менеджеру
 # по-прежнему закрыты.
-CAN_EDIT_NICKNAMES = ROLES
+CAN_EDIT_NICKNAMES = DOCS_ROLES
 
 # Кто видит шаблоны, помеченные "скрыт для менеджеров" (hidden_for_managers):
 # admin/director/tester. У top_manager видимость скрытых убрана (по просьбе

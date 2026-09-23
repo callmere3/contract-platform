@@ -49,6 +49,9 @@ export const DIRECTOR = 'director';
 export const TOP_MANAGER = 'top_manager';
 export const TESTER = 'tester';
 export const MANAGER = 'manager';
+// Единственная роль ВТОРОГО ПРОДУКТА: живёт только в ML Finance и только в
+// трёх вкладках. ML Docs для неё не существует вовсе (см. canUseDocs ниже).
+export const FINANCE_MANAGER = 'finance_manager';
 
 export const ROLE_LABELS = {
   [ADMIN]: 'ADMIN',
@@ -56,25 +59,35 @@ export const ROLE_LABELS = {
   [TOP_MANAGER]: 'TOP MANAGER',
   [TESTER]: 'TESTER',
   [MANAGER]: 'MANAGER',
+  [FINANCE_MANAGER]: 'FINANCE MANAGER',
 };
 
 const is = (role, ...allowed) => allowed.includes(role);
 
+/**
+ * Работает ли человек с ML Docs (зеркало DOCS_ROLES в roles.py).
+ *
+ * Считаем ОТ ОБРАТНОГО — «все, кроме финансового менеджера», — а не
+ * перечислением: документные права в roles.py заданы как «все роли»
+ * намеренно, чтобы новая роль получала их сама собой (на перечислении
+ * однажды уже погорели: tester не мог сгенерировать документ). Перечисли мы
+ * их здесь, и первая же новая роль ML Docs осталась бы без вкладок.
+ */
+export const canUseDocs = (role) => !!role && !is(role, FINANCE_MANAGER);
+
 // backend: CAN_CREATE_CONTRAGENTS = (ADMIN, DIRECTOR, TOP_MANAGER, TESTER, MANAGER)
-export const canCreateContragents = (role) =>
-  is(role, ADMIN, DIRECTOR, TOP_MANAGER, TESTER, MANAGER);
+export const canCreateContragents = (role) => canUseDocs(role);
 
 // backend: CAN_EDIT_CONTRAGENTS = ROLES
 // ⚠️ ВРЕМЕННО (04.08.2026): на период массового заполнения базы менеджерам
 // открыты ВСЕ поля карточки. Вернуть к (ADMIN, DIRECTOR, TOP_MANAGER, TESTER)
 // и синхронно в roles.py, когда менеджеры закончат заполнение.
-export const canEditContragents = (role) => is(role, ADMIN, DIRECTOR, TOP_MANAGER, TESTER, MANAGER);
+export const canEditContragents = (role) => canUseDocs(role);
 
 // backend: CAN_EDIT_CONTRACT_FAMILY = ROLES — тип договора карточки может менять
 // ЛЮБАЯ роль, включая manager (остальные поля — только canEditContragents).
 // Менеджеру модалка правки показывает единственное поле «Тип договора».
-export const canEditContractFamily = (role) =>
-  is(role, ADMIN, DIRECTOR, TOP_MANAGER, TESTER, MANAGER);
+export const canEditContractFamily = (role) => canUseDocs(role);
 
 // backend: CAN_DELETE_CONTRAGENTS = (ADMIN,)
 export const canDeleteContragents = (role) => is(role, ADMIN);
@@ -97,7 +110,7 @@ export const canUseDistaSync = (role) => is(role, ADMIN);
 // backend: CAN_USE_FINANCE = (ADMIN, DIRECTOR) — второй продукт ML Finance
 // (балансы контрагентов, поступления и расходы) и переключатель продуктов в
 // шапке. У кого права нет, тот второго продукта не видит вовсе.
-export const canUseFinance = (role) => is(role, ADMIN, DIRECTOR);
+export const canUseFinance = (role) => is(role, ADMIN, DIRECTOR, FINANCE_MANAGER);
 
 // backend: CAN_ADD_FINANCE_OPERATIONS = (ADMIN, DIRECTOR) — вносить деньги
 // могут оба, а вот удалять (CAN_DELETE_FINANCE_OPERATIONS) — только admin.
@@ -109,7 +122,7 @@ export const canDeleteFinanceOperations = (role) => is(role, ADMIN);
 // отдельной строкой намеренно: каталог наполняет импорт, и заливать треки,
 // скорее всего, будет не тот человек, которому положено видеть суммы выплат
 // (зеркало CAN_VIEW_NOMENCLATURE в roles.py).
-export const canViewNomenclature = (role) => is(role, ADMIN, DIRECTOR);
+export const canViewNomenclature = (role) => is(role, ADMIN, DIRECTOR, FINANCE_MANAGER);
 
 // backend: CAN_EXPORT_NOMENCLATURE / CAN_IMPORT_NOMENCLATURE. Выгрузить
 // каталог могут оба, залить — только admin: импорт замещает состав прав у
@@ -124,8 +137,8 @@ export const canEditNomenclature = (role) => is(role, ADMIN, DIRECTOR);
 
 // backend: CAN_VIEW_PARTNERS / CAN_MANAGE_PARTNERS. Справочник площадок, от
 // которых приходят деньги: смотрят и ведут те же, кто видит ML Finance.
-export const canViewPartners = (role) => is(role, ADMIN, DIRECTOR);
-export const canManagePartners = (role) => is(role, ADMIN, DIRECTOR);
+export const canViewPartners = (role) => is(role, ADMIN, DIRECTOR, FINANCE_MANAGER);
+export const canManagePartners = (role) => is(role, ADMIN, DIRECTOR, FINANCE_MANAGER);
 
 // backend: CAN_VIEW_PARTNER_REPORTS / CAN_MANAGE_PARTNER_REPORTS. Отчёты
 // площадок: смотреть и загружать. Право заведено отдельно от финансов — отчёт
@@ -147,8 +160,7 @@ export const canExport = (role) => is(role, ADMIN, DIRECTOR);
 // кубка и рейтинг текущего месяца) у ВСЕХ ролей: соревнование, которого не
 // видят соревнующиеся, не соревнование. Чисел доска не показывает — только
 // порядок мест и шкалу относительно лидера.
-export const canViewChampionBoard = (role) =>
-  is(role, ADMIN, DIRECTOR, TOP_MANAGER, TESTER, MANAGER);
+export const canViewChampionBoard = (role) => canUseDocs(role);
 
 // backend: CAN_IMPORT = (ADMIN,)
 export const canImport = (role) => is(role, ADMIN);
@@ -178,8 +190,7 @@ export const canOpenImportExport = (role) => canExport(role) || canImport(role);
 // backend: CAN_VIEW_GENERATION_HISTORY = ROLES — вкладка "История генерации" у
 // ВСЕХ ролей, каждый видит СВОЮ генерацию. admin/director — всё, остальные
 // (top_manager/tester/manager) только свои (сервер ограничивает по user_id).
-export const canViewGenerationHistory = (role) =>
-  is(role, ADMIN, DIRECTOR, TOP_MANAGER, TESTER, MANAGER);
+export const canViewGenerationHistory = (role) => canUseDocs(role);
 
 // backend: SEES_ALL_GENERATION_HISTORY = (ADMIN, DIRECTOR) — видит историю ВСЕХ.
 // Остальные видят лишь свою — поэтому им бесполезен фильтр по пользователю

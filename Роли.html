@@ -180,6 +180,10 @@
       <h3>Менеджер</h3><span class="key">manager</span>
       <p>Рабочая роль: генерация документов и создание новых контрагентов. Заведённые карточки <b>временно</b> правит целиком <sup>4</sup> (кроме титла). Без удаления, экспорта, шаблонов и журналов.</p>
     </div>
+    <div class="role">
+      <h3>Финансовый менеджер</h3><span class="key">finance_manager</span>
+      <p>Единственная роль <b>второго продукта</b>: живёт только в ML&nbsp;Finance и только в трёх вкладках — «Номенклатура», «Контрагенты», «Партнёры». ML&nbsp;Docs для неё не существует вовсе: ни вкладок, ни переключателя продуктов, и входит она сразу в финансы. Отчёты площадок, поступления и внесение операций закрыты: смотреть деньги и двигать их — разные вещи.</p>
+    </div>
   </div>
 
   <h2>Матрица доступов</h2>
@@ -188,45 +192,47 @@
       <thead>
         <tr>
           <th class="act">Действие</th>
-          <th>Админ</th><th>Директор</th><th>Топ-менеджер</th><th>Тестер</th><th>Менеджер</th>
+          <th>Админ</th><th>Директор</th><th>Топ-менеджер</th><th>Тестер</th><th>Менеджер</th><th>Фин. менеджер</th>
         </tr>
       </thead>
       <tbody>
         <tr class="grouprow"><td colspan="6">Документы и контрагенты</td></tr>
-        <tr><td class="act">Генерация документов</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr>
-        <tr><td class="act">Создание контрагента</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr>
-        <tr><td class="act">Редактирование карточки контрагента (все поля, кроме титла) <sup>4</sup></td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓<span class="cap">временно</span></td></tr>
-        <tr><td class="act">Изменение типа договора, реквизитов, рег. номера, номера договора, псевдонимов <sup>5</sup></td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr>
-        <tr><td class="act">Правка титла карточки</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
-        <tr><td class="act">Удаление контрагента</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
-        <tr><td class="act">Экспорт в Excel</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
-        <tr><td class="act">Импорт из Excel</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
+        <tr><td class="act">Генерация документов</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td></tr>
+        <tr><td class="act">Создание контрагента</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td></tr>
+        <tr><td class="act">Редактирование карточки контрагента (все поля, кроме титла) <sup>4</sup></td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓<span class="cap">временно</span></td><td class="no">—</td></tr>
+        <tr><td class="act">Изменение типа договора, реквизитов, рег. номера, номера договора, псевдонимов <sup>5</sup></td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td></tr>
+        <tr><td class="act">Правка титла карточки</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
+        <tr><td class="act">Удаление контрагента</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
+        <tr><td class="act">Экспорт в Excel</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
+        <tr><td class="act">Импорт из Excel</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
 
         <tr class="grouprow"><td colspan="6">Шаблоны</td></tr>
-        <tr><td class="act">Просмотр папок и шаблонов</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr>
-        <tr><td class="act">Управление шаблонами <span style="color:var(--text-muted);font-size:12px">(загрузка, правка, удаление)</span></td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
-        <tr><td class="act">Видит шаблоны с пометкой «скрыт»</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td><td class="yes">✓</td><td class="no">—</td></tr>
-        <tr><td class="act">Скрывает / показывает шаблон</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
-        <tr><td class="act">ML Finance: номенклатура (каталог треков)</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
-        <tr><td class="act">Номенклатура: выгрузка в Excel</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
-        <tr><td class="act">Номенклатура: импорт выгрузки</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
-        <tr><td class="act">Номенклатура: правка карточки трека</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
-        <tr><td class="act">ML Finance: вкладка «Поступления» (что пришло на счёт)</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
-        <tr><td class="act">Поступления: завести строку, править, убрать</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
-        <tr><td class="act">ML Finance: отчёты площадок (загрузка и правила)</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
-        <tr><td class="act">Кнопка «Тестовые данные» в форме <sup>1</sup></td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="yes">✓</td><td class="no">—</td></tr>
-        <tr><td class="act">Кнопка 🎁 «выдать случайное достижение» <sup>1</sup></td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="yes">✓</td><td class="no">—</td></tr>
+        <tr><td class="act">Просмотр папок и шаблонов</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td></tr>
+        <tr><td class="act">Управление шаблонами <span style="color:var(--text-muted);font-size:12px">(загрузка, правка, удаление)</span></td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
+        <tr><td class="act">Видит шаблоны с пометкой «скрыт»</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td></tr>
+        <tr><td class="act">Скрывает / показывает шаблон</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
+        <tr><td class="act">ML Finance: номенклатура (каталог треков)</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="yes">✓</td></tr>
+        <tr><td class="act">Номенклатура: выгрузка в Excel</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
+        <tr><td class="act">Номенклатура: импорт выгрузки</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
+        <tr><td class="act">Номенклатура: правка карточки трека</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
+        <tr><td class="act">ML Finance: вкладка «Партнёры» (справочник площадок)</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="yes">✓</td></tr>
+        <tr><td class="act">Партнёры: завести, переименовать, удалить, импорт</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="yes">✓</td></tr>
+        <tr><td class="act">ML Finance: вкладка «Поступления» (что пришло на счёт)</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
+        <tr><td class="act">Поступления: завести строку, править, убрать</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
+        <tr><td class="act">ML Finance: отчёты площадок (загрузка и правила)</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
+        <tr><td class="act">Кнопка «Тестовые данные» в форме <sup>1</sup></td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td></tr>
+        <tr><td class="act">Кнопка 🎁 «выдать случайное достижение» <sup>1</sup></td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td></tr>
 
         <tr class="grouprow"><td colspan="6">ML Finance <sup>7</sup></td></tr>
-        <tr><td class="act">Второй продукт: балансы контрагентов, карточка с реквизитами</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
-        <tr><td class="act">Внести поступление или расход</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
-        <tr><td class="act">Удалить операцию</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
+        <tr><td class="act">Второй продукт: балансы контрагентов, карточка с реквизитами</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="yes">✓</td></tr>
+        <tr><td class="act">Внести поступление или расход</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
+        <tr><td class="act">Удалить операцию</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
 
         <tr class="grouprow"><td colspan="6">Администрирование</td></tr>
-        <tr><td class="act">Вкладка «Пользователи»: просмотр</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
-        <tr><td class="act">Карточка сотрудника с достижениями (нажатие на имя)</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
-        <tr><td class="act">Создание, смена ролей, отключение пользователей</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
-        <tr><td class="act">Просмотр журнала действий (audit&nbsp;log)</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
+        <tr><td class="act">Вкладка «Пользователи»: просмотр</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
+        <tr><td class="act">Карточка сотрудника с достижениями (нажатие на имя)</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
+        <tr><td class="act">Создание, смена ролей, отключение пользователей</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
+        <tr><td class="act">Просмотр журнала действий (audit&nbsp;log)</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
         <tr>
           <td class="act">Вкладка «История генерации» <sup>2</sup></td>
           <td class="yes">✓</td>
@@ -234,15 +240,15 @@
           <td class="yes">✓<span class="cap">только свои</span></td>
           <td class="yes">✓<span class="cap">только свои</span></td>
           <td class="yes">✓<span class="cap">только свои</span></td>
-        </tr>
-        <tr><td class="act">Удаление записей истории генерации</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
-        <tr><td class="act">Вкладка «Уведомления»: написать команде <sup>3</sup></td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
-        <tr><td class="act">Значок уведомлений в шапке: получать и читать <sup>3</sup></td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr>
-        <tr><td class="act">Вкладка «Dista Connect» <span style="color:var(--text-muted);font-size:12px">(сверка с базой Dista Music)</span></td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
-        <tr><td class="act">Вкладка «Кубок» <sup>6</sup> <span style="color:var(--text-muted);font-size:12px">(обладатель кубка и рейтинг месяца)</span></td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr>
-        <tr><td class="act">Участвует в зачёте кубка <sup>6</sup></td><td class="no">—</td><td class="no">—</td><td class="yes">✓</td><td class="no">—</td><td class="yes">✓</td></tr>
-        <tr><td class="act">Значок кубка у своего имени <sup>6</sup></td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr>
-        <tr><td class="act">Смена своего пароля</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+        <td class="no">—</td></tr>
+        <tr><td class="act">Удаление записей истории генерации</td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
+        <tr><td class="act">Вкладка «Уведомления»: написать команде <sup>3</sup></td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
+        <tr><td class="act">Значок уведомлений в шапке: получать и читать <sup>3</sup></td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td></tr>
+        <tr><td class="act">Вкладка «Dista Connect» <span style="color:var(--text-muted);font-size:12px">(сверка с базой Dista Music)</span></td><td class="yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
+        <tr><td class="act">Вкладка «Кубок» <sup>6</sup> <span style="color:var(--text-muted);font-size:12px">(обладатель кубка и рейтинг месяца)</span></td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td></tr>
+        <tr><td class="act">Участвует в зачёте кубка <sup>6</sup></td><td class="no">—</td><td class="no">—</td><td class="yes">✓</td><td class="no">—</td><td class="yes">✓</td><td class="no">—</td></tr>
+        <tr><td class="act">Значок кубка у своего имени <sup>6</sup></td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td></tr>
+        <tr><td class="act">Смена своего пароля</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr>
       </tbody>
       <caption>✓ — есть доступ · — нет доступа. Сноски пояснены ниже.</caption>
     </table>
@@ -315,7 +321,7 @@
   <footer>
     <span>Медиа Лэнд · Генератор договоров</span>
     <span>Обновлено 30 июля 2026</span>
-    <span>Роли: admin · director · top_manager · tester · manager</span>
+    <span>Роли: admin · director · top_manager · tester · manager · finance_manager</span>
   </footer>
 </div>
 

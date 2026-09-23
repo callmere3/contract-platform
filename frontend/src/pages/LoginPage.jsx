@@ -44,8 +44,11 @@ export function LoginPage() {
     <div className="min-h-screen flex items-center justify-center px-8">
       <Card className="w-full max-w-[380px]">
         <form onSubmit={handleSubmit} className="p-8">
-          <div className="text-[16px] font-bold mb-1">ML Docs</div>
-          <div className="text-[13px] text-text-muted mb-7">Генератор договоров</div>
+          {/* НИ НАЗВАНИЯ ПРОДУКТА, НИ ОПИСАНИЯ (просьба владельца
+              19.09.2026). Приложение перестало быть одним продуктом: за этой
+              формой и ML Docs, и ML Finance, и подписывать вход именем
+              одного из них значит встречать финансового менеджера чужой
+              вывеской. Куда человек попадёт, решает его роль. */}
 
           <div className="mb-4">
             <div className="text-xs text-text-secondary mb-1.5">Логин</div>

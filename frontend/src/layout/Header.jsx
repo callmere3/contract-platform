@@ -4,6 +4,9 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useTheme } from '../theme/ThemeContext';
 import { useAuth } from '../auth/AuthContext';
 import {
+  canUseDocs,
+  canViewPartnerReports,
+  canViewPayments,
   canViewUsers,
   canViewGenerationHistory,
   canSendNotifications,
@@ -139,13 +142,17 @@ export function Header({ companyName = 'ML Docs' }) {
     { to: '/finance', label: 'Номенклатура', end: true },
     { to: '/finance/contragents', label: 'Контрагенты' },
     { to: '/finance/partners', label: 'Партнёры' },
-    // «Отчёты» — после справочников и намеренно: сначала каталог и партнёры,
-    // потом то, что по ним приходит. Это же порядок расчёта.
-    { to: '/finance/reports', label: 'Отчёты' },
-    // «Поступления» — сразу за отчётами: отчёт говорит, что площадка
-    // насчитала, поступление — что дошло до счёта, и сверяют их парой.
-    { to: '/finance/payments', label: 'Поступления' },
   ];
+  // «Отчёты» и «Поступления» — после справочников и намеренно: сначала
+  // каталог и партнёры, потом то, что по ним приходит. Это же порядок
+  // расчёта. Финансовому менеджеру их не показываем: его дело — справочники,
+  // а деньги площадок смотрят и заводят другие (см. роли).
+  if (canViewPartnerReports(user?.role)) {
+    financeTabs = [...financeTabs, { to: '/finance/reports', label: 'Отчёты' }];
+  }
+  if (canViewPayments(user?.role)) {
+    financeTabs = [...financeTabs, { to: '/finance/payments', label: 'Поступления' }];
+  }
   if (canUseDistaSync(user?.role)) {
     financeTabs = [...financeTabs, { to: '/dista', label: 'Dista Connect' }];
   }
@@ -168,7 +175,9 @@ export function Header({ companyName = 'ML Docs' }) {
     // видит незнакомый значок и наводит мышь, чтобы понять, что это.
     tabs = [...tabs, { to: '/champion', label: '🏆', title: 'Кубок', emoji: true }];
   }
-  if (inFinance) tabs = financeTabs;
+  // У роли второго продукта вкладок ML Docs нет вовсе — и переключателя
+  // тоже (см. ниже): для неё существует только ML Finance.
+  if (inFinance || !canUseDocs(user?.role)) tabs = financeTabs;
 
   return (
     // z-[45] — не украшение: шапка задаёт слой для выпадающей панели
@@ -181,7 +190,7 @@ export function Header({ companyName = 'ML Docs' }) {
             «перейти можно, нажав слева на ML Docs»). У кого доступа к
             финансам нет, тот видит прежнюю неподвижную надпись: меню из
             одного пункта — это не меню. */}
-        {hasFinance ? (
+        {hasFinance && canUseDocs(user?.role) ? (
           <div className="relative" ref={productRef}>
             <button
               type="button"
@@ -217,7 +226,12 @@ export function Header({ companyName = 'ML Docs' }) {
             )}
           </div>
         ) : (
-          <span className="font-bold text-base tracking-[-0.01em] text-text">{companyName}</span>
+          <span className="font-bold text-base tracking-[-0.01em] text-text">
+            {/* Роль второго продукта видит его название, а не «ML Docs»:
+                меню из одного пункта — не меню, но и подписывать экран чужим
+                продуктом нельзя. */}
+            {canUseDocs(user?.role) ? companyName : 'ML Finance'}
+          </span>
         )}
         <nav className="flex items-center gap-7">
           {tabs.map((tab) => (
