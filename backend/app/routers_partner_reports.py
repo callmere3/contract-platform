@@ -392,6 +392,11 @@ def _sync_payment_actual(db: Session, payment: PartnerPayment | None) -> None:
 
     Одним платежом закрывают несколько отчётов, поэтому именно СУММА, а не
     итог последнего привязанного.
+
+    ЗАОДНО ПРОСТАВЛЯЕТСЯ «ЗАВЕДЕНО» (просьба владельца 24.09.2026). Привязка
+    отчёта и ЕСТЬ заведение: после неё в строке стоит, сколько по платежу
+    завелось и из чего это сложилось. Отвязали последний — отметка снимается
+    вместе с суммой: обе отвечают на один вопрос и расходиться не должны.
     """
     if payment is None:
         return
@@ -401,15 +406,21 @@ def _sync_payment_actual(db: Session, payment: PartnerPayment | None) -> None:
         )
     ).all()
     if not rows:
-        # Отвязали последний отчёт — поле очищаем, а не оставляем прежнее
-        # число: иначе в таблице висела бы сумма, которой больше нечем
+        # Отвязали последний отчёт — поля очищаем, а не оставляем прежние:
+        # иначе в таблице висели бы сумма и отметка, которым больше нечем
         # объясниться.
         payment.actual_amount = None
+        payment.transfer_status = None
         return
     payment.actual_amount = sum(
         ((author or Decimal(0)) + (related or Decimal(0)) for author, related in rows),
         Decimal(0),
     )
+    # «Синхра» — не «ещё не заведено», а пометка о характере сделки, и
+    # затирать её привязкой нельзя: человек поставил её руками, зная, что это
+    # за платёж.
+    if payment.transfer_status != "синхра":
+        payment.transfer_status = "да"
 
 
 def _payment_label(occurred_on, partner_name: str | None, number: int | None) -> str | None:
@@ -1386,9 +1397,16 @@ def delete_report(
     if report is None:
         raise HTTPException(404, "Отчёт не найден")
     partner = db.get(Partner, report.partner_id)
+    # Платёж запоминаем ДО удаления: у отчёта была привязка, и после неё у
+    # платежа меняются и фактический завод, и отметка «заведено». Раньше их
+    # тут не пересчитывали вовсе — удалили единственный отчёт, а в таблице
+    # поступлений оставалась сумма, которой больше нечем объясниться.
+    payment = db.get(PartnerPayment, report.payment_id) if report.payment_id else None
 
     db.execute(delete(PartnerReportRow).where(PartnerReportRow.report_id == report_id))
     db.delete(report)
+    db.flush()
+    _sync_payment_actual(db, payment)
     db.commit()
     log_action(
         db, current_user, "partner_report.delete", entity_type="partner_report",
