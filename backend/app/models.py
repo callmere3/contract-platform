@@ -998,9 +998,12 @@ class PartnerPayment(Base):
     # хранятся, а не считаются: расхождение между ними и есть то, ради чего
     # эту таблицу ведут.
     transfer_amount: Mapped[Decimal | None] = mapped_column(Numeric(16, 2))
-    transferred: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default=false(), default=False
-    )
+    # «ЗАВЕДЕНО» — НЕ ГАЛОЧКА, А ВЫБОР: пусто, «да» или «синхра» (уточнение
+    # владельца 23.09.2026). В рабочей таблице там три положения дел, и
+    # превращать «синхру» в «не заведено» значит терять то, ради чего колонку
+    # и ведут. Пусто и значит «ещё не заведено» — отдельного слова для этого
+    # не нужно.
+    transfer_status: Mapped[str | None] = mapped_column(String(16))
     actual_amount: Mapped[Decimal | None] = mapped_column(Numeric(16, 2))
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")

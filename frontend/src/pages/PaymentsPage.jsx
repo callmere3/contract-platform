@@ -568,16 +568,25 @@ export function PaymentsPage() {
                           </Tooltip>
                         )}
                     </td>
-                    <td className={`${td} w-[90px] text-center`}>
-                      <input
-                        type="checkbox"
-                        checked={!!r.transferred}
+                    {/* НЕ ГАЛОЧКА, А ВЫБОР (просьба владельца 23.09.2026):
+                        в рабочей таблице тут три положения дел — пусто, «да»
+                        и «синхра». Галочкой это не описать, а сводить
+                        «синхру» к «не заведено» значит терять то, ради чего
+                        колонку ведут. По умолчанию прочерк. */}
+                    <td className={`${td} w-[110px]`}>
+                      <select
+                        value={r.transfer_status ?? ''}
                         disabled={!manage}
                         onChange={(e) => {
-                          edit(r.id, 'transferred', e.target.checked);
-                          save(r.id, 'transferred', e.target.checked);
+                          edit(r.id, 'transfer_status', e.target.value);
+                          save(r.id, 'transfer_status', e.target.value);
                         }}
-                      />
+                        className={`${cellInput} cursor-pointer`}
+                      >
+                        <option value="">—</option>
+                        <option value="да">да</option>
+                        <option value="синхра">синхра</option>
+                      </select>
                     </td>
                     {/* ФАКТИЧЕСКИЙ ЗАВОД, ПОСЧИТАННЫЙ ПО ОТЧЁТАМ, НЕ ПРАВИТСЯ
                         (просьба владельца 19.09.2026): он равен сумме

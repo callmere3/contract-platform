@@ -252,7 +252,7 @@ export function PaymentsImportModal({ level, isTop, onDone }) {
                       {r.transfer_amount ? formatMoney(r.transfer_amount) : '—'}
                     </td>
                     <td className="px-2 py-1.5 border-b border-border-soft text-center">
-                      {r.transferred ? 'да' : ''}
+                      {r.transfer_status || ''}
                     </td>
                     <td className="px-2 py-1.5 border-b border-border-soft whitespace-nowrap">
                       {r.duplicate && <span className="text-text-muted">уже заведено</span>}

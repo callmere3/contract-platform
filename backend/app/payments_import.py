@@ -65,11 +65,10 @@ CURRENCIES = {
     "тенге": "KZT", "kzt": "KZT",
     "рубль": "RUB", "руб": "RUB", "rub": "RUB",
 }
-# «Заведено» отмечено словом «да». Встречается и «синхра» — это не «да», а
-# пометка о характере сделки, и считать её подтверждением нельзя: молча
-# проставить галочку «заведено» там, где её не ставили, хуже, чем не
-# проставить. В предпросмотре такие строки видно.
-YES = {"да", "yes", "истина", "true", "+", "1"}
+# Что стоит в колонке «заведено»: «да» либо «синхра» (синхронизация).
+# Переносим как есть — это три разных положения дел вместе с пустым, и
+# сводить их к галочке значит терять то, ради чего колонку ведут.
+STATUSES = {"да", "синхра"}
 
 MONEY_NOISE = ("\xa0", " ", " ", "₽", "$", "€", "руб.", "руб", "р.")
 MAX_ROWS = 5000
@@ -89,7 +88,8 @@ class ImportRow:
     currency_amount: str | None = None
     vat_rate: Decimal | None = None
     transfer_amount: Decimal | None = None
-    transferred: bool = False
+    # Пусто, «да» или «синхра»: в файле третье значение и правда есть.
+    transfer_status: str | None = None
     problems: list = field(default_factory=list)
 
     @property
@@ -237,7 +237,10 @@ def parse_rows(content, filename: str) -> list:
                                              cell(COL_CURRENCY))
         row.vat_rate = vat_percent(cell(COL_VAT))
         row.transfer_amount = parse_money(cell(COL_TRANSFER))
-        row.transferred = _clean(cell(COL_TRANSFERRED)).lower() in YES
+        # «ДА» И «СИНХРА» ПЕРЕНОСИМ КАК ЕСТЬ. Раньше «синхра» читалась как
+        # «не заведено» — это была потеря: в колонке три значения, а не два.
+        mark = _clean(cell(COL_TRANSFERRED)).lower()
+        row.transfer_status = mark if mark in STATUSES else None
 
         # Номер платёжного документа в нашей таблице отдельного поля не имеет,
         # но в описании он полезен: по нему строку находят в выписке.

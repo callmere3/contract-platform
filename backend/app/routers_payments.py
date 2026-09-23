@@ -36,6 +36,7 @@ from app.audit import log_action
 from app.auth import get_current_user, require_role
 from app.db import get_session
 from app.models import Partner, PartnerPayment, PartnerReport, User
+from app.partner_names import PartnerIndex, clean_name
 from app.payments_import import parse_rows
 from app.roles import CAN_MANAGE_PAYMENTS, CAN_VIEW_PAYMENTS
 
@@ -58,6 +59,8 @@ MAX_DESCRIPTION = 2000
 # Предел на импорт: квартал — это семь десятков строк, тысячи означают,
 # что выбрали не тот файл.
 MAX_IMPORT_ROWS = 5000
+# Что может стоять в «заведено». Пусто — тоже ответ: «ещё не заведено».
+TRANSFER_STATUSES = ("да", "синхра")
 
 
 def _money(value) -> str | None:
@@ -224,7 +227,8 @@ def _out(payment: PartnerPayment, partner_name: str | None, linked: int = 0,
         "rate": _rate(payment.rate),
         "vat_rate": _rate(payment.vat_rate),
         "transfer_amount": _money(payment.transfer_amount),
-        "transferred": payment.transferred,
+        # Пусто, «да» или «синхра» — см. пояснение в модели.
+        "transfer_status": payment.transfer_status,
         "actual_amount": _money(payment.actual_amount),
         # РАСХОЖДЕНИЕ — то, ради чего таблицу и ведут: сколько собирались
         # завести против того, сколько насчитали отчёты. Считает СЕРВЕР, как и
@@ -303,9 +307,14 @@ def _apply(payment: PartnerPayment, body: dict, db: Session) -> list[str]:
     if "vat_rate" in body:
         payment.vat_rate = _parse_percent(body["vat_rate"])
         touched.append("vat_rate")
-    if "transferred" in body:
-        payment.transferred = bool(body["transferred"])
-        touched.append("transferred")
+    if "transfer_status" in body:
+        status = " ".join(str(body["transfer_status"] or "").split()).lower()
+        if status and status not in TRANSFER_STATUSES:
+            raise HTTPException(
+                400, "Заведено: допустимо «%s» или пусто" % "», «".join(TRANSFER_STATUSES)
+            )
+        payment.transfer_status = status or None
+        touched.append("transfer_status")
     return touched
 
 
@@ -363,7 +372,7 @@ def list_payments(
             )),
             # Сколько строк ещё не заведено: столбец с галочками читается
             # глазами плохо, а вопрос «что осталось» задают каждый раз.
-            "not_transferred": sum(1 for p, _ in rows if not p.transferred),
+            "not_transferred": sum(1 for p, _ in rows if not p.transfer_status),
         },
     }
 
@@ -454,27 +463,17 @@ def update_payment(
 
 # --------------------------------------------------------------- импорт
 
-def _normalized(name: str) -> str:
-    """Имя площадки для сравнения: регистр и лишние пробелы не в счёт."""
-    return " ".join(str(name or "").split()).casefold()
-
-
 def _match_partners(db: Session, rows: list) -> dict:
     """
-    Имя из файла → площадка справочника, если нашлась.
+    Имя из выписки → площадка справочника, если нашлась.
 
-    ТОЛЬКО ТОЧНОЕ СОВПАДЕНИЕ (после приведения регистра и пробелов). В выписке
-    плательщик записан как «ОБЩЕСТВО С ОГРАНИЧЕННОЙ ОТВЕТСТВЕННОСТЬЮ …», а в
-    справочнике площадка называется коротко, и угадывать тут нельзя: привязать
-    деньги к чужой площадке хуже, чем оставить строку подписанной текстом.
-    Что не нашлось — ложится в `partner_name`, ровно для этого он и заведён.
+    Разбор живёт в `app/partner_names.py`: там же объяснено, почему способов
+    четыре и почему неоднозначность считается отказом. Здесь только запрос к
+    справочнику.
     """
-    known = {
-        _normalized(name): pid
-        for pid, name in db.execute(select(Partner.id, Partner.name))
-    }
+    index = PartnerIndex(db.execute(select(Partner.id, Partner.name)).all())
     return {
-        row.partner_raw: known.get(_normalized(row.partner_raw))
+        row.partner_raw: index.match(row.partner_raw)
         for row in rows
         if row.partner_raw
     }
@@ -535,7 +534,7 @@ def _preview(row, partner_id, partner_name, duplicate: bool) -> dict:
         "currency_amount": row.currency_amount,
         "vat_rate": _rate(row.vat_rate),
         "transfer_amount": _money(row.transfer_amount),
-        "transferred": row.transferred,
+        "transfer_status": row.transfer_status,
         "duplicate": duplicate,
         "problems": row.problems,
     }
@@ -585,8 +584,12 @@ def import_check(
         duplicate = _row_key(row) in seen
         duplicates += duplicate
         preview.append(
+            # Показываем то же имя, что и запишем: очищенное от формы
+            # собственности и реквизитов. Иначе предпросмотр обещает одно, а
+            # в таблице оказывается другое.
             _preview(row, partner_id,
-                     partners.get(partner_id) or row.partner_raw or None, duplicate)
+                     partners.get(partner_id) or clean_name(row.partner_raw) or None,
+                     duplicate)
         )
     return {
         "file_name": name,
@@ -642,13 +645,16 @@ def import_apply(
                 partner_id=partner_id,
                 # Имя из выписки, если площадки нет в справочнике: мелкие
                 # партнёры по синхронизации туда и не попадут.
-                partner_name=None if partner_id else (row.partner_raw or None),
+                # Не строка выписки целиком, а очищенное имя: «Муз ТВ
+                # Операционная компания» вместо «ООО "Муз ТВ Операционная
+                # компания" Р/С 40702810…». Просьба владельца 23.09.2026.
+                partner_name=None if partner_id else (clean_name(row.partner_raw) or None),
                 description=row.description or None,
                 amount=row.amount,
                 currency_amount=row.currency_amount,
                 vat_rate=row.vat_rate,
                 transfer_amount=row.transfer_amount,
-                transferred=row.transferred,
+                transfer_status=row.transfer_status,
                 created_by=current_user.id,
             )
         )
