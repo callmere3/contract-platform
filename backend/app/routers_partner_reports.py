@@ -30,6 +30,7 @@
 сколько из этих сумм причитается — следующий шаг, он живёт в правах на треки.
 """
 import json
+import re
 import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
@@ -171,6 +172,49 @@ def _aliases_for(db: Session, partner_id, rows: list) -> dict:
     return {(a.title_key, a.artist_key): a.sku for a in found}
 
 
+def _code_candidates(value: str) -> list:
+    """
+    Что из ячейки «артикула» может оказаться ISRC или UPC.
+
+    У части площадок своего кода у нас нет, а есть ISRC — и лежит он в одной
+    ячейке вместе с UPC: «3617380567893 / DG-A0P-23-16666». Поэтому режем по
+    косой черте и с каждого куска снимаем знаки: в каталоге ISRC записан
+    сплошняком («DGA0P2316666»).
+
+    Короткие куски отбрасываем: «1», «н/д» и им подобное кодом быть не может,
+    а совпасть случайно — вполне.
+    """
+    parts = [value] if "/" not in value else value.split("/")
+    out = []
+    for part in parts:
+        code = re.sub(r"[^0-9A-Za-z]", "", part).upper()
+        if len(code) >= 8 and code not in out:
+            out.append(code)
+    return out
+
+
+def _tracks_by_code(db: Session, codes: list) -> dict:
+    """
+    Код (ISRC/UPC) → (id трека, наш артикул). НЕОДНОЗНАЧНЫЕ НЕ ОТДАЁМ.
+
+    Один ISRC в каталоге встречается у нескольких позиций — у DGA062047234 их
+    семнадцать (одна запись в разных альбомах). Выбрать из них наугад значит
+    отправить деньги не туда, поэтому такой код просто не считается найденным:
+    строка останется неразнесённой, и артикул ей впишет человек.
+    """
+    found: dict = {}
+    codes = [c for c in codes if c]
+    for start in range(0, len(codes), SKU_BATCH):
+        for code, track_id, sku in db.execute(
+            select(Track.code, Track.id, Track.sku).where(
+                Track.code.in_(codes[start:start + SKU_BATCH])
+            )
+        ):
+            key = (code or "").upper()
+            found[key] = None if key in found else (track_id, sku)
+    return {k: v for k, v in found.items() if v is not None}
+
+
 def _resolve_tracks(db: Session, rows: list, partner_id=None) -> dict:
     """
     Привязать строки отчёта к каталогу: сначала по артикулу, а СТРОКИ БЕЗ
@@ -223,6 +267,29 @@ def _resolve_tracks(db: Session, rows: list, partner_id=None) -> dict:
                 row.sku = sku
                 row.matched_by = "alias"
                 resolved[row.row_num] = track_id
+
+    # ПО КОДУ ПЛОЩАДКИ (ISRC/UPC) — если «артикул» из файла нашим не оказался.
+    # Отчёт «101 и К» устроен именно так: нашего артикула в нём нет вовсе, а
+    # есть «UPC / ISRC», и по ISRC трек находится точно. Ниже запомненных
+    # сопоставлений: там решение человека, а это опознание по коду.
+    unresolved = [r for r in rows if r.row_num not in resolved and r.sku]
+    if unresolved:
+        candidates: dict = {}
+        for row in unresolved:
+            for code in _code_candidates(row.sku):
+                candidates.setdefault(code, []).append(row)
+        by_code = _tracks_by_code(db, list(candidates))
+        for code, waiting in candidates.items():
+            hit = by_code.get(code)
+            if hit is None:
+                continue
+            for row in waiting:
+                if row.row_num in resolved:
+                    continue
+                # Артикул ПОДМЕНЯЕМ НА НАШ: строка уезжает в базу, и хранить в
+                # ней чужой код значило бы потом искать трек ещё раз.
+                row.sku, row.matched_by = hit[1], "code"
+                resolved[row.row_num] = hit[0]
 
     # Строки без артикула — по названию. Одинаковые пары «название +
     # исполнитель» ищем один раз: в отчёте они повторяются по нескольку строк.

@@ -272,6 +272,34 @@ def normalize_header(value) -> str:
     return _clean(value).lower().replace("ё", "е").rstrip(".").strip()
 
 
+def header_names(row) -> list:
+    """
+    Названия колонок строки-шапки, где ПОВТОРЫ РАЗВЕДЕНЫ: второй
+    «Правообладатель» становится «Правообладатель (2)».
+
+    Зачем. У «101 и К» в шапке две одноимённые колонки: в первой стоит имя
+    лейбла («Media Land»), во второй — деньги. Правило адресует колонку по
+    названию, и без этого до второй было не дотянуться вовсе — выигрывала
+    первая, то есть текст вместо суммы. В списке выбора обе тоже выглядели
+    одинаково, и человек не мог понять, какую берёт.
+
+    Суффикс синтетический — в файле его нет, — и это осознанно: он появляется
+    только там, где название само по себе перестало быть адресом. Правила,
+    написанные раньше, не трогаются: ПЕРВОЕ вхождение остаётся под своим
+    именем.
+    """
+    names, seen = [], {}
+    for cell in row:
+        name = _clean(cell)
+        if not name:
+            names.append("")
+            continue
+        key = normalize_header(name)
+        seen[key] = seen.get(key, 0) + 1
+        names.append(name if seen[key] == 1 else f"{name} ({seen[key]})")
+    return names
+
+
 def guess_header_row(table: list) -> int:
     """
     Где шапка, если правила ещё нет: самая «широкая» текстовая строка сверху.
@@ -308,7 +336,7 @@ def read_columns(
     """
     head = read_head(content, filename, sheet) if head is None else head
     header_row = guess_header_row(head)
-    columns = [_clean(c) for c in (head[header_row] if header_row < len(head) else [])]
+    columns = header_names(head[header_row] if header_row < len(head) else [])
     return columns, header_row
 
 
@@ -321,7 +349,9 @@ def find_header_row(table: list, wanted: list) -> int:
     wanted_keys = {normalize_header(w) for w in wanted if w}
     best_row, best_hits = 0, -1
     for i, row in enumerate(table[:MAX_HEADER_SCAN]):
-        keys = {normalize_header(c) for c in row if _clean(c)}
+        # Имена берём разведёнными: правило может ссылаться на
+        # «Правообладатель (2)», и по сырой строке такое не нашлось бы.
+        keys = {normalize_header(c) for c in header_names(row) if c}
         hits = len(wanted_keys & keys)
         if hits > best_hits:
             best_row, best_hits = i, hits
@@ -478,7 +508,7 @@ def parse_report(
     # Пустое правило — шапку ищем по виду строки, а не по именам: именно так
     # читается первый файл нового партнёра, для которого правила ещё нет.
     header_row = find_header_row(head, wanted) if wanted else guess_header_row(head)
-    columns = [_clean(c) for c in (head[header_row] if header_row < len(head) else [])]
+    columns = header_names(head[header_row] if header_row < len(head) else [])
     by_key = {}
     for i, name in enumerate(columns):
         if name:
@@ -840,6 +870,48 @@ BUILTIN_RULES = (
                 "formula": f"[{_MTS_AMOUNT}] * [{_MTS_RATE_RELATED}]"
                            f" / ([{_MTS_RATE_AUTHOR}] + [{_MTS_RATE_RELATED}])"
             },
+        },
+    },
+    {
+        "name": "101 и К",
+        # Приметы: «Вал» и «Переработчик» вместе не встречаются больше нигде.
+        # «Правообладатель» в приметы не берём — этим словом в шапке названы
+        # ДВЕ колонки, и как примета оно ничего не различает.
+        "signature": ("Имя", "Название", "UPC / ISRC", "Вал", "Переработчик"),
+        "partner_names": ("101 и К",),
+        # СУММЫ В ОТЧЁТЕ С НДС 22%: сверено с готовым файлом владельца —
+        # 2436.4736 / 1.22 = 1997.1095, и так все четыре строки.
+        "vat_rate": 22,
+        # Параметры — со скриншота Dista (владелец 24.09.2026). Прочерк вместо
+        # «<не участвует>»: это графа, которую площадка не заполняет.
+        "attributes": {
+            "content_type": "—",
+            "usage_type": "—",
+            "usage_kind": "streaming",
+            "territory": "CIS/RU",
+        },
+        "mapping": {
+            # НАШЕГО АРТИКУЛА В ОТЧЁТЕ НЕТ — есть «UPC / ISRC» одной ячейкой
+            # («3617380567893 / DG-A0P-23-16666»). Трек находится по ISRC
+            # (_code_candidates в роутере), и артикул подставляется наш.
+            # У строки без кода остаётся подбор по названию и исполнителю —
+            # так находится «Ёлка — Понедельник», у которой ячейка пуста.
+            "sku": {"column": "UPC / ISRC"},
+            "title": {"column": "Название"},
+            "artist": {"column": "Имя"},
+            # КОЛИЧЕСТВО ВСЕГДА 1 (правило владельца): отчёт сводный, в нём
+            # строка на трек за квартал, а не продажи поштучно.
+            "quantity": {"formula": "1"},
+            # ДЕНЬГИ — КОЛОНКА «Правообладатель», ВТОРАЯ ПО СЧЁТУ. Первая с
+            # тем же названием держит имя лейбла («Media Land»), и без
+            # разведения повторов (header_names) правило читало бы текст
+            # вместо суммы.
+            #
+            # Всё уходит в СМЕЖНЫЕ (решение владельца 24.09.2026): эта доля —
+            # доля владельца фонограммы, а авторская у DFM, она стоит в
+            # соседней колонке «Паблишер». Авторских поэтому нет вовсе —
+            # отсутствующее поле сервер считает нулём.
+            "amount_related": {"column": "Правообладатель (2)"},
         },
     },
 )
