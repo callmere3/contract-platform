@@ -47,7 +47,10 @@ const iso = (d) => d.toISOString().slice(0, 10);
 // заполнена. Сравниваем по вхождению и без учёта регистра — в выписке
 // площадка названа длиннее, чем в справочнике («BELIEVE INTERNATIONAL»,
 // «CHOIS MUSIC, INC»).
-const CURRENCY_PARTNERS = ['chois', 'tiktok', 'believe', 'белив', 'spotify', 'аманат'];
+const CURRENCY_PARTNERS = [
+  'chois', 'tiktok', 'believe', 'белив', 'spotify', 'аманат',
+  'youtube', 'ютуб',
+];
 
 function inCurrency(row) {
   const name = `${row.partner || ''} ${row.partner_name || ''}`.toLowerCase();
