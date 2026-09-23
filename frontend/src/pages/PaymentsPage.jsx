@@ -334,54 +334,56 @@ export function PaymentsPage() {
   }
 
   const th =
-    'text-left font-semibold text-[11px] uppercase tracking-[0.04em] text-text-muted px-3 py-2 whitespace-nowrap';
+    'text-left font-semibold text-[10.5px] uppercase tracking-[0.04em] text-text-muted px-3 py-1.5 whitespace-nowrap';
   // ВЫРАВНИВАНИЕ ПО ВЕРХУ, А НЕ ПО СЕРЕДИНЕ (замечание владельца
   // 24.09.2026). У валютных строк под суммой стоит вторая строчка, и при
   // выравнивании по центру вся строка таблицы уезжала вниз: главные числа —
   // поступление, НДС, завод — переставали лежать на одном уровне с соседними
   // строками. Сверху они совпадают всегда, сколько бы строчек ни было ниже.
-  const td = 'px-3 py-0.5 align-top border-t border-border';
+  // ВЫСОТУ СТРОКИ ЗАДАЁТ ТОЛЬКО ПОЛЕ ВВОДА (правка 24.09.2026, просьба
+  // владельца: «в экселе данные помещаются на одном экране»). Своих
+  // вертикальных отступов у ячейки нет — два набора отступов, у ячейки и у
+  // поля внутри неё, складывались и давали строку вдвое выше нужного.
+  const td = 'px-3 py-0 align-top border-t border-border';
   const cellInput =
-    'w-full bg-transparent border border-transparent hover:border-border focus:border-accent rounded-input px-2 py-1 text-[13px] text-text outline-none font-sans';
+    'w-full bg-transparent border border-transparent hover:border-border focus:border-accent rounded-input px-2 py-0.5 text-[12.5px] text-text outline-none font-sans';
   const tab = (active) =>
-    `px-3 py-1.5 text-[12.5px] rounded-input border cursor-pointer bg-transparent font-sans ${
+    `px-3 py-1 text-[12.5px] rounded-input border cursor-pointer bg-transparent font-sans ${
       active ? 'border-accent text-accent' : 'border-border text-text-secondary'
     }`;
 
   return (
-    <div className="max-w-[1480px] mx-auto px-8 pt-12 pb-20">
+    <div className="max-w-[1480px] mx-auto px-8 pt-8 pb-10">
       <PageHeader title="Поступления">
         Деньги, которые пришли от площадок: сумма, НДС и сколько из неё завели.
       </PageHeader>
 
       <Card>
-        <div className="p-5 border-b border-border flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2">
-            {[1, 2, 3, 4].map((q) => (
-              <button
-                key={q}
-                type="button"
-                className={tab(q === quarter)}
-                onClick={() => {
-                  setQuarter(q);
-                  setMonthOffset(0);
-                }}
-              >
-                {ROMAN[q - 1]} квартал
-              </button>
-            ))}
-            <input
-              value={year}
-              onChange={(e) => setYear(Number(e.target.value.replace(/\D/g, '')) || '')}
-              className="bg-input-bg border border-border rounded-input px-3 py-2 text-[13px] text-text outline-none font-sans w-[86px] tabular-nums"
-            />
-          </div>
-        </div>
-
-        {/* МЕСЯЦЫ КВАРТАЛА — отдельным рядом: квартал отвечает «какой отчётный
-            период», месяц — «в какой выписке искать». Это два разных вопроса,
-            и мешать их в один список нельзя. */}
-        <div className="px-5 py-3 border-b border-border flex flex-wrap gap-2">
+        {/* КВАРТАЛ И МЕСЯЦ — В ОДНУ СТРОКУ, но ЧЕРЕЗ РАЗДЕЛИТЕЛЬ (правка
+            24.09.2026). Двумя рядами они съедали полсотни пикселей высоты,
+            ради которой всё и затевалось. Разделитель оставлен намеренно:
+            квартал отвечает «какой отчётный период», месяц — «в какой выписке
+            искать», и сливаться в один список эти вопросы не должны. */}
+        <div className="px-4 py-2.5 border-b border-border flex flex-wrap items-center gap-2">
+          {[1, 2, 3, 4].map((q) => (
+            <button
+              key={q}
+              type="button"
+              className={tab(q === quarter)}
+              onClick={() => {
+                setQuarter(q);
+                setMonthOffset(0);
+              }}
+            >
+              {ROMAN[q - 1]} квартал
+            </button>
+          ))}
+          <input
+            value={year}
+            onChange={(e) => setYear(Number(e.target.value.replace(/\D/g, '')) || '')}
+            className="bg-input-bg border border-border rounded-input px-2 py-1 text-[12.5px] text-text outline-none font-sans w-[70px] tabular-nums"
+          />
+          <span className="w-px h-5 bg-border mx-1" />
           {[0, 1, 2].map((offset) => (
             <button
               key={offset}
@@ -431,7 +433,7 @@ export function PaymentsPage() {
                         правки даты у соседней строки, ссылкой быть не может.
                         У каждого месяца нумерация своя. */}
                     <td className={`${td} w-[52px] text-right`}>
-                      <span className="inline-block px-2 py-1 text-[13px] text-text-muted tabular-nums">
+                      <span className="inline-block px-2 py-0.5 text-[12.5px] text-text-muted tabular-nums">
                         {r.number ?? ''}
                       </span>
                     </td>
@@ -607,7 +609,7 @@ export function PaymentsPage() {
                           text={`Сумма ${r.linked_reports} привязанных отчётов.
 Чтобы поправить — отвяжите отчёт во вкладке «Отчёты».`}
                         >
-                          <span className="inline-block px-2 py-1 text-[13px] text-text tabular-nums cursor-help">
+                          <span className="inline-block px-2 py-0.5 text-[12.5px] text-text tabular-nums cursor-help">
                             {amount(r.actual_amount)}
                             <span className="text-text-muted"> ↩</span>
                           </span>
@@ -630,12 +632,12 @@ export function PaymentsPage() {
                         не на что. */}
                     <td className={`${td} w-[130px] text-right`}>
                       {r.difference == null ? (
-                        <span className="inline-block px-2 py-1 text-[13px] text-text-muted">
+                        <span className="inline-block px-2 py-0.5 text-[12.5px] text-text-muted">
                           —
                         </span>
                       ) : (
                         <span
-                          className={`inline-block px-2 py-1 text-[13px] tabular-nums ${
+                          className={`inline-block px-2 py-0.5 text-[12.5px] tabular-nums ${
                             Number(r.difference) === 0 ? 'text-text-muted' : 'text-danger'
                           }`}
                           title="Сумма завода минус сумма фактического завода"
@@ -662,7 +664,7 @@ export function PaymentsPage() {
               </tbody>
             </table>
 
-            <div className="px-5 py-4 flex flex-wrap items-center gap-4 border-t border-border">
+            <div className="px-4 py-2.5 flex flex-wrap items-center gap-3 border-t border-border">
               {/* ИМПОРТ РЯДОМ С «ДОБАВИТЬ СТРОКУ», а не в шапке вкладки:
                   это два способа одного и того же — пополнить таблицу, и
                   разводить их по разным углам экрана незачем. */}
@@ -681,7 +683,7 @@ export function PaymentsPage() {
                 </Button>
               )}
               {totals && rows.length > 0 && (
-                <div className="text-[13px] text-text">
+                <div className="text-[12.5px] text-text">
                   {/* НДС в итогах нет: это ставка, а не деньги — складывать
                       коэффициенты нечего. */}
                   Поступило <b className="tabular-nums">{formatMoney(totals.amount)}</b> · завод{' '}
