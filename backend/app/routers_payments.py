@@ -142,32 +142,84 @@ def _linked_reports(db: Session, payment_ids: list) -> dict:
 
 def payment_numbers(db: Session) -> dict:
     """
-    Порядковый номер каждого поступления ВНУТРИ СВОЕГО МЕСЯЦА.
+    Номер каждого поступления ВНУТРИ СВОЕГО МЕСЯЦА.
 
-    НУМЕРУЕМ ПО ПОРЯДКУ ЗАВЕДЕНИЯ (`created_at`), а не по дате платежа
-    (просьба владельца 23.09.2026: «по порядку как заведены»). Это важно:
-    номером ссылаются из вкладки «Отчёты», и номер, который меняется от того,
-    что у соседней строки поправили дату, ссылкой быть не может. По дате
-    строки только ПОКАЗЫВАЮТСЯ.
+    НОМЕР БЕРЁТСЯ ИЗ ФАЙЛА и лежит в колонке (просьба владельца 24.09.2026:
+    «нумерация должна совпадать с файлом экселя»). Считать его мы пробовали —
+    по порядку заведения, — и это молча ломалось: весь файл заводится одним
+    импортом, `created_at` у всех строк одинаковый, и порядок внутри месяца
+    оставался на усмотрение сортировки по id. А номером ссылаются из вкладки
+    «Отчёты» и называют строку вслух, глядя в ту самую выписку.
 
-    Считаем в Python, а не оконной функцией: `date_trunc` есть в PostgreSQL и
-    нет в SQLite, на котором гоняются проверки, а строк тут десятки — их
-    заводят руками по выписке.
+    Здесь остаётся ЗАПАСНОЙ ХОД для строк без номера: они получают свободные
+    номера вслед за занятыми, по порядку заведения. Это строки, заведённые до
+    появления колонки; новым номер проставляется при записи (`next_number`),
+    чтобы он не менялся от появления соседей.
     """
     rows = db.execute(
-        select(PartnerPayment.id, PartnerPayment.occurred_on, PartnerPayment.created_at)
+        select(
+            PartnerPayment.id,
+            PartnerPayment.occurred_on,
+            PartnerPayment.created_at,
+            PartnerPayment.number,
+        )
     ).all()
     by_month: dict = {}
-    for payment_id, occurred_on, created_at in rows:
+    for payment_id, occurred_on, created_at, number in rows:
         key = (occurred_on.year, occurred_on.month)
-        by_month.setdefault(key, []).append((created_at, payment_id))
+        by_month.setdefault(key, []).append((created_at, payment_id, number))
+
     numbers = {}
     for items in by_month.values():
-        # created_at может совпасть у строк, заведённых подряд, поэтому вторым
-        # ключом идёт id — иначе порядок «плавал» бы от запроса к запросу.
-        for i, (_, payment_id) in enumerate(sorted(items, key=lambda x: (x[0], str(x[1]))), 1):
-            numbers[payment_id] = i
+        taken = {number for _, _, number in items if number}
+        nameless = sorted(
+            ((created_at, payment_id) for created_at, payment_id, number in items
+             if not number),
+            # created_at совпадает у строк одного импорта, поэтому вторым
+            # ключом идёт id — иначе порядок «плавал» бы от запроса к запросу.
+            key=lambda x: (x[0], str(x[1])),
+        )
+        numbers.update({pid: number for _, pid, number in items if number})
+        free = 1
+        for _, payment_id in nameless:
+            while free in taken:
+                free += 1
+            numbers[payment_id] = free
+            taken.add(free)
     return numbers
+
+
+def _numbers_in_month(db: Session, occurred_on: date) -> set:
+    """Номера, уже занятые в месяце этой даты."""
+    return set(
+        db.execute(
+            select(PartnerPayment.number).where(
+                PartnerPayment.number.isnot(None),
+                PartnerPayment.occurred_on >= occurred_on.replace(day=1),
+                PartnerPayment.occurred_on < _next_month(occurred_on),
+            )
+        ).scalars()
+    )
+
+
+def next_number(db: Session, occurred_on: date) -> int:
+    """
+    Первый свободный номер в месяце этой даты — для строки, заведённой руками.
+
+    Именно свободный, а не «последний плюс один»: строки удаляют, и номер
+    удалённой должен вернуться в оборот, иначе нумерация месяца разойдётся с
+    выпиской, где она сплошная.
+    """
+    taken = _numbers_in_month(db, occurred_on)
+    number = 1
+    while number in taken:
+        number += 1
+    return number
+
+
+def _next_month(day: date) -> date:
+    """Первое число следующего месяца — граница отбора «в этом месяце»."""
+    return date(day.year + day.month // 12, day.month % 12 + 1, 1)
 
 
 def _difference(payment: PartnerPayment):
@@ -279,8 +331,18 @@ def _apply(payment: PartnerPayment, body: dict, db: Session) -> list[str]:
     """
     touched = []
     if "occurred_on" in body:
+        was = payment.occurred_on
         payment.occurred_on = _parse_date(body["occurred_on"], "Дата поступления")
         touched.append("occurred_on")
+        # ПЕРЕЕХАЛА В ДРУГОЙ МЕСЯЦ — НУЖЕН СВОЙ НОМЕР: нумерация у каждого
+        # месяца своя, и принесённый номер там наверняка уже занят. Внутри
+        # месяца дату правят свободно, номер при этом не трогаем — им уже
+        # могли назвать строку.
+        if was and (was.year, was.month) != (
+            payment.occurred_on.year, payment.occurred_on.month
+        ):
+            payment.number = next_number(db, payment.occurred_on)
+            touched.append("number")
     if "partner_id" in body:
         raw = str(body["partner_id"] or "").strip()
         if raw:
@@ -421,11 +483,16 @@ def create_payment(
     какую сумму, дозаполняют следом. Требовать всё сразу значило бы заставить
     человека держать пустую строку в голове, пока он ищет недостающее.
     """
+    occurred_on = _parse_date(
+        body.get("occurred_on") or date.today().isoformat(), "Дата поступления"
+    )
     payment = PartnerPayment(
         id=uuid.uuid4(),
-        occurred_on=_parse_date(
-            body.get("occurred_on") or date.today().isoformat(), "Дата поступления"
-        ),
+        occurred_on=occurred_on,
+        # Номер проставляем СРАЗУ, а не считаем при показе: иначе он менялся
+        # бы от появления соседей, а им называют строку и ссылаются на неё из
+        # вкладки «Отчёты».
+        number=next_number(db, occurred_on),
         created_by=current_user.id,
         created_at=datetime.now(timezone.utc),
     )
@@ -729,6 +796,7 @@ def import_apply(
     """
     rows, matched, seen, name, index = _prepare(db, file, pasted)
     created = skipped = duplicates = 0
+    taken: dict = {}                     # месяц → уже занятые в нём номера
     for row in rows:
         if row.problems:
             skipped += 1
@@ -737,9 +805,21 @@ def import_apply(
         if skip_duplicates and _is_duplicate(seen, row, partner_id, index):
             duplicates += 1
             continue
+        # НОМЕР ИЗ ФАЙЛА, и он же главный: с ним человек смотрит на выписку.
+        # Занят или не разобран — берём следующий свободный в этом месяце;
+        # занятые копим на месте, потому что в базе строки ещё нет.
+        month = (row.occurred_on.year, row.occurred_on.month)
+        used = taken.setdefault(month, _numbers_in_month(db, row.occurred_on))
+        number = row.number
+        if number is None or number in used:
+            number = 1
+            while number in used:
+                number += 1
+        used.add(number)
         db.add(
             PartnerPayment(
                 id=uuid.uuid4(),
+                number=number,
                 occurred_on=row.occurred_on,
                 partner_id=partner_id,
                 # Имя из выписки, если площадки нет в справочнике: мелкие

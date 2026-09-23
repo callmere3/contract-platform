@@ -45,6 +45,7 @@ from decimal import Decimal, InvalidOperation
 import openpyxl
 
 # Позиции колонок. Всё, чего нет в этом списке, мы не читаем.
+COL_NUMBER = 0
 COL_DATE = 1
 COL_DOC = 2
 COL_CURRENCY = 3
@@ -87,6 +88,8 @@ class ImportRow:
 
     line: int
     sheet: str
+    # Номер из первого столбца файла: своя нумерация у каждого месяца.
+    number: int | None = None
     occurred_on: date | None = None
     partner_raw: str = ""
     description: str = ""
@@ -196,6 +199,26 @@ def _currency_note(amount_cell, currency_cell) -> str | None:
     return f"{written} {SIGNS[code]}"[:64]
 
 
+def _row_number(value) -> int | None:
+    """
+    Номер строки из первого столбца файла.
+
+    Берём ТОЛЬКО целое и только разумной величины: в этой же колонке у
+    служебных строк попадается что угодно, а номер — это «1», «2», «27».
+    Не разобрали — не беда, номер назначится следующим свободным в месяце.
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float, Decimal)):
+        number = int(value)
+    else:
+        text = _clean(value)
+        if not text.isdigit():
+            return None
+        number = int(text)
+    return number if 1 <= number <= 9999 else None
+
+
 def _pretty(value: Decimal) -> str:
     """«11700.4» → «11 700,40»: разряды и запятая, как во всей таблице."""
     return f"{value:,.2f}".replace(",", " ").replace(".", ",")
@@ -259,6 +282,7 @@ def parse_rows(content, filename: str) -> list:
             continue                                   # шапка
 
         row = ImportRow(line=line, sheet=sheet)
+        row.number = _row_number(cell(COL_NUMBER))
         row.occurred_on = occurred_on
         row.partner_raw = partner
         row.description = _clean(cell(COL_DESCRIPTION))[:2000]
