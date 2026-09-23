@@ -38,12 +38,14 @@
 однажды поправить одно и забыть второе.
 """
 import ast
+import codecs
 import csv
 import io
 import re
 from datetime import date, timedelta
 from dataclasses import dataclass, field
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
+from itertools import chain, islice
 
 import openpyxl
 
@@ -85,7 +87,11 @@ PRECISION = Decimal("0.0001")
 CENTS = Decimal("0.01")
 
 
-@dataclass
+# slots=True — НЕ микрооптимизация: этих объектов ровно столько же, сколько
+# строк в файле, а в отчёте Believe их 584 тысячи, в отчёте ОМА — полтора
+# миллиона. Обычный объект носит с собой словарь атрибутов (~100 байт на
+# штуку), и на таком количестве это сотня мегабайт из ничего.
+@dataclass(slots=True)
 class ReportRow:
     """Строка отчёта, приведённая к единому формату."""
 
@@ -137,25 +143,109 @@ class ParseResult:
 # --------------------------------------------------------------------- чтение
 
 
-def read_table(content: bytes, filename: str, sheet: str | None = None) -> list:
+# Сколько байт нюхаем, определяя кодировку. Кириллица в cp1251 ломает проверку
+# на utf-8 в первой же строке данных, так что четверти мегабайта хватает с
+# огромным запасом, а читать ради этого весь файл — лишний проход по сотне
+# мегабайт.
+SNIFF_BYTES = 256 * 1024
+
+
+def detect_encoding(content: bytes) -> str:
     """
-    Файл → таблица (список строк, каждая — список ячеек).
+    Кодировка текстового отчёта.
+
+    ПРОВЕРЕНО НА НАСТОЯЩИХ ФАЙЛАХ (23.09.2026): выгрузки Believe, Spotify, ОМА
+    и «Звука» приходят в cp1251, а не в utf-8. Прежний безусловный
+    `decode("utf-8-sig", errors="replace")` превращал в «замену» КАЖДЫЙ
+    кириллический символ — на двухстах килобайтах образца до семидесяти тысяч
+    штук. Отчёт при этом загружался без единой ошибки и был при этом негоден:
+    названия и исполнители приезжали мусором, а это ровно те два поля, по
+    которым подбирается артикул, когда площадка не проставила код.
+
+    Порядок проверки важен: cp1251 принимает почти любой байт и потому годится
+    только последним. utf-8, наоборот, строг — на кириллице в cp1251 он
+    спотыкается сразу.
+    """
+    if content[:2] in (b"\xff\xfe", b"\xfe\xff"):
+        return "utf-16"
+    # Инкрементальный декодер не спотыкается о символ, разрезанный границей
+    # куска: без final=True он придержит незаконченный хвост, а не сочтёт его
+    # ошибкой. Иначе кодировка зависела бы от того, куда попала граница.
+    decoder = codecs.getincrementaldecoder("utf-8")()
+    try:
+        decoder.decode(content[:SNIFF_BYTES], final=False)
+        return "utf-8-sig"
+    except UnicodeDecodeError:
+        return "cp1251"
+
+
+def _text_stream(content: bytes, encoding: str) -> io.TextIOWrapper:
+    """Байты → текстовый поток. Раскодировка идёт по мере чтения, а не разом."""
+    return io.TextIOWrapper(
+        io.BytesIO(content), encoding=encoding, errors="replace", newline=""
+    )
+
+
+def iter_table(content: bytes, filename: str, sheet: str | None = None):
+    """
+    Файл → строки таблицы ПО ОДНОЙ, а не списком целиком.
 
     Excel и текст читаются по-разному, но дальше разбор один: правило не
     должно зависеть от того, прислала площадка .xlsx или .csv.
+
+    ПОЧЕМУ ГЕНЕРАТОР: список держит в памяти весь файл сразу — на отчёте
+    Believe это 900 МБ при 137 МБ самого файла, потому что каждая ячейка
+    становится отдельным объектом Python. Разбор идёт строка за строкой и
+    назад не перематывает, так что копить нечего.
     """
     name = (filename or "").lower()
     if name.endswith((".xlsx", ".xlsm")):
         wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True, read_only=True)
-        ws = wb[sheet] if sheet and sheet in wb.sheetnames else wb[wb.sheetnames[0]]
-        return [list(row) for row in ws.iter_rows(values_only=True)]
+        try:
+            ws = wb[sheet] if sheet and sheet in wb.sheetnames else wb[wb.sheetnames[0]]
+            for row in ws.iter_rows(values_only=True):
+                yield list(row)
+        finally:
+            # Читателя могут бросить на полпути (см. read_head — ему нужны
+            # только верхние строки), и тогда сюда придёт GeneratorExit.
+            wb.close()
+        return
 
-    text = content.decode("utf-8-sig", errors="replace")
+    encoding = detect_encoding(content)
     # Разделитель угадываем по первой непустой строке: у площадок встречаются
-    # и табуляция, и точка с запятой, и запятая.
-    sample = next((line for line in text.splitlines() if line.strip()), "")
+    # и табуляция, и точка с запятой, и запятая. Нюхаем отдельным потоком, а
+    # не перематываем рабочий: перемотка текстового потока после обхода
+    # итератором — как раз то место, где потом ищут странные ошибки.
+    sample = ""
+    for line in _text_stream(content, encoding):
+        if line.strip():
+            sample = line
+            break
     delimiter = max(("\t", ";", ","), key=sample.count) if sample else ","
-    return [list(row) for row in csv.reader(io.StringIO(text), delimiter=delimiter)]
+    for row in csv.reader(_text_stream(content, encoding), delimiter=delimiter):
+        yield row
+
+
+def read_table(content: bytes, filename: str, sheet: str | None = None) -> list:
+    """
+    Весь файл списком.
+
+    Осталась для мелких файлов и тестов; разбор настоящего отчёта идёт через
+    `iter_table`, иначе память растёт вместе с файлом.
+    """
+    return list(iter_table(content, filename, sheet))
+
+
+def read_head(content: bytes, filename: str, sheet: str | None = None) -> list:
+    """
+    Верхние строки файла — те, где живут шапка-описание и названия колонок.
+
+    Нужна там, где раньше читался ВЕСЬ файл ради тридцати верхних строк:
+    список колонок и период из шапки. На отчёте в полмиллиона строк каждый
+    такой проход стоил полторы минуты и гигабайт памяти, а в предпросмотре их
+    было три.
+    """
+    return list(islice(iter_table(content, filename, sheet), MAX_HEADER_SCAN))
 
 
 def sheet_names(content: bytes, filename: str) -> list:
@@ -201,11 +291,20 @@ def guess_header_row(table: list) -> int:
     return best_row
 
 
-def read_columns(content: bytes, filename: str, sheet: str | None = None) -> tuple:
-    """Названия колонок файла и номер строки с шапкой (0-based)."""
-    table = read_table(content, filename, sheet)
-    header_row = guess_header_row(table)
-    columns = [_clean(c) for c in (table[header_row] if header_row < len(table) else [])]
+def read_columns(
+    content: bytes, filename: str, sheet: str | None = None, head: list | None = None
+) -> tuple:
+    """
+    Названия колонок файла и номер строки с шапкой (0-based).
+
+    Читаем только верх файла: шапка живёт в первых строках, и `guess_header_row`
+    дальше MAX_HEADER_SCAN всё равно не смотрит. Готовый `head` можно передать
+    снаружи — в предпросмотре он же нужен для поиска периода, и читать его
+    дважды незачем.
+    """
+    head = read_head(content, filename, sheet) if head is None else head
+    header_row = guess_header_row(head)
+    columns = [_clean(c) for c in (head[header_row] if header_row < len(head) else [])]
     return columns, header_row
 
 
@@ -353,12 +452,16 @@ def parse_report(
     `limit` — сколько строк разобрать (для предпросмотра). Итоги считаются по
     разобранному, и в предпросмотре это честно подписано.
     """
-    table = read_table(content, filename, sheet)
+    # ОДИН ПРОХОД ПО ФАЙЛУ: голову придерживаем в памяти (там шапка), хвост
+    # дочитываем из того же итератора. Раньше здесь читался весь файл списком,
+    # и на отчёте Believe это стоило 900 МБ сверх всего остального.
+    rows_iter = iter_table(content, filename, sheet)
+    head = list(islice(rows_iter, MAX_HEADER_SCAN))
     wanted = mapping_columns(mapping)
     # Пустое правило — шапку ищем по виду строки, а не по именам: именно так
     # читается первый файл нового партнёра, для которого правила ещё нет.
-    header_row = find_header_row(table, wanted) if wanted else guess_header_row(table)
-    columns = [_clean(c) for c in (table[header_row] if header_row < len(table) else [])]
+    header_row = find_header_row(head, wanted) if wanted else guess_header_row(head)
+    columns = [_clean(c) for c in (head[header_row] if header_row < len(head) else [])]
     by_key = {}
     for i, name in enumerate(columns):
         if name:
@@ -381,9 +484,9 @@ def parse_report(
     if vat_rate:
         divisor = Decimal(1) + Decimal(str(vat_rate)) / Decimal(100)
 
-    data = table[header_row + 1:]
+    data = chain(head[header_row + 1:], rows_iter)
     if limit is not None:
-        data = data[:limit]
+        data = islice(data, limit)
 
     for offset, raw in enumerate(data):
         row_num = header_row + 2 + offset        # как в Excel: с единицы, с шапкой

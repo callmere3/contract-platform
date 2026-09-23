@@ -62,7 +62,7 @@ from app.partner_reports import (
     period_label,
     pick_track,
     read_columns,
-    read_table,
+    read_head,
     rubles,
     search_word,
     sheet_names,
@@ -86,9 +86,20 @@ PREVIEW_ROWS = 5
 # «показать строки без артикула» показывала бы не строки без артикула, а те из
 # них, что случайно попали в начало.
 UNMATCHED_PREVIEW = 300
-# Предел на файл. Квартальный отчёт площадки — это десятки тысяч строк;
-# миллион означает, что прислали что-то другое или файл склеен из года.
-MAX_ROWS = 300_000
+# Предел на файл — защита от «прислали не то», а не норматив.
+#
+# Был 300 000 и отсекал три четверти настоящих отчётов (сверено с папкой
+# поступлений за 2 кв. 2026: Believe RU — 584 тыс. строк, Spotify — 494 тыс.,
+# ОМА — 1.58 млн, и это один квартал). Прежняя оценка «квартальный отчёт это
+# десятки тысяч строк» была снята с единственного знакомого файла — МТС, где
+# их 657.
+MAX_ROWS = 3_000_000
+
+# Сколько значений кладём в один `IN (...)`. PostgreSQL принимает не больше
+# 65 535 параметров на запрос, и на отчёте в полмиллиона строк список артикулов
+# упирался в этот предел: приходила ОШИБКА ДРАЙВЕРА, а не долгое ожидание —
+# то есть крупный отчёт не загружался вовсе, сколько его ни жди.
+SKU_BATCH = 10_000
 
 # ПАРАМЕТРЫ ОТЧЁТА — те же четыре, что в Dista: тип контента, тип и вид
 # использования, территория. Они одинаковы для всего файла и дальше уйдут в
@@ -119,23 +130,43 @@ def _alias_key(title, artist) -> tuple:
     return normalize_name(title), " ".join(artist_tokens(artist))
 
 
+def _tracks_by_sku(db: Session, skus) -> dict:
+    """
+    Артикул → id трека. ПАЧКАМИ, а не одним списком: см. SKU_BATCH.
+
+    Одним `IN (...)` это работало ровно до первого крупного отчёта — на
+    полумиллионе строк запрос упирался в предел параметров PostgreSQL.
+    """
+    skus = list(skus)
+    found: dict = {}
+    for start in range(0, len(skus), SKU_BATCH):
+        for sku, track_id in db.execute(
+            select(Track.sku, Track.id).where(
+                Track.sku.in_(skus[start:start + SKU_BATCH])
+            )
+        ):
+            found[sku] = track_id
+    return found
+
+
 def _aliases_for(db: Session, partner_id, rows: list) -> dict:
     """
-    Что мы уже запоминали для этой площадки — только по строкам этого файла.
+    Что мы уже запоминали для этой площадки — по строкам этого файла.
 
-    Тянем не весь список партнёра: в отчёте несколько сотен строк, а
-    сопоставлений со временем накопятся тысячи, и фильтр по ключам дешевле,
-    чем перебор всего.
+    ДВЕ СТРАТЕГИИ, и выбор между ними не про удобство, а про предел параметров
+    в запросе. У небольшого отчёта дешевле спросить по его ключам: сопоставлений
+    у площадки со временем накопятся тысячи, а в файле строк сотни. У крупного
+    наоборот — в отчёте Believe полмиллиона разных названий, списком в запрос
+    они не лезут, и проще забрать все сопоставления площадки и отсеять на месте:
+    их всё равно на порядки меньше.
     """
     keys = {_alias_key(r.title, r.artist) for r in rows if r.title}
     if not keys:
         return {}
-    found = db.execute(
-        select(PartnerTrackAlias).where(
-            PartnerTrackAlias.partner_id == partner_id,
-            PartnerTrackAlias.title_key.in_({k[0] for k in keys}),
-        )
-    ).scalars()
+    query = select(PartnerTrackAlias).where(PartnerTrackAlias.partner_id == partner_id)
+    if len(keys) <= SKU_BATCH:
+        query = query.where(PartnerTrackAlias.title_key.in_({k[0] for k in keys}))
+    found = db.execute(query).scalars()
     return {(a.title_key, a.artist_key): a.sku for a in found}
 
 
@@ -164,13 +195,7 @@ def _resolve_tracks(db: Session, rows: list, partner_id=None) -> dict:
     целиком нельзя (в отчёте «Тмстс!», в каталоге «Тмстс»), а слово сужает
     список до десятков, дальше решает строгое сравнение.
     """
-    skus = {r.sku for r in rows if r.sku}
-    by_sku = {
-        sku: track_id
-        for sku, track_id in db.execute(
-            select(Track.sku, Track.id).where(Track.sku.in_(skus))
-        )
-    } if skus else {}
+    by_sku = _tracks_by_sku(db, {r.sku for r in rows if r.sku})
 
     resolved: dict = {}
     for row in rows:
@@ -189,12 +214,7 @@ def _resolve_tracks(db: Session, rows: list, partner_id=None) -> dict:
             for key in (_alias_key(r.title, r.artist) for r in unresolved)
             if key in aliases
         }
-        by_alias_sku = {
-            sku: track_id
-            for sku, track_id in db.execute(
-                select(Track.sku, Track.id).where(Track.sku.in_(wanted))
-            )
-        } if wanted else {}
+        by_alias_sku = _tracks_by_sku(db, wanted)
         for row in unresolved:
             sku = aliases.get(_alias_key(row.title, row.artist))
             track_id = by_alias_sku.get(sku) if sku else None
@@ -852,9 +872,14 @@ def preview(
     sheets = sheet_names(content, file.filename)
     chosen_sheet = sheet.strip() or (rule.sheet if rule else None)
 
+    # ВЕРХ ФАЙЛА ЧИТАЕМ ОДИН РАЗ и переиспользуем: по нему определяются и
+    # колонки, и период из шапки. Раньше предпросмотр читал файл ЦЕЛИКОМ трижды
+    # (колонки, разбор, период), и на отчёте в полмиллиона строк каждый проход
+    # стоил полторы минуты и гигабайт памяти.
+    file_head = read_head(content, file.filename, chosen_sheet)
     # Колонки читаем ДО применения правила: если правила нет, догадка
     # строится как раз по ним.
-    columns, _ = read_columns(content, file.filename, chosen_sheet)
+    columns, _ = read_columns(content, file.filename, chosen_sheet, head=file_head)
     chosen = _pick_rule(rule, mapping, columns)
     active_mapping = chosen["mapping"]
     rate = (
@@ -894,9 +919,7 @@ def preview(
     # период с 1 июля 2026 по 31 июля 2026»). Период — единственное, что
     # человек вводит руками, и ошибиться в нём легче всего: файл за июнь
     # грузят в июле. Это подсказка — форма подставит, а править можно.
-    found_period = find_period(
-        read_table(content, file.filename, chosen_sheet), result.header_row
-    )
+    found_period = find_period(file_head, result.header_row)
     return {
         "partner": {"id": str(partner.id), "name": partner.name},
         "file_name": file.filename,
@@ -956,6 +979,68 @@ def preview(
             "total": _money(totals["amount_author"] + totals["amount_related"]),
         },
     }
+
+
+ROW_COLUMNS = (
+    "id", "report_id", "row_num", "sku", "title", "artist",
+    "quantity", "amount_author", "amount_related", "track_id",
+)
+
+
+def _store_rows(db: Session, report_id, rows: list, track_by_row: dict) -> None:
+    """
+    Записать строки отчёта в базу.
+
+    ЧЕРЕЗ `COPY`, А НЕ ОБЪЕКТАМИ ORM. Замерено на проде (23.09.2026): путь
+    через `bulk_save_objects` даёт 4 720 строк в секунду — отчёт Believe на 584
+    тысячи строк пишется две минуты, а квартал целиком почти полчаса одной
+    только записью. `COPY` — это поток байтов прямо в таблицу, без сборки
+    объекта на каждую строку, и он быстрее примерно на порядок.
+
+    ФОРМАТ ТЕКСТОВЫЙ, а не двоичный, хотя двоичный ещё быстрее: в нём типы
+    должны совпадать точь-в-точь, а Python отдаёт целое как int8, тогда как
+    `row_num` у нас int4. Такая ошибка вылезла бы не здесь, а на первом же
+    боевом файле.
+
+    На не-PostgreSQL (SQLite в тестовых прогонах) `COPY` не существует, и там
+    остаётся прежний путь: он медленный, но в тестах строк единицы.
+    """
+    if db.get_bind().dialect.name != "postgresql":
+        db.bulk_save_objects([
+            PartnerReportRow(
+                id=uuid.uuid4(),
+                report_id=report_id,
+                row_num=r.row_num,
+                sku=r.sku,
+                title=r.title,
+                artist=r.artist,
+                quantity=r.quantity,
+                amount_author=r.amount_author,
+                amount_related=r.amount_related,
+                track_id=track_by_row.get(r.row_num),
+            )
+            for r in rows
+        ])
+        return
+
+    statement = "COPY partner_report_rows (%s) FROM STDIN" % ", ".join(ROW_COLUMNS)
+    # Тот же коннект и та же транзакция, что у сессии: если дальше случится
+    # отказ, строки уедут обратно вместе со всем остальным.
+    with db.connection().connection.cursor() as cursor:
+        with cursor.copy(statement) as copy:
+            for r in rows:
+                copy.write_row((
+                    uuid.uuid4(),
+                    report_id,
+                    r.row_num,
+                    r.sku,
+                    r.title,
+                    r.artist,
+                    r.quantity,
+                    r.amount_author,
+                    r.amount_related,
+                    track_by_row.get(r.row_num),
+                ))
 
 
 @partner_reports_router.post(
@@ -1087,21 +1172,7 @@ def create_report(
     db.add(report)
     db.flush()
 
-    db.bulk_save_objects([
-        PartnerReportRow(
-            id=uuid.uuid4(),
-            report_id=report.id,
-            row_num=r.row_num,
-            sku=r.sku,
-            title=r.title,
-            artist=r.artist,
-            quantity=r.quantity,
-            amount_author=r.amount_author,
-            amount_related=r.amount_related,
-            track_id=track_by_row.get(r.row_num),
-        )
-        for r in result.rows
-    ])
+    _store_rows(db, report.id, result.rows, track_by_row)
 
     # ЗАПОМИНАЕМ ВПИСАННОЕ РУКАМИ: в следующем отчёте этой площадки тот же
     # трек приедет уже с артикулом. Запоминаем ТОЛЬКО то, что нашлось в
