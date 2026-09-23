@@ -477,8 +477,10 @@ def _match_partners(db: Session, rows: list) -> dict:
     справочнику.
     """
     index = PartnerIndex(db.execute(select(Partner.id, Partner.name)).all())
+    # Ключ — НОМЕР СТРОКИ, а не имя: у Apple одно и то же имя плательщика
+    # ведёт к разным площадкам в зависимости от суммы платежа.
     return {
-        row.partner_raw: index.match(row.partner_raw)
+        row.line: index.match(row.partner_raw, row.amount)
         for row in rows
         if row.partner_raw
     }
@@ -585,7 +587,7 @@ def import_check(
     partners = {pid: pname for pid, pname in db.execute(select(Partner.id, Partner.name))}
     preview, duplicates = [], 0
     for row in rows:
-        partner_id = matched.get(row.partner_raw)
+        partner_id = matched.get(row.line)
         duplicate = _row_key(row) in seen
         duplicates += duplicate
         preview.append(
@@ -607,7 +609,7 @@ def import_check(
             # Сколько имён не нашлось в справочнике: они лягут текстом, и это
             # нормально — мелких партнёров там и не должно быть.
             "unknown_partners": sum(
-                1 for r in rows if r.partner_raw and not matched.get(r.partner_raw)
+                1 for r in rows if r.partner_raw and not matched.get(r.line)
             ),
             "amount": _money(sum((r.amount or Decimal(0) for r in rows), Decimal(0))),
             "transfer_amount": _money(
@@ -642,7 +644,7 @@ def import_apply(
         if skip_duplicates and _row_key(row) in seen:
             duplicates += 1
             continue
-        partner_id = matched.get(row.partner_raw)
+        partner_id = matched.get(row.line)
         db.add(
             PartnerPayment(
                 id=uuid.uuid4(),

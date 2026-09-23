@@ -59,9 +59,29 @@ TAIL = re.compile(
 # отчётов площадок: правило, однажды записанное в базу, живёт там вечно и
 # расходится с тем, что написано здесь. Ключ слева — очищенное имя из выписки,
 # справа — очищенное имя площадки справочника.
-ALIASES = {
-    "chois music inc": "youtube",
-}
+# Слева — КУСОК очищенного имени из выписки, справа — очищенное имя площадки.
+# Кусок, а не имя целиком: у Believe плательщик пишется тремя способами, и в
+# одном из них к имени приклеен номер платежа, который меняется каждый раз.
+ALIASES = (
+    ("chois music", "youtube"),
+    ("believe", "beleive digital"),
+    ("белив", "beleive digital"),
+    ("адвмьюзик", "adv music"),
+    ("эназа", "enaza"),
+    ("сингберри", "сингберри караоке"),
+    ("селект", "селект караоке"),
+)
+
+# APPLE — ОСОБЫЙ СЛУЧАЙ: платит с одного счёта (через Deutsche Bank) за две
+# разные площадки, и различает их только размер платежа (владелец,
+# 24.09.2026): загрузки в iTunes — тысячи рублей, стриминг Apple Music — сотни
+# тысяч и миллионы. Порог поставлен в пустоту между этими порядками: ни одного
+# платежа рядом с ним не встречается, так что ошибиться он может только если
+# сама картина платежей изменится.
+APPLE_MARK = "apple distribution"
+APPLE_THRESHOLD = 100_000
+APPLE_SMALL = "apple itunes"
+APPLE_BIG = "apple music"
 
 IN_BRACKETS = re.compile(
     r"\s*\(\s*(ооо|оао|пао|зао|ао|ип|тоо|ороо|llc|ltd|inc)\s*\)\s*", re.IGNORECASE
@@ -138,17 +158,25 @@ class PartnerIndex:
                 seen_acronym[short] = None if short in seen_acronym else partner_id
         self.by_acronym = seen_acronym
 
-    def match(self, raw: str):
-        """Площадка справочника или None. Неоднозначность — тоже None."""
+    def match(self, raw: str, amount=None):
+        """
+        Площадка справочника или None. Неоднозначность — тоже None.
+
+        `amount` нужен ровно одной связке — Apple, где плательщик один, а
+        площадки две (см. APPLE_MARK).
+        """
         key = _key(raw)
         if not key:
             return None
 
-        # Известная связка проверяется ПЕРВОЙ: она сильнее любого совпадения
-        # по тексту, потому что опирается на знание, а не на похожесть имён.
-        alias = ALIASES.get(key)
-        if alias:
-            return self.by_key.get(alias)
+        # ИЗВЕСТНЫЕ СВЯЗКИ ПРОВЕРЯЮТСЯ ПЕРВЫМИ: они сильнее любого совпадения
+        # по тексту, потому что опираются на знание, а не на похожесть имён.
+        if APPLE_MARK in key:
+            small = amount is not None and abs(amount) < APPLE_THRESHOLD
+            return self.by_key.get(APPLE_SMALL if small else APPLE_BIG)
+        for fragment, target in ALIASES:
+            if fragment in key:
+                return self.by_key.get(target)
 
         found = self.by_key.get(key)
         if found:
