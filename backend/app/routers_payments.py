@@ -345,8 +345,13 @@ def list_payments(
     if partner_id is not None:
         query = query.where(PartnerPayment.partner_id == partner_id)
 
+    # ПОРЯДОК — ПО ЗАНЕСЕНИЮ, А НЕ ПО ДАТЕ (просьба владельца 23.09.2026).
+    # Таблицу заполняют по выписке сверху вниз, и строка должна оставаться
+    # там, куда её завели: пересортировка по дате перекладывает уже
+    # заполненные строки под руками, а номер (см. payment_numbers) считается
+    # как раз по занесению — иначе он не совпадал бы с тем, что на экране.
     rows = db.execute(
-        query.order_by(PartnerPayment.occurred_on, PartnerPayment.created_at)
+        query.order_by(PartnerPayment.created_at, PartnerPayment.id)
     ).all()
     linked = _linked_reports(db, [p.id for p, _ in rows])
     numbers = payment_numbers(db)

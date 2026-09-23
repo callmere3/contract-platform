@@ -39,6 +39,10 @@ export function PartnerPicker({
 }) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
+  // Набранное держим и в ref: обработчики закрытия живут в эффекте и видели
+  // бы значение на момент подписки, а не то, что человек успел напечатать.
+  const typed = useRef('');
+  typed.current = query;
   const [rect, setRect] = useState(null);
   const box = useRef(null);
   const input = useRef(null);
@@ -71,7 +75,23 @@ export function PartnerPicker({
   // устаревают — проще закрыть, чем гоняться за ними.
   useEffect(() => {
     if (!open) return undefined;
+    // НАБРАННОЕ СОХРАНЯЕТСЯ САМО, когда человек уходит из поля (просьба
+    // владельца 23.09.2026). Раньше оно требовало нажатия «оставить как
+    // есть», и это была лишняя работа: в таблице поступлений площадок вне
+    // справочника больше, чем в нём, и подтверждать каждую — то же самое, что
+    // набирать имя дважды.
+    //
+    // Точное совпадение со справочником при этом выигрывает у текста: если
+    // набрано ровно «МТС», подставляем площадку, а не одноимённую надпись.
     const close = () => {
+      const text = typed.current.trim();
+      if (allowCustom && text) {
+        const exact = partners.find(
+          (p) => (p.name || '').trim().toLowerCase() === text.toLowerCase(),
+        );
+        if (exact) onChange(exact.id);
+        else onCustom?.(text);
+      }
       setOpen(false);
       setQuery('');
     };
@@ -87,7 +107,7 @@ export function PartnerPicker({
       window.removeEventListener('scroll', close, true);
       window.removeEventListener('resize', close);
     };
-  }, [open]);
+  }, [open, allowCustom, partners, onChange, onCustom]);
 
   function pick(partner) {
     onChange(partner ? partner.id : '');
@@ -122,8 +142,11 @@ export function PartnerPicker({
           // Ничего не нашлось, но имя набрано — оставляем как есть.
           else if (e.key === 'Enter' && allowCustom && query.trim()) keepTyped();
           if (e.key === 'Escape') {
-            setOpen(false);
+            // Отмена: стираем набранное прежде, чем закрыть, — иначе его
+            // сохранил бы обработчик ухода из поля.
+            typed.current = '';
             setQuery('');
+            setOpen(false);
           }
         }}
         className={inputClassName}
@@ -177,7 +200,7 @@ export function PartnerPicker({
                 }`}
               >
                 Оставить как есть: <b>{query.trim()}</b>
-                <span className="text-text-muted"> — площадки нет в справочнике</span>
+                <span className="text-text-muted"> — сохранится и просто так, если уйти из поля</span>
               </button>
             )}
           </div>,
