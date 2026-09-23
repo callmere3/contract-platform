@@ -98,7 +98,7 @@ export function PaymentsImportModal({ level, isTop, onDone }) {
       onClose={closeModal}
       level={level}
       isTop={isTop}
-      width={1040}
+      width={1180}
       footer={
         <>
           <span className="text-[12.5px] text-text-muted mr-auto">
@@ -203,11 +203,25 @@ export function PaymentsImportModal({ level, isTop, onDone }) {
             </div>
           )}
 
-          <div className="border border-border rounded-card overflow-x-auto max-h-[400px] overflow-y-auto">
+          {/* ПРОКРУТКА ПО ОБЕИМ ОСЯМ НА ОДНОЙ КОРОБКЕ. Разносить их по двум
+              вложенным нельзя: горизонтальная полоса тогда окажется под
+              ПОСЛЕДНЕЙ строкой, и до неё придётся листать вниз — ровно то, на
+              что жаловался владелец (24.09.2026). Здесь же она прибита к
+              нижнему краю видимой области.
+
+              Но лучшая полоса — та, которая не нужна: столбец «Лист» убран,
+              окно стало шире, а колонки уже, и таблица помещается целиком. */}
+          <div className="border border-border rounded-card overflow-auto max-h-[52vh]">
             <table className="w-full border-collapse text-[12.5px]">
               <thead className="sticky top-0 bg-surface">
                 <tr>
-                  {['Лист', 'Дата', 'Партнёр', 'Описание', 'Поступление',
+                  {/* НАЗВАНИЕ ЛИСТА НЕ ПОКАЗЫВАЕМ (замечание владельца
+                      24.09.2026): при вставке из буфера там стояло бы
+                      бессмысленное «вставка», а у файла лист и так виден по
+                      дате в соседнем столбце. Месяц строки берётся из её
+                      даты, а не из имени листа, — поэтому книга с тремя
+                      листами разложится по трём месяцам сама. */}
+                  {['Дата', 'Партнёр', 'Описание', 'Поступление',
                     'В валюте', 'НДС', 'Завод', 'Заведено', ''].map((h) => (
                     <th
                       key={h}
@@ -221,22 +235,19 @@ export function PaymentsImportModal({ level, isTop, onDone }) {
               <tbody>
                 {preview.rows.map((r) => (
                   <tr
-                    key={`${r.sheet}-${r.line}`}
+                    key={r.line}
                     className={r.problems.length ? 'bg-danger-soft' : undefined}
                   >
-                    <td className="px-2 py-1.5 border-b border-border-soft text-text-muted">
-                      {r.sheet}
-                    </td>
                     <td className="px-2 py-1.5 border-b border-border-soft tabular-nums whitespace-nowrap">
                       {ru(r.occurred_on)}
                     </td>
-                    <td className="px-2 py-1.5 border-b border-border-soft max-w-[190px] truncate">
+                    <td className="px-2 py-1.5 border-b border-border-soft max-w-[170px] truncate">
                       {r.partner || <span className="text-text-muted">—</span>}
                       {r.partner && !r.partner_known && (
                         <span className="text-text-muted"> (текстом)</span>
                       )}
                     </td>
-                    <td className="px-2 py-1.5 border-b border-border-soft max-w-[220px] truncate text-text-muted">
+                    <td className="px-2 py-1.5 border-b border-border-soft max-w-[200px] truncate text-text-muted">
                       {r.description}
                     </td>
                     <td className="px-2 py-1.5 border-b border-border-soft tabular-nums text-right whitespace-nowrap">
