@@ -65,10 +65,17 @@ CURRENCIES = {
     "тенге": "KZT", "kzt": "KZT",
     "рубль": "RUB", "руб": "RUB", "rub": "RUB",
 }
-# Что стоит в колонке «заведено»: «да» либо «синхра» (синхронизация).
-# Переносим как есть — это три разных положения дел вместе с пустым, и
-# сводить их к галочке значит терять то, ради чего колонку ведут.
-STATUSES = {"да", "синхра"}
+# ЗНАЧОК ВАЛЮТЫ, А НЕ СЛОВО (просьба владельца 24.09.2026): «8 247,81 $»
+# вместо «8 247,81 доллар». Знак стоит ПОСЛЕ суммы — так же, как рубль во
+# всей остальной таблице, и так столбец читается одинаково независимо от
+# того, как валюту записала выписка.
+SIGNS = {"USD": "$", "EUR": "€", "KZT": "₸", "RUB": "₽"}
+
+# Что из колонки «заведено» ПЕРЕНОСИМ. «Да» в файле означает «заведено в
+# Дисту» (владелец, 24.09.2026) — про наш сервис это не говорит ничего, и
+# проставлять по нему отметку значит объявить заведённым то, чего у нас не
+# делали. «Синхра» — свойство самой сделки, а не чужой системы, и остаётся.
+STATUSES = {"синхра"}
 
 MONEY_NOISE = ("\xa0", " ", " ", "₽", "$", "€", "руб.", "руб", "р.")
 MAX_ROWS = 5000
@@ -84,11 +91,11 @@ class ImportRow:
     partner_raw: str = ""
     description: str = ""
     amount: Decimal | None = None
-    # Текстом, вместе с валютой: «8 247,81 доллар». См. пояснение в модели.
+    # Текстом, вместе со знаком валюты: «8 247,81 $». См. пояснение в модели.
     currency_amount: str | None = None
     vat_rate: Decimal | None = None
     transfer_amount: Decimal | None = None
-    # Пусто, «да» или «синхра»: в файле третье значение и правда есть.
+    # Пусто или «синхра»: «да» в файле означает «заведено в Дисту».
     transfer_status: str | None = None
     problems: list = field(default_factory=list)
 
@@ -160,26 +167,57 @@ def _currency(value) -> str | None:
 
 def _currency_note(amount_cell, currency_cell) -> str | None:
     """
-    Сумма в валюте так, как она записана в файле: «8 247,81 доллар».
+    Сумма в валюте, приведённая к одному виду: «8 247,81 $».
 
     Рублёвые строки пропускаем: у них эта колонка дословно повторяет сумму
-    поступления. Валюту дописываем словом из файла, но только если в самой
-    сумме нет знака валюты — иначе вышло бы «$16 803,73 доллар».
+    поступления.
+
+    ЗАПИСЬ ПРИВОДИМ К ОДНОМУ ВИДУ, а не переносим как в файле. В выписке одна
+    и та же сумма встречается и числом («11700.4»), и уже подписанным текстом
+    («$10 230,52»): в столбце они стояли рядом и выглядели как данные из
+    разных мест. Поэтому знак валюты и разряды расставляем сами, а чужие
+    знаки и слова с числа снимаем.
     """
     code = _currency(currency_cell)
     if not code or code == "RUB":
         return None
     if isinstance(amount_cell, (int, float, Decimal)) and not isinstance(amount_cell, bool):
-        # Число из ячейки Excel: приводим к привычному виду с запятой.
-        written = f"{Decimal(str(amount_cell)):.2f}".replace(".", ",")
+        written = _pretty(Decimal(str(amount_cell)))
     else:
-        written = _clean(amount_cell)
+        written = _strip_currency(_clean(amount_cell))
+        # Текст, который читается как сумма, тоже приводим к общему виду: при
+        # вставке из буфера ВСЁ приходит текстом, и без этого один и тот же
+        # файл выглядел бы по-разному, смотря чем его занесли.
+        number = parse_money(written)
+        if number is not None:
+            written = _pretty(number)
     if not written:
         return None
-    word = _clean(currency_cell)
-    if any(sign in written for sign in ("$", "€", "₸")) or word.lower() in written.lower():
-        return written[:64]
-    return f"{written} {word}"[:64]
+    return f"{written} {SIGNS[code]}"[:64]
+
+
+def _pretty(value: Decimal) -> str:
+    """«11700.4» → «11 700,40»: разряды и запятая, как во всей таблице."""
+    return f"{value:,.2f}".replace(",", " ").replace(".", ",")
+
+
+def _strip_currency(text: str) -> str:
+    """
+    Снять с суммы знак или слово валюты: подписывать её будем сами.
+
+    Текст из ячейки трогаем осторожно — в нём может стоять что угодно, — но
+    знак валюты и её название это ровно то, что мы сейчас поставим заново.
+    """
+    out = text
+    for mark in ("$", "€", "₸", "₽"):
+        out = out.replace(mark, " ")
+    low = out.lower()
+    for word in CURRENCIES:
+        if len(word) > 1 and word in low:
+            start = low.index(word)
+            out = out[:start] + out[start + len(word):]
+            low = out.lower()
+    return " ".join(out.split())
 
 
 def read_table(content: bytes, filename: str) -> list:
@@ -237,8 +275,8 @@ def parse_rows(content, filename: str) -> list:
                                              cell(COL_CURRENCY))
         row.vat_rate = vat_percent(cell(COL_VAT))
         row.transfer_amount = parse_money(cell(COL_TRANSFER))
-        # «ДА» И «СИНХРА» ПЕРЕНОСИМ КАК ЕСТЬ. Раньше «синхра» читалась как
-        # «не заведено» — это была потеря: в колонке три значения, а не два.
+        # ПЕРЕНОСИМ ТОЛЬКО «СИНХРУ» (см. STATUSES): «да» в этой колонке
+        # означает «заведено в Дисту», а не у нас.
         mark = _clean(cell(COL_TRANSFERRED)).lower()
         row.transfer_status = mark if mark in STATUSES else None
 
