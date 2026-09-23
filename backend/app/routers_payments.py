@@ -433,16 +433,25 @@ def list_payments(
     if partner_id is not None:
         query = query.where(PartnerPayment.partner_id == partner_id)
 
-    # ПОРЯДОК — ПО ЗАНЕСЕНИЮ, А НЕ ПО ДАТЕ (просьба владельца 23.09.2026).
-    # Таблицу заполняют по выписке сверху вниз, и строка должна оставаться
-    # там, куда её завели: пересортировка по дате перекладывает уже
-    # заполненные строки под руками, а номер (см. payment_numbers) считается
-    # как раз по занесению — иначе он не совпадал бы с тем, что на экране.
-    rows = db.execute(
-        query.order_by(PartnerPayment.created_at, PartnerPayment.id)
-    ).all()
-    linked = _linked_reports(db, [p.id for p, _ in rows])
+    rows = db.execute(query).all()
     numbers = payment_numbers(db)
+
+    # ПОРЯДОК — ПО НОМЕРУ, ВНУТРИ КАЖДОГО МЕСЯЦА (замечание владельца
+    # 24.09.2026). Номер теперь приходит из файла, а не считается по порядку
+    # заведения, и сортировка по `created_at` с ним разошлась: весь файл
+    # заводится одним импортом, отметка времени у всех строк одна, и на экране
+    # номера шли вразнобой. Таблица обязана выглядеть как выписка, из которой
+    # её заполняют.
+    #
+    # Месяц в ключе первым: нумерация у каждого месяца своя, и в квартальном
+    # виде без него строки перемешались бы по единицам, двойкам, тройкам.
+    #
+    # Сортируем в Python, а не в запросе: `date_trunc` есть в PostgreSQL и нет
+    # в SQLite, на котором гоняются проверки, а строк тут десятки — их заводят
+    # руками по выписке.
+    rows.sort(key=lambda r: (r[0].occurred_on.year, r[0].occurred_on.month,
+                             numbers.get(r[0].id) or 0))
+    linked = _linked_reports(db, [p.id for p, _ in rows])
     payments = [_out(p, name, linked.get(p.id, 0), numbers.get(p.id)) for p, name in rows]
 
     def total(field):
