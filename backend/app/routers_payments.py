@@ -68,13 +68,22 @@ def _rate(value) -> str | None:
     return text
 
 
+# Что отбрасываем в сумме перед разбором: человек копирует её из выписки или
+# из письма площадки, а там сумма записана вместе со знаком валюты — «116
+# 300,00 ₽». Стирать его руками в каждой ячейке (просьба владельца 23.09.2026)
+# — ровно та работа, которую должна делать машина.
+MONEY_NOISE = (" ", " ", " ", "₽", "руб.", "руб", "р.")
+
+
 def _parse_money(value, label: str) -> Decimal | None:
     """
-    «10 000,50» → Decimal. Принимаем как напечатали: пробелы (в том числе
-    неразрывные) и запятая — обычный способ набрать сумму.
+    «10 000,50 ₽» → Decimal. Принимаем как напечатали: пробелы (в том числе
+    неразрывные), запятая и знак рубля — обычный способ записать сумму.
     """
-    text = str(value if value is not None else "").replace("\xa0", " ").strip()
-    text = text.replace(" ", "").replace(",", ".")
+    text = str(value if value is not None else "").strip().lower()
+    for noise in MONEY_NOISE:
+        text = text.replace(noise, "")
+    text = text.replace(",", ".")
     if not text:
         return None
     try:

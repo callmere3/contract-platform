@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { PageHeader } from '../components/ui/PageHeader';
 import { TrashIcon } from '../components/ui/icons';
 import { PartnerPicker } from '../components/ui/PartnerPicker';
+import { Tooltip } from '../components/ui/Tooltip';
 import { useAuth } from '../auth/AuthContext';
 import { useModal } from '../modals/ModalProvider';
 import { canManagePayments } from '../auth/permissions';
@@ -80,33 +81,69 @@ const monthRange = (year, month) => ({
 });
 
 /**
- * Ячейка с суммой: пока в неё не встали курсором — показываем с разделением
- * тысяч («925 000,00»), а как только встали — то, что реально лежит в поле.
+ * ENTER СОХРАНЯЕТ, ESCAPE ОТМЕНЯЕТ (просьба владельца 23.09.2026).
  *
- * Иначе пришлось бы выбирать из двух зол: либо человек читает «925000.00»
- * слитно и пересчитывает нули пальцем, либо правит строку, в которой пробелы
- * расставлены на каждый третий знак и прыгают под курсором. Сервер, к слову,
- * принимает и «10 000,50» — так что форматирование ничему не мешает.
+ * Поле и так уходит на сервер, когда его отпускают, поэтому Enter просто
+ * снимает фокус: сохранение идёт тем же путём, что и раньше, и второй ветки
+ * кода, которая однажды разойдётся с первой, не появляется. Раньше Enter не
+ * делал ничего — таблица не форма, отправлять нечего, — и это читалось как
+ * «правка не сохранилась».
+ *
+ * Escape нужен рядом с Enter: если есть способ подтвердить, должен быть и
+ * способ передумать.
+ */
+function commitKeys(cancelRef) {
+  return (e) => {
+    if (e.key === 'Enter') e.currentTarget.blur();
+    if (e.key === 'Escape') {
+      if (cancelRef) cancelRef.current = true;
+      e.currentTarget.blur();
+    }
+  };
+}
+
+/**
+ * Ячейка с суммой — «925 000,00» и в покое, и при правке.
+ *
+ * МАШИННОГО ВИДА ЧЕЛОВЕК НЕ ВИДИТ ВООБЩЕ (просьба владельца 23.09.2026).
+ * Раньше при щелчке по ячейке «925 000,00» превращалось в «925000.00»: так
+ * было сделано, чтобы пробелы не прыгали под курсором. Но прыгают они только
+ * если переформатировать строку на каждую букву, а этого и не нужно — вид
+ * задаётся ОДИН РАЗ, когда в поле встают, дальше человек правит обычный
+ * текст. Сервер принимает и пробелы, и запятую, и знак рубля.
+ *
+ * Сравниваем при уходе с тем, что было показано в начале правки, а не со
+ * значением с сервера: иначе каждый щелчок по ячейке считался бы правкой и
+ * гонял бы запрос впустую.
  */
 function MoneyCell({ value, disabled, onSave, className }) {
-  const [text, setText] = useState(value ?? '');
+  const [text, setText] = useState('');
+  const [initial, setInitial] = useState('');
   const [editing, setEditing] = useState(false);
+  // Отмену держим в ref, а не в состоянии: Escape снимает фокус сразу же, и
+  // обработчик ухода прочитал бы ещё старое состояние.
+  const cancelled = useRef(false);
 
-  // Значение с сервера главнее набранного, пока поле не правят: оно
-  // приведено к копейкам, а после привязки отчёта ещё и пересчитано.
-  useEffect(() => {
-    if (!editing) setText(value ?? '');
-  }, [value, editing]);
+  const shown = value ? amount(value) : '';
 
   return (
     <input
-      value={editing ? text : value ? amount(value) : ''}
+      value={editing ? text : shown}
       disabled={disabled}
-      onFocus={() => setEditing(true)}
+      onFocus={() => {
+        setText(shown);
+        setInitial(shown);
+        setEditing(true);
+      }}
       onChange={(e) => setText(e.target.value)}
+      onKeyDown={commitKeys(cancelled)}
       onBlur={() => {
         setEditing(false);
-        if (text !== (value ?? '')) onSave(text);
+        if (cancelled.current) {
+          cancelled.current = false;
+          return;
+        }
+        if (text !== initial) onSave(text);
       }}
       className={className}
     />
@@ -127,25 +164,36 @@ function MoneyCell({ value, disabled, onSave, className }) {
  * иначе курсор спотыкается о лишний символ.
  */
 function RateCell({ value, disabled, onSave, className, suffix = '', placeholder }) {
-  const [text, setText] = useState(value ?? '');
+  const [text, setText] = useState('');
+  const [initial, setInitial] = useState('');
   const [editing, setEditing] = useState(false);
+  const cancelled = useRef(false);
 
-  useEffect(() => {
-    if (!editing) setText(value ?? '');
-  }, [value, editing]);
-
-  const shown = value ? `${String(value).replace('.', ',')}${suffix}` : '';
+  const human = value ? String(value).replace('.', ',') : '';
+  const shown = human ? `${human}${suffix}` : '';
 
   return (
     <input
+      // В покое — со знаком процента, при правке без него: иначе курсор,
+      // поставленный в конец, дописывал бы цифру после «%». А вот запятая
+      // остаётся: машинной точки человек видеть не должен.
       value={editing ? text : shown}
       disabled={disabled}
       placeholder={placeholder}
-      onFocus={() => setEditing(true)}
+      onFocus={() => {
+        setText(human);
+        setInitial(human);
+        setEditing(true);
+      }}
       onChange={(e) => setText(e.target.value)}
+      onKeyDown={commitKeys(cancelled)}
       onBlur={() => {
         setEditing(false);
-        if (text !== (value ?? '')) onSave(text);
+        if (cancelled.current) {
+          cancelled.current = false;
+          return;
+        }
+        if (text !== initial) onSave(text);
       }}
       className={className}
     />
@@ -373,6 +421,7 @@ export function PaymentsPage() {
                         value={r.occurred_on ?? ''}
                         disabled={!manage}
                         onChange={(e) => edit(r.id, 'occurred_on', e.target.value)}
+                        onKeyDown={commitKeys()}
                         onBlur={(e) => e.target.value && save(r.id, 'occurred_on', e.target.value)}
                         className={`${cellInput} tabular-nums`}
                       />
@@ -409,15 +458,22 @@ export function PaymentsPage() {
                         }}
                       />
                     </td>
+                    {/* ОПИСАНИЕ ЦЕЛИКОМ — ПОДСКАЗКОЙ (просьба владельца
+                        23.09.2026): в столбец оно не влезает, а прочитать его
+                        надо — там написано, за что платёж. Расширять столбец
+                        нельзя, таблица и так упирается в ширину экрана. */}
                     <td className={td}>
-                      <input
-                        value={r.description ?? ''}
-                        disabled={!manage}
-                        placeholder="за что платёж"
-                        onChange={(e) => edit(r.id, 'description', e.target.value)}
-                        onBlur={(e) => save(r.id, 'description', e.target.value)}
-                        className={cellInput}
-                      />
+                      <Tooltip text={r.description} className="block">
+                        <input
+                          value={r.description ?? ''}
+                          disabled={!manage}
+                          placeholder="за что платёж"
+                          onChange={(e) => edit(r.id, 'description', e.target.value)}
+                          onKeyDown={commitKeys()}
+                          onBlur={(e) => save(r.id, 'description', e.target.value)}
+                          className={cellInput}
+                        />
+                      </Tooltip>
                     </td>
                     <td className={`${td} w-[140px]`}>
                       <MoneyCell
@@ -470,12 +526,13 @@ export function PaymentsPage() {
                       {r.expected_transfer != null &&
                         r.transfer_amount != null &&
                         Number(r.expected_transfer) !== Number(r.transfer_amount) && (
-                          <span
-                            className="absolute right-1 top-0 text-[11px] text-danger cursor-help"
-                            title={`По формуле должно быть ${amount(r.expected_transfer)}: сумма поступления / курс / (1 + НДС)`}
+                          <Tooltip
+                            text={`По формуле должно быть ${amount(r.expected_transfer)} ₽
+сумма поступления / курс / (1 + НДС)`}
+                            className="absolute right-1 top-0"
                           >
-                            ≠
-                          </span>
+                            <span className="text-[11px] text-danger cursor-help">≠</span>
+                          </Tooltip>
                         )}
                     </td>
                     <td className={`${td} w-[90px] text-center`}>
@@ -497,13 +554,15 @@ export function PaymentsPage() {
                         запрет живёт не только на экране. */}
                     <td className={`${td} w-[160px] text-right`}>
                       {r.linked_reports > 0 ? (
-                        <span
-                          className="inline-block px-2 py-1.5 text-[13px] text-text tabular-nums"
-                          title={`Сумма ${r.linked_reports} привязанных отчётов. Чтобы поправить — отвяжите отчёт во вкладке «Отчёты».`}
+                        <Tooltip
+                          text={`Сумма ${r.linked_reports} привязанных отчётов.
+Чтобы поправить — отвяжите отчёт во вкладке «Отчёты».`}
                         >
-                          {amount(r.actual_amount)}
-                          <span className="text-text-muted"> ↩</span>
-                        </span>
+                          <span className="inline-block px-2 py-1.5 text-[13px] text-text tabular-nums cursor-help">
+                            {amount(r.actual_amount)}
+                            <span className="text-text-muted"> ↩</span>
+                          </span>
+                        </Tooltip>
                       ) : (
                         <MoneyCell
                           value={r.actual_amount}
