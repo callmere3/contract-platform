@@ -167,14 +167,22 @@ export function LinkReportPaymentModal({ report, level, isTop, onChanged }) {
                     {p.partner || 'площадка не указана'}
                   </span>
                   <span className="text-text-muted flex-1 truncate">{p.description || ''}</span>
-                  {/* ПУСТО И НОЛЬ — РАЗНЫЕ ВЕЩИ. formatMoney(null) рисует
-                      «0,00 ₽», и строка выглядит как поступление на нулевую
-                      сумму, хотя сумму просто ещё не занесли: строку заводят
-                      по дате из выписки, а числа дозаполняют позже. */}
-                  {p.amount ? (
-                    <span className="text-text tabular-nums">{formatMoney(p.amount)}</span>
+                  {/* ЗДЕСЬ СУММА ЗАВОДА, А НЕ СУММА ПОСТУПЛЕНИЯ (уточнение
+                      владельца 23.09.2026): привязка отчёта нужна как раз
+                      затем, чтобы завод сошёлся с фактическим заводом, и
+                      сравнивать надо эти два числа. Сумма поступления к
+                      сверке отношения не имеет — это то, что упало на счёт,
+                      вместе с чужими деньгами и до всех пересчётов.
+
+                      ПУСТО И НОЛЬ — РАЗНЫЕ ВЕЩИ: formatMoney(null) рисует
+                      «0,00 ₽», и строка выглядела платежом на нулевую сумму,
+                      хотя число просто ещё не занесли. */}
+                  {p.transfer_amount ? (
+                    <span className="text-text tabular-nums">
+                      завод {formatMoney(p.transfer_amount)}
+                    </span>
                   ) : (
-                    <span className="text-text-muted">сумма не указана</span>
+                    <span className="text-text-muted">завод не указан</span>
                   )}
                 </div>
                 <div className="text-[11.5px] text-text-muted mt-0.5">
