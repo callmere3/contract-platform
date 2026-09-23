@@ -106,7 +106,8 @@ export function LinkReportPaymentModal({ report, level, isTop, onChanged }) {
         report.payment_id ? (
           <>
             <span className="text-[12.5px] text-text-muted mr-auto">
-              Отчёт привязан к поступлению от {ru(report.payment_date)}
+              Отчёт привязан к поступлению{' '}
+              {report.payment_label || `от ${ru(report.payment_date)}`}
             </span>
             <Button variant="secondary" size="sm" onClick={unlink} disabled={busy}>
               Отвязать
@@ -162,7 +163,17 @@ export function LinkReportPaymentModal({ report, level, isTop, onChanged }) {
                 }`}
               >
                 <div className="flex items-baseline gap-3 text-[13px]">
-                  <span className="text-text tabular-nums">{ru(p.occurred_on)}</span>
+                  {/* НОМЕР, А НЕ ДАТА (просьба владельца 23.09.2026): им
+                      человек называет строку, глядя в таблицу поступлений, и
+                      квартал здесь уже выбран сверху — дата ничего не
+                      различает, за месяц её повторяет половина строк. Сама
+                      дата осталась в подсказке. */}
+                  <span
+                    className="text-text tabular-nums w-[34px] shrink-0"
+                    title={`Поступление от ${ru(p.occurred_on)}`}
+                  >
+                    {p.number ? `№${p.number}` : '—'}
+                  </span>
                   <span className={otherPartner ? 'text-danger' : 'text-text-secondary'}>
                     {p.partner || 'площадка не указана'}
                   </span>
