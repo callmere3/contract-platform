@@ -303,13 +303,14 @@ export function PaymentsPage() {
                   <th className={th}>Сумма завода</th>
                   <th className={th}>Заведено</th>
                   <th className={th}>Сумма фактического завода</th>
+                  <th className={th}>Расхождение</th>
                   <th className={th}></th>
                 </tr>
               </thead>
               <tbody>
                 {rows.length === 0 && (
                   <tr>
-                    <td className={`${td} text-[13px] text-text-muted`} colSpan={10}>
+                    <td className={`${td} text-[13px] text-text-muted`} colSpan={11}>
                       За этот месяц поступлений нет.
                     </td>
                   </tr>
@@ -420,6 +421,29 @@ export function PaymentsPage() {
                         />
                       )}
                     </td>
+                    {/* РАСХОЖДЕНИЕ СЧИТАЕТ СЕРВЕР: суммы приходят строками, и
+                        вычитать их на экране нельзя — «1234.10» в числе с
+                        плавающей точкой превращается в 1234.0999999999999.
+                        Пусто, пока не заполнены оба числа: разница с
+                        неизвестным — не находка, а шум. Ноль отмечаем
+                        прочерком и приглушённо: сошлось — значит, смотреть
+                        не на что. */}
+                    <td className={`${td} w-[130px] text-right`}>
+                      {r.difference == null ? (
+                        <span className="inline-block px-2 py-1.5 text-[13px] text-text-muted">
+                          —
+                        </span>
+                      ) : (
+                        <span
+                          className={`inline-block px-2 py-1.5 text-[13px] tabular-nums ${
+                            Number(r.difference) === 0 ? 'text-text-muted' : 'text-danger'
+                          }`}
+                          title="Сумма завода минус сумма фактического завода"
+                        >
+                          {Number(r.difference) === 0 ? 'сошлось' : amount(r.difference)}
+                        </span>
+                      )}
+                    </td>
                     <td className={`${td} w-[40px] text-right`}>
                       {manage && (
                         <button
@@ -451,6 +475,22 @@ export function PaymentsPage() {
                   Поступило <b className="tabular-nums">{formatMoney(totals.amount)}</b> · завод{' '}
                   <b className="tabular-nums">{formatMoney(totals.transfer_amount)}</b> ·
                   фактически <b className="tabular-nums">{formatMoney(totals.actual_amount)}</b>
+                  {/* Итог расхождений — только по сверенным строкам. Ноль
+                      показываем словом: «0,00» рядом с остальными суммами
+                      читается как «денег нет», а значит здесь обратное — всё
+                      сошлось. */}
+                  {totals.difference != null && (
+                    <>
+                      {' '}· расхождение{' '}
+                      {Number(totals.difference) === 0 ? (
+                        <b className="text-text-muted">сошлось</b>
+                      ) : (
+                        <b className="tabular-nums text-danger">
+                          {formatMoney(totals.difference)}
+                        </b>
+                      )}
+                    </>
+                  )}
                   {totals.not_transferred > 0 && (
                     <span className="text-text-muted"> · не заведено строк: {totals.not_transferred}</span>
                   )}

@@ -101,6 +101,19 @@ def _linked_reports(db: Session, payment_ids: list) -> dict:
     return {payment_id: count for payment_id, count in rows}
 
 
+def _difference(payment: PartnerPayment):
+    """
+    Завод минус фактический завод, либо None.
+
+    None, а не ноль, когда хоть одного числа нет: строку заводят по дате из
+    выписки и дозаполняют позже, и «расхождение 116 300» у ещё не сверенной
+    строки — это шум, а не находка.
+    """
+    if payment.transfer_amount is None or payment.actual_amount is None:
+        return None
+    return _money(payment.transfer_amount - payment.actual_amount)
+
+
 def _out(payment: PartnerPayment, partner_name: str | None, linked: int = 0) -> dict:
     return {
         "id": str(payment.id),
@@ -114,6 +127,12 @@ def _out(payment: PartnerPayment, partner_name: str | None, linked: int = 0) -> 
         "transfer_amount": _money(payment.transfer_amount),
         "transferred": payment.transferred,
         "actual_amount": _money(payment.actual_amount),
+        # РАСХОЖДЕНИЕ — то, ради чего таблицу и ведут: сколько собирались
+        # завести против того, сколько насчитали отчёты. Считает СЕРВЕР, как и
+        # итоги: в JSON суммы уходят строками, и складывать их на экране
+        # нельзя. Пусто, пока не заполнены оба числа: разница с неизвестным —
+        # не ноль и не «весь завод», а просто «ещё не с чем сверять».
+        "difference": _difference(payment),
         # Сколько отчётов привязано. Пока хоть один есть, фактический завод
         # СЧИТАЕТСЯ по ним, и руками его править нельзя — ни на экране, ни
         # через API: правку всё равно затёрло бы при следующей привязке.
@@ -207,6 +226,15 @@ def list_payments(
             "amount": _money(total("amount")),
             "transfer_amount": _money(total("transfer_amount")),
             "actual_amount": _money(total("actual_amount")),
+            # Итог расхождений — только по СВЕРЕННЫМ строкам, где есть оба
+            # числа. Иначе в сумму попал бы завод строк, которые ещё не с чем
+            # сравнивать, и итог показывал бы расхождение там, где его нет.
+            "difference": _money(sum(
+                (p.transfer_amount - p.actual_amount
+                 for p, _ in rows
+                 if p.transfer_amount is not None and p.actual_amount is not None),
+                Decimal(0),
+            )),
             # Сколько строк ещё не заведено: столбец с галочками читается
             # глазами плохо, а вопрос «что осталось» задают каждый раз.
             "not_transferred": sum(1 for p, _ in rows if not p.transferred),
