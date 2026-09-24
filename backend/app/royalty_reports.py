@@ -24,12 +24,16 @@ from __future__ import annotations
 
 import io
 import re
+import struct
 import zipfile
+from copy import copy
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
+from pathlib import Path
 
 import openpyxl
+from openpyxl.drawing.image import Image as _XlImage
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
@@ -435,54 +439,45 @@ _WRAP = Alignment(wrap_text=True, vertical="top")
 # ВЕДОМОСТЬ — В ОФОРМЛЕНИИ ЮРИСТА (25.09.2026, просьба владельца: «сделаем
 # сразу оформление как финальный отчёт у юриста»; образец — «Ибара
 # М.Ж.(СГ)_RE3 (2-Q-2026).xlsx» в «Примеры отчетов от партнеров»). До этого
-# собиралась ведомость Dista, которую юрист потом перекладывал руками в этот
-# вид. Шрифт, ширины, рамки, цвета и формулы сняты с образца.
+# собиралась ведомость Dista, которую юрист потом перекладывал руками.
 #
-# «Сверка расчётов» — ФОРМУЛАМИ, как у юриста: предыдущий накопительный итог
-# и выплаченное у нас нигде не хранятся и приходят нулями, а юрист вписывает
-# их руками — и «Накопительный итог» с «Итого по Отчёту» пересчитываются сами.
-_TNR = "Times New Roman"
-_BLUE = "FF0070C0"
-_RED = "FFFF0000"
+# ОБРАЗЕЦ ЮРИСТА И ЕСТЬ ШАБЛОН (`assets/royalty_statement.xlsx` — его файл,
+# из которого вычищены данные). Первый вариант повторял оформление кодом и
+# разошёлся с образцом в десятке мелочей, которые видно глазом: рамки
+# двойные против одинарных, шрифт книги по умолчанию (Arial 8 — от него
+# Excel считает ширину колонок в пикселях), толщина линий под шапкой.
+# Переписывать сорок ячеек по свойствам — значит однажды разойтись опять;
+# шаблон переносит всё разом, а код только подставляет значения.
+#
+# «Сверка расчётов» — ФОРМУЛАМИ из шаблона: предыдущий накопительный итог и
+# выплаченное у нас нигде не хранятся и приходят нулями, а юрист вписывает
+# их руками — и «Накопительный итог» с «Итого по Отчёту» пересчитываются
+# сами. Книга помечена «пересчитать при открытии».
+ASSETS = Path(__file__).parent / "assets"
+STATEMENT_TEMPLATE = ASSETS / "royalty_statement.xlsx"
+LOGO = ASSETS / "logo.png"
+# Размер логотипа как в образце юриста: 1591194 × 542591 EMU.
+LOGO_SIZE = (167, 57)
 _MONEY = '#,##0.00\\ "₽"'
-_DOUBLE = Side(style="double", color="000000")
-_MEDIUM = Side(style="medium", color="000000")
-_BLACK = Side(style="thin", color="000000")
-_LEFT = Alignment(horizontal="left", vertical="center")
-_RIGHT = Alignment(horizontal="right", vertical="center")
-_CENTER = Alignment(horizontal="center", vertical="center")
-_CENTER_WRAP = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
 
-def _f(size=9, bold=False, color=None, name=_TNR):
-    return Font(name=name, size=size, bold=bold, color=color)
+class _Logo(_XlImage):
+    """
+    Картинка без Pillow: openpyxl зовёт его ради размеров и перекодирования,
+    а в образе api его нет. PNG кладём как есть, размер задаём сами.
+    """
+
+    def __init__(self, data: bytes, width: int, height: int):
+        self.ref = data
+        self.width, self.height = width, height
+        self.format = "png"
+
+    def _data(self) -> bytes:
+        return self.ref
 
 
-def _cell(ws, ref, value=None, font=None, align=None, fmt=None, border=None):
-    c = ws[ref]
-    if value is not None:
-        c.value = value
-    c.font = font or _f()
-    if align:
-        c.alignment = align
-    if fmt:
-        c.number_format = fmt
-    if border:
-        c.border = border
-    return c
-
-
-def _edges(ws, row: int, first: str, last: str, side, top=True, bottom=True) -> None:
-    """Обвести строку ячеек first..last одной рамкой (двойной — у юриста)."""
-    cols = [openpyxl.utils.column_index_from_string(x) for x in (first, last)]
-    for col in range(cols[0], cols[1] + 1):
-        c = ws.cell(row=row, column=col)
-        c.border = Border(
-            left=side if col == cols[0] else c.border.left,
-            right=side if col == cols[1] else c.border.right,
-            top=side if top else c.border.top,
-            bottom=side if bottom else c.border.bottom,
-        )
+def _png_ok(data: bytes) -> bool:
+    return data[:8] == b"\x89PNG\r\n\x1a\n" and struct.unpack(">II", data[16:24]) > (0, 0)
 
 
 def sheet_title(s: Settings) -> str:
@@ -496,162 +491,109 @@ def sheet_title(s: Settings) -> str:
 
 def _front_page(ws, res: Result, s: Settings, quantity, realization, royalty) -> None:
     """
-    Лист 1 — отчётная ведомость. `realization` и `royalty` — те же числа,
-    что в итоге листа 2: у юриста ведомость ссылается на сумму строк
-    детализации, и документ не должен расходиться сам с собой на копейку.
+    Лист 1 из шаблона — подставляем значения. `realization` и `royalty` —
+    те же числа, что в итоге листа 2: документ не должен расходиться сам с
+    собой на копейку.
     """
-    for col, w in zip("ABCD", (52.57, 19.57, 21.29, 17.14)):
-        ws.column_dimensions[col].width = w
-    heights = {1: 15, 2: 15, 3: 15, 4: 19.8, 5: 17.4, 6: 10.2, 7: 21, 8: 20.4, 9: 17.4,
-               10: 19.8, 11: 13.2, 12: 13.2, 13: 13.8, 14: 13.2, 15: 13.8, 16: 13.8, 17: 13.8,
-               18: 13.2, 19: 28.2, 20: 12.6, 21: 13.2, 22: 13.2, 24: 25.8}
-    for r, h in heights.items():
-        ws.row_dimensions[r].height = h
-    bold_blue = _f(bold=True, color=_BLUE)
-
-    _cell(ws, "D1", "ОТЧЕТНАЯ ВЕДОМОСТЬ", bold_blue, _RIGHT)
+    ws.title = sheet_title(s)
     if res.contract_text:
-        _cell(ws, "D2", "к Лицензионному договору №", bold_blue, _RIGHT)
-        _cell(ws, "D3", f" {res.contract_text}    ", bold_blue, _RIGHT)
-        for col in "BC":
-            _cell(ws, f"{col}3", font=bold_blue)
-        _edges(ws, 3, "B", "D", _DOUBLE)
-
-    _cell(ws, "A4", s.period_to, _f(bold=True), _LEFT, '[$-FC19]dd\\ mmmm\\ yyyy\\ \\г\\.;@')
-    _cell(ws, "D4", CITY, _f(bold=True), _RIGHT)
-    under = Border(bottom=_MEDIUM)
-    wrap_r = Alignment(horizontal="right", vertical="center", wrap_text=True)
-    _cell(ws, "A5", "Отчетный период   с", _f(bold=True), wrap_r, border=under)
-    _cell(ws, "B5", s.period_from, _f(bold=True), wrap_r, "DD.MM.YYYY", under)
-    _cell(ws, "C5", "по", _f(bold=True), _CENTER_WRAP, border=under)
-    _cell(ws, "D5", s.period_to, _f(bold=True),
-          Alignment(horizontal="left", vertical="center", wrap_text=True), "DD.MM.YYYY", under)
-
-    # Шапка таблицы: «Контрагент» | «Реализация» (Количество, Сумма) | «Сумма Роялти».
-    box = Border(left=_BLACK, right=_BLACK, top=_BLACK, bottom=_BLACK)
-    head = _f(size=8, bold=True)
-    ws.merge_cells("A6:A7")
-    ws.merge_cells("B6:C6")
-    ws.merge_cells("D6:D7")
-    _cell(ws, "A6", "Контрагент", head, _CENTER_WRAP)
-    _cell(ws, "B6", "Реализация", head, _CENTER_WRAP)
-    _cell(ws, "D6", "Сумма Роялти Лицензиара", head, _CENTER_WRAP)
-    _cell(ws, "B7", "Количество", head, _CENTER_WRAP)
-    _cell(ws, "C7", "Сумма Реализации (Доход Лицензиата)", head, _CENTER_WRAP)
-    for r in (6, 7):
-        for col in "ABCD":
-            ws[f"{col}{r}"].border = box
-
-    _cell(ws, "A8", res.label, _f(bold=True), _CENTER, border=Border(top=_DOUBLE, bottom=_DOUBLE))
-    _cell(ws, "B8", float(quantity), _f(bold=True), _CENTER, "0", box)
-    _cell(ws, "C8", float(realization), _f(bold=True), _CENTER, _MONEY, box)
-    _cell(ws, "D8", float(royalty), _f(bold=True), _CENTER, _MONEY, box)
-
-    top_medium = Border(top=_MEDIUM)
-    for col in "AC":
-        _cell(ws, f"{col}9", border=top_medium)
-    _cell(ws, "B9", "Сумма НДС", _f(), _RIGHT, border=top_medium)
-    _cell(ws, "D9", "=SUM(D8*C9)", _f(), _RIGHT, _MONEY, top_medium)
-    _cell(ws, "B10", font=_f(bold=True))
-    _cell(ws, "C10", "Роялти с учетом факта НДС", _f(bold=True), _RIGHT)
-    _edges(ws, 10, "B", "C", _DOUBLE)
-    _cell(ws, "D10", "=SUM(D8:D9)", _f(bold=True), _RIGHT, _MONEY, box)
-
-    # Сверка расчётов.
-    dbox = Border(left=_DOUBLE, right=_DOUBLE, top=_DOUBLE, bottom=_DOUBLE)
-    _cell(ws, "D12", "Сверка расчетов", _f(bold=True), _RIGHT)
-    for col in "ABCD":
-        ws[f"{col}12"].border = Border(top=_DOUBLE, left=_DOUBLE if col == "A" else None,
-                                       right=_DOUBLE if col == "D" else None)
-    _cell(ws, "C13", "Предыдущий накопительный итог Роялти ", _f(), _RIGHT)
-    _edges(ws, 13, "A", "C", _DOUBLE)
-    _cell(ws, "D13", 0.0, _f(), _CENTER, _MONEY, dbox)
-    _cell(ws, "A14", border=Border(left=_DOUBLE))
-    _cell(ws, "B14", "Выплачено Роялти", _f(color=_BLUE), Alignment(vertical="center"))
-    _cell(ws, "C14", None, _f(color=_BLUE), _CENTER)
-    _cell(ws, "D14", 0.0, _f(color=_BLUE), _CENTER, _MONEY, dbox)
-    _cell(ws, "A15", border=Border(left=_DOUBLE, top=_DOUBLE))
-    _cell(ws, "C15", "Роялти по данному Отчету ", _f(), _RIGHT, border=Border(top=_BLACK))
-    _cell(ws, "D15", "=SUM(D10)", _f(), _CENTER, _MONEY,
-          Border(left=_DOUBLE, right=_DOUBLE, top=_DOUBLE))
-    _cell(ws, "C16", "Накопительный итог (Роялти к выплате) ", _f(bold=True), _RIGHT)
-    _edges(ws, 16, "A", "C", _DOUBLE)
-    _cell(ws, "D16", "=SUM(D13-D14+D15)", _f(bold=True, color=_RED), _CENTER, _MONEY, dbox)
-    _cell(ws, "C17", " НДС ", _f(), _RIGHT)
-    _edges(ws, 17, "A", "C", _DOUBLE)
-    _cell(ws, "D17", "не облагается", _f(), _CENTER, border=dbox)
-
-    ws.merge_cells("A19:C19")
-    _cell(ws, "A19", "Итого по Отчету сумма Роялти Лицензиара составляет  ",
-          _f(bold=True, color=_BLUE), Alignment(horizontal="right", vertical="center", wrap_text=True))
-    _edges(ws, 19, "A", "C", _DOUBLE)
-    _cell(ws, "D19", "=SUM(D16)", _f(bold=True, color=_RED), _CENTER, _MONEY, dbox)
-
-    _cell(ws, "A21", f"Лицензиар: {res.name or res.title}", _f(bold=True))
-    _cell(ws, "C21", f"Лицензиат: {LICENSEE}", _f(bold=True), _LEFT)
-    if TAX_NOTE.get(res.kind):
-        _cell(ws, "A22", TAX_NOTE[res.kind], _f())
-    _cell(ws, "A23", "Отчет согласовал", _f(bold=True))
-    _cell(ws, "A24", "________________", _f(bold=True))
-
-    ws.page_setup.orientation = "portrait"
-    ws.page_setup.paperSize = ws.PAPERSIZE_A4
-    ws.page_setup.fitToWidth, ws.page_setup.fitToHeight = 1, 0
-    ws.sheet_properties.pageSetUpPr.fitToPage = True
+        ws["D3"] = f" {res.contract_text}    "
+    else:
+        # Договора в карточке нет — нет и строк «к Лицензионному договору».
+        ws["D2"] = None
+        for col in "BCD":
+            ws[f"{col}3"].border = Border()
+    ws["B5"] = s.period_from
+    ws["D5"] = s.period_to          # в образце EOMONTH(B5,2) — годится только для квартала
+    ws["A8"] = res.label
+    ws["B8"] = float(quantity)
+    ws["C8"] = float(realization)
+    ws["D8"] = float(royalty)
+    ws["A21"] = f"Лицензиар: {res.name or res.title}"
+    ws["C21"] = f"Лицензиат: {LICENSEE}"
+    ws["A22"] = TAX_NOTE.get(res.kind)
+    ws["D4"] = CITY
+    try:
+        data = LOGO.read_bytes()
+    except OSError:
+        data = b""
+    if _png_ok(data):
+        logo = _Logo(data, *LOGO_SIZE)
+        logo.anchor = "A1"
+        ws.add_image(logo)
 
 
-# Лист 2 — таблица юриста: Arial Narrow, шапка 8 жирным по центру с
-# переносом, строки 9, тонкая рамка у каждой ячейки, внизу итог. Альбомный
-# лист, поля 1 см, шапка закреплена.
-_NARROW = "Arial Narrow"
+def _grid(ws, header: list | None, rows: list, s: Settings, text_cols: set, money_cols: set,
+          money_format: str, sum_cols: set, date_cols: set = frozenset(),
+          widths: list | None = None) -> None:
+    """
+    Лист 2 из шаблона. Стиль строки берётся с образца юриста (строка 2
+    шаблона): код, текст, число и сумма — по ячейке-образцу, дальше каждая
+    строка копирует готовый стиль первой (так быстрее: у детализации тысячи
+    строк). `header` — своя шапка (детализированный); None — шапка шаблона.
+    Внизу — итог формулами и, через строку, «Детализация к отчётной
+    ведомости за период…», как у юриста.
+    """
+    sample = {
+        "code": copy(ws["A2"]._style), "text": copy(ws["B2"]._style),
+        "num": copy(ws["D2"]._style), "money": copy(ws["G2"]._style),
+    }
+    head_style = copy(ws["A1"]._style)
+    bold = copy(ws["B2"].font)
+    bold.b = True
+    ws.delete_rows(2)
+    if header:
+        for i, title in enumerate(header, 1):
+            c = ws.cell(row=1, column=i, value=title)
+            c._style = copy(head_style)
+    width = len(header) if header else ws.max_column
+    if widths:
+        for i, w in enumerate(widths, 1):
+            ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = w
 
-
-def _grid(ws, header: list, rows: list, widths: list, text_cols: set, money_cols: set,
-          money_format: str, sum_cols: set, date_cols: set = frozenset()) -> None:
-    """Номера колонок — с 1. `sum_cols` — что сложить в строке итога."""
-    box = Border(left=_BLACK, right=_BLACK, top=_BLACK, bottom=_BLACK)
-    head = _f(size=8, bold=True, color="FF000000", name=_NARROW)
-    body = _f(size=9, color="FF000000", name=_NARROW)
-    ws.append(header)
-    ws.row_dimensions[1].height = 31.2
-    for c in ws[1]:
-        c.font, c.border, c.alignment = head, box, _CENTER_WRAP
-    styles = []
-    for i in range(1, len(header) + 1):
+    kinds = []
+    for i in range(1, width + 1):
         if i in text_cols:
-            styles.append((_LEFT, "@"))
+            kinds.append(("text", None))
         elif i in money_cols:
-            styles.append((_CENTER, money_format))
+            kinds.append(("money", money_format))
         elif i in date_cols:
-            styles.append((_CENTER, "DD.MM.YYYY"))
+            kinds.append(("num", "DD.MM.YYYY"))
         elif i == 1:
-            styles.append((_CENTER, "@"))
+            kinds.append(("code", None))
         else:
-            styles.append((_CENTER, None))
+            kinds.append(("num", None))
+    protos = None
     for n, r in enumerate(rows, 2):
         ws.append(r)
-        for c, (align, fmt) in zip(ws[n], styles):
-            c.font, c.border, c.alignment = body, box, align
-            if fmt:
-                c.number_format = fmt
+        cells = ws[n][:width]
+        if protos is None:
+            for c, (kind, fmt) in zip(cells, kinds):
+                c._style = copy(sample[kind])
+                if fmt:
+                    c.number_format = fmt
+            protos = [c._style for c in cells]
+        else:
+            for c, st in zip(cells, protos):
+                c._style = copy(st)
+
     last = len(rows) + 1
     total = last + 1
-    bold = _f(size=9, bold=True, color="FF000000", name=_NARROW)
     for col in sum_cols:
         letter = openpyxl.utils.get_column_letter(col)
         c = ws.cell(row=total, column=col, value=f"=SUM({letter}2:{letter}{last})")
-        c.font, c.alignment = bold, _LEFT
+        c.font, c.alignment = copy(bold), Alignment(horizontal="left", vertical="center")
         if col in money_cols:
             c.number_format = money_format
-    for i, w in enumerate(widths, 1):
-        ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = w
-    ws.freeze_panes = "A2"
-    ws.page_setup.orientation = "landscape"
-    ws.page_setup.paperSize = ws.PAPERSIZE_A4
-    ws.page_setup.fitToWidth, ws.page_setup.fitToHeight = 1, 0
-    ws.sheet_properties.pageSetUpPr.fitToPage = True
-    ws.page_margins.left = ws.page_margins.right = 0.39
-    ws.page_margins.top = ws.page_margins.bottom = 0.39
+    note = total + 2
+    ws.merge_cells(start_row=note, start_column=1, end_row=note, end_column=10)
+    c = ws.cell(row=note, column=1, value=f"Детализация к отчетной ведомости за период {period_text(s)}")
+    c.font = copy(bold)
+    c.alignment = Alignment(horizontal="left", vertical="center")
+
+
+def _statement_book():
+    return openpyxl.load_workbook(STATEMENT_TEMPLATE)
 
 
 def _num(value) -> float | None:
@@ -692,17 +634,11 @@ def summary_xlsx(res: Result, s: Settings) -> bytes:
             float(acc["q"]), float(real),
             _num(ln.royalty_author), float(a), _num(ln.royalty_related), float(r), float(total),
         ])
-    wb = openpyxl.Workbook()
-    ws1 = wb.active
-    ws1.title = sheet_title(s)
-    _front_page(ws1, res, s, res.quantity, real_total, royalty_total)
-    _grid(wb.create_sheet("Страница 2"), [
-        "Код", "Название", "Исполнитель", "Доля Авторских прав", "Доля Смежных прав",
-        "Количество", "Сумма реализации Лицензиара", "Ставка авторские права",
-        "Лицензиар Роялти авторские", "Ставка смежные права", "Лицензиар Роялти смежные",
-        "Лицензиар Роялти итого",
-    ], rows, [8, 19.14, 16, 9.14, 8.43, 10.29, 13.57, 9, 10.29, 8.14, 11.29, 13.43],
-        text_cols={2, 3}, money_cols={7, 9, 11, 12}, money_format=_MONEY, sum_cols={6, 7, 12})
+    wb = _statement_book()
+    _front_page(wb.worksheets[0], res, s, res.quantity, real_total, royalty_total)
+    # Шапка — шаблонная: колонки сводного и есть колонки юриста.
+    _grid(wb.worksheets[1], None, rows, s, text_cols={2, 3}, money_cols={7, 9, 11, 12},
+          money_format=_MONEY, sum_cols={6, 7, 12})
     return _save(wb)
 
 
@@ -720,21 +656,19 @@ def detailed_xlsx(res: Result, s: Settings) -> bytes:
         float(ln.commission), _num(ln.royalty_author), float(ln.reward_author),
         _num(ln.royalty_related), float(ln.reward_related), float(ln.reward),
     ] for ln in res.lines]
-    wb = openpyxl.Workbook()
-    ws1 = wb.active
-    ws1.title = sheet_title(s)
-    _front_page(ws1, res, s, res.quantity, cents(res.realization), cents(res.reward))
-    _grid(wb.create_sheet("Страница 2"), [
+    wb = _statement_book()
+    _front_page(wb.worksheets[0], res, s, res.quantity, cents(res.realization), cents(res.reward))
+    _grid(wb.worksheets[1], [
         "Код", "ISRC", "Название", "Исполнитель", "Авторы слов/музыки", "Доля Авторских прав",
         "Доля Смежных прав", "Платформа", "Тип контента", "Тип использования",
         "Вид использования", "Территория", "Начало реализации", "Окончание реализации",
         "Количество", "Сумма реализации Лицензиара", "Комиссия Лицензиата",
         "Ставка авторские права", "Лицензиар Роялти авторские", "Ставка смежные права",
         "Лицензиар Роялти смежные", "Лицензиар Роялти итого",
-    ], rows, [8, 13, 19.14, 16, 16, 9.14, 8.43, 13, 10, 10, 10, 9, 10.29, 10.29,
-              10.29, 13.57, 12, 9, 10.29, 8.14, 11.29, 13.43],
-        text_cols={2, 3, 4, 5, 8, 9, 10, 11}, money_cols={16, 17, 19, 21, 22},
-        money_format='#,##0.00######\\ "₽"', sum_cols={15, 16, 17, 22}, date_cols={13, 14})
+    ], rows, s, text_cols={2, 3, 4, 5, 8, 9, 10, 11}, money_cols={16, 17, 19, 21, 22},
+        money_format='#,##0.00######\\ "₽"', sum_cols={15, 16, 17, 22}, date_cols={13, 14},
+        widths=[8, 13, 19.14, 16, 16, 9.14, 8.43, 13, 10, 10, 10, 9, 10.29, 10.29,
+                10.29, 13.57, 12, 9, 10.29, 8.14, 11.29, 13.43])
     return _save(wb)
 
 
