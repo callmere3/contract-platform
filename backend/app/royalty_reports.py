@@ -107,6 +107,23 @@ class Result:
     contragent_id: str
     title: str
     lines: list = field(default_factory=list)
+    # Договор из карточки контрагента — строкой под заголовком ведомости.
+    contract_number: str = ""
+    contract_date: date | None = None
+
+    @property
+    def contract_text(self) -> str:
+        """
+        «Договор № МЛ-17/09/26-… от 17.09.2026» — то, что Dista печатала
+        строкой [RHLDR_DOGOVORS]. Заполнено только одно из двух — печатаем
+        его; пусто оба — пустая строка, и в ведомости строки нет.
+        """
+        parts = ["Договор"]
+        if self.contract_number:
+            parts.append(f"№ {self.contract_number}")
+        if self.contract_date:
+            parts.append(f"от {self.contract_date:%d.%m.%Y}")
+        return " ".join(parts) if len(parts) > 1 else ""
 
     @property
     def quantity(self) -> Decimal:
@@ -266,9 +283,13 @@ def compute(db: Session, s: Settings) -> list:
         t.id: t for t in db.scalars(select(Track).where(Track.id.in_(track_ids)))
     }
     partners = dict(db.execute(select(Partner.id, Partner.name)).all())
-    titles = dict(
-        db.execute(select(Contragent.id, Contragent.title).where(Contragent.id.in_(contragent_ids))).all()
-    )
+    cards = {
+        cid: (title, (number or "").strip(), cdate)
+        for cid, title, number, cdate in db.execute(
+            select(Contragent.id, Contragent.title, Contragent.contract_number,
+                   Contragent.contract_date).where(Contragent.id.in_(contragent_ids))
+        ).all()
+    }
 
     results: dict = {}
     for g in groups:
@@ -298,7 +319,9 @@ def compute(db: Session, s: Settings) -> list:
         )
         res = results.get(cid)
         if res is None:
-            res = results[cid] = Result(contragent_id=str(cid), title=titles.get(cid, ""))
+            title, number, cdate = cards.get(cid, ("", "", None))
+            res = results[cid] = Result(contragent_id=str(cid), title=title,
+                                        contract_number=number, contract_date=cdate)
         res.lines.append(line)
 
     for res in results.values():
@@ -415,6 +438,10 @@ def _front_page(ws, res: Result, s: Settings, summary: bool) -> None:
         ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = w
 
     _put(ws, "A1:J1", "Отчетная ведомость", _F_TITLE, _CENTER)
+    # Договор из карточки (просьба владельца 25.09.2026) — там, где у Dista
+    # строка [RHLDR_DOGOVORS]. Не заполнен в карточке — строки нет.
+    if res.contract_text:
+        _put(ws, "A3:J3", res.contract_text, align=_CENTER)
     _put(ws, "A5", CITY)
     _put(ws, "H5:J5", date.today().strftime("%d.%m.%Y"), _FB, _RIGHT)
     _put(ws, "A6", "Лицензиар")
