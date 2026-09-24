@@ -3,7 +3,12 @@ import { Modal } from '../components/ui/Modal';
 import { Button } from '../components/ui/Button';
 import { useModal } from './ModalProvider';
 import { listPayments } from '../api/payments';
-import { linkReportPayment, unlinkReportPayment } from '../api/partnerReports';
+import {
+  CURRENCY_SIGNS,
+  linkReportPayment,
+  rateText,
+  unlinkReportPayment,
+} from '../api/partnerReports';
 import { formatMoney } from '../api/finance';
 
 /**
@@ -137,6 +142,19 @@ export function LinkReportPaymentModal({ report, level, isTop, onChanged }) {
     try {
       const res = await linkReportPayment(report.id, payment.id);
       onChanged?.(res?.report);
+      // СУММА В ВАЛЮТЕ НЕ СОШЛАСЬ — окно не закрываем: отчёт привязан, но
+      // курс не поставлен, и человек должен увидеть почему, а не гадать, отчего
+      // суммы остались в валюте.
+      const check = res?.currency_check;
+      if (check && !check.matches) {
+        setError(
+          `Привязано, но сумма в валюте не сошлась: в отчёте ${check.report} ${check.currency}, ` +
+            `в поступлении ${check.payment ?? 'не указана'}${check.payment_currency ? ' ' + check.payment_currency : ''}. ` +
+            'Курс не поставлен — задайте его в окне отчёта.',
+        );
+        setBusy(false);
+        return;
+      }
       closeModal();
     } catch (e) {
       setError(e.message);
@@ -168,11 +186,23 @@ export function LinkReportPaymentModal({ report, level, isTop, onChanged }) {
   //
   // Совпадений может быть несколько (одна площадка платит дважды на ту же
   // сумму) — тогда наверху окажутся все: выбрать всё равно человеку.
+  // У ВАЛЮТНОГО ОТЧЁТА ПОДХОДЯЩАЯ СТРОКА — ПО СУММЕ В ВАЛЮТЕ, а не по сумме
+  // завода: курс к рублю ещё не известен (или выведен из того же платежа), и
+  // сравнивать рубли значило бы сравнивать отчёт с самим собой. Сверка в
+  // валюте — с точностью до цента, как и на сервере.
+  const foreign = Boolean(report.currency && report.currency !== 'RUB' && report.currency_total);
+  const inCurrency = (p) => {
+    const text = String(p.currency_amount ?? '');
+    const sign = CURRENCY_SIGNS[report.currency];
+    if (!text || (sign && /[$€₸₽]/.test(text) && !text.includes(sign))) return false;
+    const digits = text.replace(/[^\d,.-]/g, '');
+    return closeMoney(digits, report.currency_total);
+  };
   const advised = (p) =>
     p.id !== report.payment_id &&
     !!p.partner_id &&
     p.partner_id === report.partner_id &&
-    closeMoney(p.transfer_amount, report.total);
+    (foreign ? inCurrency(p) : closeMoney(p.transfer_amount, report.total));
   // ТЕКУЩАЯ ПРИВЯЗКА — ПЕРВОЙ, ЗА НЕЙ ВЕСЬ СПИСОК (просьба владельца
   // 24.09.2026). Окно открывают «изменить», то есть затем, чтобы выбрать
   // другую строку, — и выбрать её можно сразу: нажатие перепривязывает, а
@@ -208,7 +238,14 @@ export function LinkReportPaymentModal({ report, level, isTop, onChanged }) {
     >
       <div className="text-[13px] text-text mb-4">
         <b>{report.partner}</b> · {report.period_label} · итог{' '}
-        <b className="tabular-nums">{formatMoney(report.total)}</b>
+        <b className="tabular-nums">
+          {foreign
+            ? `${formatMoney(report.currency_total).replace(' ₽', '')} ${CURRENCY_SIGNS[report.currency] || report.currency}`
+            : formatMoney(report.total)}
+        </b>
+        {foreign && report.currency_rate && (
+          <span className="text-text-secondary"> · курс {rateText(report.currency_rate)}</span>
+        )}
         {/* СУММА ВНЕ КАТАЛОГА — РЯДОМ С ИТОГОМ (просьба владельца
             24.09.2026): сверяя отчёт с платежом, полезно сразу видеть, какая
             его часть пока ни на что не отнесена. Пишем, только если она есть:
@@ -337,6 +374,10 @@ export function LinkReportPaymentModal({ report, level, isTop, onChanged }) {
                       ПУСТО И НОЛЬ — РАЗНЫЕ ВЕЩИ: formatMoney(null) рисует
                       «0,00 ₽», и строка выглядела платежом на нулевую сумму,
                       хотя число просто ещё не занесли. */}
+                  {/* Сумма в валюте — то, с чем сверяется валютный отчёт. */}
+                  {foreign && p.currency_amount && (
+                    <span className="text-text-secondary tabular-nums">{p.currency_amount}</span>
+                  )}
                   {p.transfer_amount ? (
                     <span className="text-text tabular-nums">
                       {formatMoney(p.transfer_amount)}

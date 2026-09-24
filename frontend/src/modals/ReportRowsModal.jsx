@@ -4,7 +4,7 @@ import { Button } from '../components/ui/Button';
 import { ComboCell } from '../components/ui/ComboCell';
 import { PencilIcon, TrashIcon } from '../components/ui/icons';
 import { useModal } from './ModalProvider';
-import { reportRows, updateReport } from '../api/partnerReports';
+import { currencySign, rateText, reportRows, updateReport } from '../api/partnerReports';
 import { formatMoney } from '../api/finance';
 
 /**
@@ -199,6 +199,7 @@ export function ReportRowsModal({
       from: card.period?.from ?? '',
       to: card.period?.to ?? '',
       ...Object.fromEntries(ATTRS.map((a) => [a.name, card[a.name] ?? ''])),
+      rate: rateText(card.currency_rate),
     });
     setEditing(true);
   }
@@ -211,6 +212,10 @@ export function ReportRowsModal({
         periodFrom: draft.from,
         periodTo: draft.to,
         attributes: Object.fromEntries(ATTRS.map((a) => [a.name, draft[a.name]])),
+        // Курс шлём, только если его и правда поменяли: пересчёт строк —
+        // тяжёлая операция, и гонять её на правке периода незачем.
+        currencyRate:
+          foreign && draft.rate !== rateText(card.currency_rate) ? draft.rate : undefined,
       });
       setCard(fresh);
       setEditing(false);
@@ -232,6 +237,10 @@ export function ReportRowsModal({
   const field =
     'bg-input-bg border border-border rounded-input px-2 py-1 text-[12.5px] text-text outline-none font-sans';
   const count = (v) => Number(v ?? 0).toLocaleString('ru-RU', { maximumFractionDigits: 2 });
+  // Валютный отчёт: курс правится; пока его нет — суммы в валюте, не в рублях.
+  const foreign = Boolean(card.currency && card.currency !== 'RUB');
+  const sign = currencySign(card);
+  const money = (v) => (sign ? formatMoney(v).replace('₽', sign) : formatMoney(v));
 
   return (
     <Modal
@@ -282,11 +291,11 @@ export function ReportRowsModal({
                 одна из многих, а итог — по всему файлу. */}
             <span className="text-[12.5px] text-text mr-auto tabular-nums">
               Позиций: <b>{card.rows_count}</b> · Кол-во:{' '}
-              <b>{count(card.total_quantity)}</b> · Сумма: <b>{formatMoney(card.total)}</b>
+              <b>{count(card.total_quantity)}</b> · Сумма: <b>{money(card.total)}</b>
               <span className="text-text-muted">
                 {' '}
-                (авторские {formatMoney(card.total_author)}, смежные{' '}
-                {formatMoney(card.total_related)})
+                (авторские {money(card.total_author)}, смежные{' '}
+                {money(card.total_related)})
               </span>
             </span>
             {/* Кнопки «Закрыть» нет (просьба владельца 24.09.2026): её работу
@@ -334,12 +343,34 @@ export function ReportRowsModal({
           {card.vat_rate ? `${String(card.vat_rate).replace('.', ',')}%` : 'нет'}
           {/* Отчёт в валюте: суммы уже в рублях, а здесь — по какому курсу
               их перевели. Без этого числа в отчёте нечем объяснить. */}
-          {card.currency && card.currency !== 'RUB' && (
-            <span className="text-text-secondary">
-              {' '}· файл в {card.currency}, курс {String(card.currency_rate ?? '—').replace('.', ',')}
-            </span>
-          )}
         </span>
+
+        {/* ВАЛЮТА И КУРС — своей строкой: курс правится (просьба владельца
+            24.09.2026). При привязке к поступлению он ставится сам, если
+            сошлась сумма в валюте, а поправить его вправе человек — суммы
+            отчёта и фактический завод поступления пересчитаются. */}
+        {foreign && (
+          <>
+            <span className="text-text-secondary">Курс к рублю</span>
+            <span className="text-text">
+              {editing ? (
+                <input
+                  value={draft.rate}
+                  onChange={(e) => setDraft((d) => ({ ...d, rate: e.target.value }))}
+                  placeholder="не задан"
+                  className={`${field} w-[140px] tabular-nums`}
+                />
+              ) : card.currency_rate ? (
+                rateText(card.currency_rate)
+              ) : (
+                <span className="text-danger">не задан — суммы пока в {card.currency}</span>
+              )}
+              <span className="text-text-muted">
+                {' '}· файл в {card.currency}, итог {formatMoney(card.currency_total).replace('₽', currencySign({ ...card, rate_pending: true }) || card.currency)}
+              </span>
+            </span>
+          </>
+        )}
 
         <span className="text-text-secondary">Поступление</span>
         <span className="text-text">
@@ -359,7 +390,7 @@ export function ReportRowsModal({
         <span className="text-text-secondary">Вне каталога</span>
         <span className={Number(card.unmatched_amount) > 0 ? 'text-danger' : 'text-text-muted'}>
           {Number(card.unmatched_amount) > 0
-            ? `${formatMoney(card.unmatched_amount)} · строк ${card.unmatched_count}`
+            ? `${money(card.unmatched_amount)} · строк ${card.unmatched_count}`
             : 'нет'}
         </span>
 

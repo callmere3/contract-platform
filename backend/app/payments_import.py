@@ -199,6 +199,31 @@ def _currency_note(amount_cell, currency_cell) -> str | None:
     return f"{written} {SIGNS[code]}"[:64]
 
 
+def parse_currency_note(text) -> tuple:
+    """
+    «10 456,59 €» → (Decimal('10456.59'), 'EUR'); не разобрали — (None, None).
+
+    Обратная сторона `_currency_note`: сумму в валюте мы пишем текстом, как её
+    вставил человек, а сверять отчёт площадки в валюте надо с числом.
+    Понимает и знак (€, $, ₸, ₽), и слово («евро», «usd»), и оба разделителя.
+    """
+    raw = _clean(text)
+    if not raw:
+        return None, None
+    code = None
+    for mark, sign_code in (("$", "USD"), ("€", "EUR"), ("₸", "KZT"), ("₽", "RUB")):
+        if mark in raw:
+            code = sign_code
+            break
+    if code is None:
+        low = raw.lower()
+        for word, word_code in CURRENCIES.items():
+            if len(word) > 1 and word in low:
+                code = word_code
+                break
+    return parse_money(_strip_currency(raw)), code
+
+
 def _row_number(value) -> int | None:
     """
     Номер строки из первого столбца файла.

@@ -37,10 +37,13 @@ export function reportRows(reportId, { page = 1, pageSize = 100, unmatchedOnly =
  * Поправить ШАПКУ отчёта: период и четыре параметра. Данные не трогает —
  * строки и суммы остаются как были, см. update_report на сервере.
  */
-export function updateReport(reportId, { periodFrom, periodTo, attributes = {} }) {
+export function updateReport(reportId, { periodFrom, periodTo, attributes = {}, currencyRate }) {
   const body = new FormData();
   body.append('period_from', periodFrom);
   body.append('period_to', periodTo);
+  // Курс шлём, только если его правили: «не прислали» — не трогать,
+  // «прислали пусто» — вернуть суммы в валюту.
+  if (currencyRate !== undefined) body.append('currency_rate', currencyRate ?? '');
   for (const [name, value] of Object.entries(attributes)) body.append(name, value ?? '');
   return apiJson(`${API}/partner-reports/${reportId}`, { method: 'PATCH', body });
 }
@@ -180,6 +183,23 @@ export async function exportUnmatched(source) {
     throw new Error(message);
   }
   return { blob: await r.blob(), filename: filenameFromResponse(r, 'Вне каталога.xlsx') };
+}
+
+/** Знак валюты для сумм отчёта, ещё не переведённого в рубли. */
+export const CURRENCY_SIGNS = { USD: '$', EUR: '€', KZT: '₸', RUB: '₽' };
+
+/**
+ * Валютный отчёт без курса: его суммы — ещё валюта, а не рубли, и рисовать
+ * их со знаком ₽ значило бы выдать доллары за рубли.
+ */
+export function currencySign(report) {
+  if (!report?.rate_pending) return null;
+  return CURRENCY_SIGNS[report.currency] || report.currency;
+}
+
+/** Курс, как его показывать: «83,381152». */
+export function rateText(rate) {
+  return rate == null || rate === '' ? '' : String(rate).replace('.', ',');
 }
 
 /** Разбор БЕЗ записи: колонки, правило, первые строки и итоги по всему файлу. */

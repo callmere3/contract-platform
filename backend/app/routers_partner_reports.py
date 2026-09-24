@@ -42,7 +42,7 @@ from decimal import Decimal
 import openpyxl
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.audit import log_action
@@ -82,6 +82,7 @@ from app.partner_reports import (
     suggest_mapping,
 )
 from app.roles import CAN_MANAGE_PARTNER_REPORTS, CAN_VIEW_PARTNER_REPORTS
+from app.payments_import import parse_currency_note
 from app.routers_payments import payment_numbers
 from app.routers_templates import _content_disposition
 
@@ -524,6 +525,63 @@ def _rule_out(rule: PartnerReportRule | None) -> dict | None:
     }
 
 
+def _rate_pending(report: PartnerReport) -> bool:
+    """Отчёт в валюте, курс которому ещё не задан: суммы лежат в валюте."""
+    return bool(report.currency and report.currency != "RUB" and report.currency_rate is None)
+
+
+def _apply_rate(db: Session, report: PartnerReport, rate) -> None:
+    """
+    Поставить отчёту курс к рублю и ПЕРЕСЧИТАТЬ его суммы в базе.
+
+    Строки хранят суммы уже в рублях (или в валюте, пока курса нет), поэтому
+    пересчёт — это умножение на отношение нового множителя к прежнему. Итоги
+    берутся заново СУММОЙ СТРОК, а не масштабированием округлённых итогов:
+    иначе на курсе 83 округление до копеек уводило бы итог на рубли.
+
+    `rate` — текст, как его вписали («83,381152» или «0,012»), либо None:
+    вернуть отчёт к суммам в валюте.
+    """
+    text = str(rate).strip().replace(" ", "").replace(",", ".") if rate not in (None, "") else ""
+    try:
+        new = currency_factor(text or None)
+    except (ValueError, ArithmeticError):
+        raise HTTPException(400, f"Курс «{rate}» — это не число больше нуля")
+    old = currency_factor(report.currency_rate) if report.currency_rate is not None else Decimal(1)
+    ratio = new / old
+    if ratio != 1:
+        db.execute(
+            update(PartnerReportRow)
+            .where(PartnerReportRow.report_id == report.id)
+            .values(
+                amount_author=func.round(PartnerReportRow.amount_author * ratio, 8),
+                amount_related=func.round(PartnerReportRow.amount_related * ratio, 8),
+            )
+        )
+        sums = db.execute(
+            select(
+                func.coalesce(func.sum(PartnerReportRow.amount_author), 0),
+                func.coalesce(func.sum(PartnerReportRow.amount_related), 0),
+            ).where(PartnerReportRow.report_id == report.id)
+        ).one()
+        report.total_author = rubles(Decimal(str(sums[0])))
+        report.total_related = rubles(Decimal(str(sums[1])))
+        # «Вне каталога» — те же строки, что и при загрузке: без трека или на
+        # приёмнике. Считаем заново, а не масштабируем округлённое.
+        outside = db.scalar(select(Track.id).where(Track.sku == OUTSIDE_SKU))
+        missing = PartnerReportRow.track_id.is_(None)
+        if outside is not None:
+            missing = or_(missing, PartnerReportRow.track_id == outside)
+        report.unmatched_amount = rubles(Decimal(str(db.scalar(
+            select(
+                func.coalesce(
+                    func.sum(PartnerReportRow.amount_author + PartnerReportRow.amount_related), 0
+                )
+            ).where(PartnerReportRow.report_id == report.id, missing)
+        ))))
+    report.currency_rate = Decimal(text) if text else None
+
+
 def _sync_payment_actual(db: Session, payment: PartnerPayment | None) -> None:
     """
     ФАКТИЧЕСКИЙ ЗАВОД ПЛАТЕЖА = сумма отчётов, к нему привязанных.
@@ -544,10 +602,16 @@ def _sync_payment_actual(db: Session, payment: PartnerPayment | None) -> None:
     if payment is None:
         return
     rows = db.execute(
-        select(PartnerReport.total_author, PartnerReport.total_related).where(
-            PartnerReport.payment_id == payment.id
-        )
+        select(
+            PartnerReport.total_author, PartnerReport.total_related,
+            PartnerReport.currency, PartnerReport.currency_rate,
+        ).where(PartnerReport.payment_id == payment.id)
     ).all()
+    # Отчёт в валюте БЕЗ КУРСА в завод не входит: его суммы ещё не рубли.
+    rows = [
+        (author, related) for author, related, currency, rate in rows
+        if not (currency and currency != "RUB" and rate is None)
+    ]
     if not rows:
         # Отвязали последний отчёт — поля очищаем, а не оставляем прежние:
         # иначе в таблице висели бы сумма и отметка, которым больше нечем
@@ -619,6 +683,9 @@ def _report_out(report: PartnerReport, partner_name: str, payment_date=None,
         "currency_rate": (
             format(report.currency_rate.normalize(), "f") if report.currency_rate else None
         ),
+        "currency_total": _money(report.currency_total),
+        # Валютный отчёт без курса: суммы ещё в валюте, а не в рублях.
+        "rate_pending": _rate_pending(report),
         "payment_id": str(report.payment_id) if report.payment_id else None,
         # Дата привязанного поступления: в списке отчётов её показывают
         # столбцом, и ходить за ней вторым запросом ради одной ячейки незачем.
@@ -935,6 +1002,37 @@ def link_payment(
             ),
         )
 
+    # СВЕРКА В ВАЛЮТЕ И КУРС САМ (просьба владельца 24.09.2026). Итог отчёта в
+    # валюте сверяется с «суммой в валюте» поступления — это независимое число
+    # от площадки. Сошлось с точностью до цента — курс ставится так, чтобы
+    # фактический завод совпал с заводом: сумма завода / итог в валюте. Не
+    # сошлось — привязываем, но курс не трогаем: подгонять его под платёж
+    # значило бы спрятать недостачу. Курс потом правится руками в окне отчёта.
+    currency_check = None
+    if report.currency and report.currency != "RUB" and report.currency_total is not None:
+        paid, paid_code = parse_currency_note(payment.currency_amount)
+        own = Decimal(report.currency_total).quantize(Decimal("0.01"))
+        matches = (
+            paid is not None
+            and (paid_code in (None, report.currency))
+            and abs(paid - own) <= Decimal("0.01")
+        )
+        currency_check = {
+            "currency": report.currency,
+            "report": _money(own),
+            "payment": _money(paid) if paid is not None else None,
+            "payment_currency": paid_code,
+            "matches": bool(matches),
+            "rate_set": False,
+        }
+        if matches and payment.transfer_amount and own:
+            auto = (Decimal(payment.transfer_amount) / Decimal(report.currency_total)).quantize(
+                Decimal("0.0000000001")
+            )
+            _apply_rate(db, report, format(auto.normalize(), "f"))
+            currency_check["rate_set"] = True
+            currency_check["rate"] = format(auto.normalize(), "f")
+
     previous = db.get(PartnerPayment, report.payment_id) if report.payment_id else None
     report.payment_id = payment.id
     db.flush()
@@ -953,10 +1051,12 @@ def link_payment(
             "partner": partner.name if partner else None,
             "period": period_label(report.period_from, report.period_to),
             "payment": payment.occurred_on.isoformat(),
+            "currency_check": currency_check,
         },
     )
     db.commit()
     return {
+        "currency_check": currency_check,
         "report": _report_out(
             report, partner.name if partner else "", payment.occurred_on,
             _payment_label(payment.occurred_on, partner.name if partner else None,
@@ -1659,14 +1759,15 @@ def create_report(
     forget_all_parsed()
     if result.problems:
         raise HTTPException(400, "; ".join(result.problems))
-    # ОТЧЁТ В ВАЛЮТЕ БЕЗ КУРСА НЕ ГРУЗИМ: доллары легли бы в базу рублями, и
-    # ошибку на два порядка на глаз не заметить — итог просто выглядел бы
-    # маленьким. Курс вписывают в форме загрузки.
+    # ОТЧЁТ В ВАЛЮТЕ МОЖНО ЗАГРУЗИТЬ И БЕЗ КУРСА (правка 24.09.2026): курс
+    # подставится сам при привязке к поступлению, если итог в валюте сойдётся
+    # с «суммой в валюте» платежа (см. link_payment). До тех пор суммы лежат
+    # в валюте, отчёт помечен «курс не задан» и в фактический завод НЕ входит
+    # — иначе доллары сложились бы с рублями.
     foreign = sorted(c for c in result.currencies if c != "RUB")
-    if foreign and not head["currency_rate"]:
+    if len(foreign) > 1:
         raise HTTPException(
-            400,
-            "Суммы отчёта в %s — укажите курс к рублю" % ", ".join(foreign),
+            400, "В отчёте несколько валют (%s) — один курс к ним не применить" % ", ".join(foreign)
         )
     if not result.rows:
         raise HTTPException(400, "В файле не нашлось ни одной строки с данными")
@@ -1719,6 +1820,13 @@ def create_report(
         currency_rate=(
             Decimal(head["currency_rate"].replace(",", ".").replace(" ", ""))
             if head["currency_rate"] else None
+        ),
+        # Итог в ИСХОДНОЙ валюте: суммы строк уже умножены на курс (если его
+        # дали), поэтому делим обратно — с ним сверяется платёж.
+        currency_total=(
+            (totals["amount_author"] + totals["amount_related"])
+            / currency_factor(head["currency_rate"] or None)
+            if foreign else None
         ),
         uploaded_by=current_user.id,
     )
@@ -1924,6 +2032,8 @@ def update_report(
     usage_type: str = Form(""),
     usage_kind: str = Form(""),
     territory: str = Form(""),
+    # None — поле не прислали, курс не трогаем; "" — вернуть суммы в валюту.
+    currency_rate: str | None = Form(None),
     db: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> dict:
@@ -1966,6 +2076,14 @@ def update_report(
     for name, value in attrs.items():
         if not per_row[name]:
             setattr(report, name, value)
+    # КУРС ПРАВИТСЯ РУКАМИ (просьба владельца 24.09.2026): при привязке он
+    # ставится сам, но человек вправе его поменять — и тогда суммы отчёта и
+    # фактический завод поступления пересчитываются.
+    if currency_rate is not None and report.currency and report.currency != "RUB":
+        _apply_rate(db, report, currency_rate)
+        db.flush()
+        if report.payment_id:
+            _sync_payment_actual(db, db.get(PartnerPayment, report.payment_id))
     db.commit()
 
     partner = db.get(Partner, report.partner_id)
@@ -1976,6 +2094,9 @@ def update_report(
             "partner": partner.name if partner else None,
             "period": period_label(report.period_from, report.period_to),
             **{name: getattr(report, name) for name in REPORT_ATTRS},
+            "currency_rate": (
+                format(report.currency_rate.normalize(), "f") if report.currency_rate else None
+            ),
         },
     )
     db.commit()

@@ -20,6 +20,7 @@ import { formatMoney } from '../api/finance';
 import {
   checkTrack,
   createReport,
+  currencySign,
   exportUnmatched,
   inspectReport,
   deleteAlias,
@@ -93,9 +94,9 @@ const REPORT_COLUMNS = [
     text: (r) => r[name] || '',
   })),
   { key: 'payment', label: 'Поступление', text: (r) => r.payment_label || '' },
-  { key: 'unmatched', label: 'Вне каталога', text: (r) => amount(r.unmatched_amount) },
-  { key: 'author', label: 'Авторские', text: (r) => amount(r.total_author) },
-  { key: 'related', label: 'Смежные', text: (r) => amount(r.total_related) },
+  { key: 'unmatched', label: 'Вне каталога', text: (r) => reportAmount(r, r.unmatched_amount) },
+  { key: 'author', label: 'Авторские', text: (r) => reportAmount(r, r.total_author) },
+  { key: 'related', label: 'Смежные', text: (r) => reportAmount(r, r.total_related) },
 ];
 
 // Поля единого формата: к ним сводится любой отчёт площадки.
@@ -195,6 +196,15 @@ function FilterButton({ icon, title, onClick, active = false, disabled = false }
 /** Сумма для ячейки таблицы: те же тысячи, но без «₽» — он в шапке колонки. */
 function amount(value) {
   return formatMoney(value).replace(' ₽', '');
+}
+
+/**
+ * Сумма отчёта в списке. У валютного отчёта без курса — со знаком валюты:
+ * шапка колонки обещает рубли, а там ещё доллары или евро.
+ */
+function reportAmount(report, value) {
+  const sign = currencySign(report);
+  return sign ? `${amount(value)} ${sign}` : amount(value);
 }
 
 /** Российская дата: 2026-07-01 → 01.07.2026. */
@@ -1304,7 +1314,8 @@ export function PartnerReportsPage() {
                     className={`${inputClass} w-[150px] py-1 tabular-nums`}
                   />
                   <span className="text-[12.5px] text-text-muted">
-                    больше 1 — умножаем (рублей за единицу), меньше 1 — делим (единиц за рубль)
+                    Можно не вводить: курс подставится сам при привязке к поступлению, если
+                    сумма в валюте сойдётся. Больше 1 — умножаем, меньше 1 — делим.
                   </span>
                 </div>
               )}
@@ -1315,7 +1326,7 @@ export function PartnerReportsPage() {
                     variant="accent"
                     size="sm"
                     onClick={save}
-                    disabled={busy || (preview.needs_rate && !preview.currency_rate)}
+                    disabled={busy}
                   >
                     {saving ? 'Загружаем…' : 'Загрузить отчёт'}
                   </Button>
@@ -1554,17 +1565,25 @@ export function PartnerReportsPage() {
                           }
                           className="inline-block"
                         >
-                          <span className="cursor-help">{amount(r.unmatched_amount)}</span>
+                          <span className="cursor-help">{reportAmount(r, r.unmatched_amount)}</span>
                         </Tooltip>
                       ) : (
                         '—'
                       )}
                     </td>
                     <td className={cellClass('tabular-nums')} onClick={cellPick('author', r)}>
-                      {amount(r.total_author)}
+                      {reportAmount(r, r.total_author)}
                     </td>
-                    <td className={cellClass('tabular-nums')} onClick={cellPick('related', r)}>
-                      {amount(r.total_related)}
+                    <td
+                      className={cellClass(`tabular-nums ${r.rate_pending ? 'text-danger' : ''}`)}
+                      onClick={cellPick('related', r)}
+                      data-hint={
+                        r.rate_pending
+                          ? `Суммы в ${r.currency}: курс не задан. Он подставится сам при привязке к поступлению, если сумма в валюте сойдётся`
+                          : undefined
+                      }
+                    >
+                      {reportAmount(r, r.total_related)}
                     </td>
                     <td className={`${td} text-right`}>
                       {manage && (
