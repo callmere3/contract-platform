@@ -36,7 +36,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.audit import log_action
@@ -171,6 +171,37 @@ def _aliases_for(db: Session, partner_id, rows: list) -> dict:
         query = query.where(PartnerTrackAlias.title_key.in_({k[0] for k in keys}))
     found = db.execute(query).scalars()
     return {(a.title_key, a.artist_key): a.sku for a in found}
+
+
+# ПОЗИЦИЯ «ВНЕ КАТАЛОГА» — куда складываются строки, которым в номенклатуре
+# ничего не соответствует (просьба владельца 24.09.2026). Раньше такая строка
+# лежала совсем без ссылки на трек, и выгрузить по ней что-либо было нельзя:
+# «деньги пришли, а на что — неизвестно» жило только числом в списке отчётов.
+# Теперь у них общий адрес, и в конце квартала по нему видно всё разом.
+#
+# ЭТО НАСТОЯЩАЯ СТРОКА В `tracks`, а не признак у строки отчёта: так она
+# ведёт себя как любой другой трек — по ней работает и выгрузка, и будущий
+# расчёт, и ничего не надо учить исключению.
+OUTSIDE_SKU = "0000001"
+OUTSIDE_TITLE = "Вне каталога"
+
+
+def outside_track_id(db: Session):
+    """
+    Трек-приёмник «вне каталога»; заводится при первой надобности.
+
+    Заводим сами, а не миграцией: позиция служебная, и на стенде, где отчёты
+    ещё не грузили, ей взяться неоткуда. Прав (`track_rights`) у неё НЕТ и
+    быть не должно — эти деньги пока ничьи, и придумывать им владельца
+    значило бы отдать их не тому.
+    """
+    found = db.scalar(select(Track.id).where(Track.sku == OUTSIDE_SKU))
+    if found is not None:
+        return found
+    track = Track(id=uuid.uuid4(), sku=OUTSIDE_SKU, title=OUTSIDE_TITLE)
+    db.add(track)
+    db.flush()
+    return track.id
 
 
 def _code_candidates(value: str) -> list:
@@ -1384,6 +1415,16 @@ def create_report(
     db.add(report)
     db.flush()
 
+    # СТРОКИ БЕЗ ТРЕКА ПРИВЯЗЫВАЕМ К «ВНЕ КАТАЛОГА». Счётчики выше
+    # (`unmatched_count` / `unmatched_amount`) посчитаны ДО этого и остаются
+    # честными: «нет в номенклатуре» — по-прежнему про то, что не нашлось, а
+    # приёмник нужен, чтобы по этим строкам можно было что-то выгрузить.
+    if report.unmatched_count:
+        outside = outside_track_id(db)
+        track_by_row = {
+            r.row_num: track_by_row.get(r.row_num) or outside for r in result.rows
+        }
+
     _store_rows(db, report.id, result.rows, track_by_row)
 
     # ЗАПОМИНАЕМ ВПИСАННОЕ РУКАМИ: в следующем отчёте этой площадки тот же
@@ -1482,8 +1523,19 @@ def report_rows(
     page = max(1, page)
     page_size = max(1, min(page_size, 500))
     query = select(PartnerReportRow).where(PartnerReportRow.report_id == report_id)
+    # «НЕ ОПОЗНАНО» — ЭТО И ПРИЁМНИК «ВНЕ КАТАЛОГА» ТОЖЕ. Ссылка у таких строк
+    # теперь есть, но ведёт она в служебную позицию, а не в настоящий трек:
+    # спрашивают-то по-прежнему «что не нашлось».
+    outside = db.scalar(select(Track.id).where(Track.sku == OUTSIDE_SKU))
     if unmatched_only:
-        query = query.where(PartnerReportRow.track_id.is_(None))
+        query = query.where(
+            or_(
+                PartnerReportRow.track_id.is_(None),
+                PartnerReportRow.track_id == outside,
+            )
+            if outside is not None
+            else PartnerReportRow.track_id.is_(None)
+        )
 
     total = db.scalar(select(func.count()).select_from(query.subquery())) or 0
     rows = db.scalars(
@@ -1501,7 +1553,9 @@ def report_rows(
                 "quantity": _money(r.quantity),
                 "amount_author": _money(r.amount_author),
                 "amount_related": _money(r.amount_related),
-                "matched": r.track_id is not None,
+                # Приёмник настоящим треком не считается — иначе строка
+                # выглядела бы разнесённой, хотя деньги по-прежнему ничьи.
+                "matched": r.track_id is not None and r.track_id != outside,
             }
             for r in rows
         ],
