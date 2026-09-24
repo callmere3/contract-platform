@@ -213,7 +213,7 @@ export function GenerationHistoryPage() {
                     variant="secondary"
                     size="sm"
                     disabled={!e.template_id || downloading === `${e.id}:form`}
-                    title={e.template_id ? undefined : 'Шаблон удалён — открыть форму нечем'}
+                    data-hint={e.template_id ? undefined : 'Шаблон удалён — открыть форму нечем'}
                     onClick={() => openForm(e)}
                   >
                     {downloading === `${e.id}:form` ? '…' : 'Открыть форму'}
@@ -259,7 +259,7 @@ export function GenerationHistoryPage() {
                       <Button
                         variant="secondary"
                         size="sm"
-                        title="Удалить запись из истории"
+                        data-hint="Удалить запись из истории"
                         onClick={() => setConfirmDeleteId(e.id)}
                       >
                         ✕

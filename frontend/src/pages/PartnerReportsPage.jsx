@@ -177,7 +177,7 @@ function FilterButton({ icon, title, onClick, active = false, disabled = false }
     <button
       type="button"
       onClick={onClick}
-      title={title}
+      data-hint={title}
       aria-label={title}
       aria-pressed={active}
       disabled={disabled}
@@ -719,7 +719,7 @@ export function PartnerReportsPage() {
                       {manage && (
                         <button
                           type="button"
-                          title="Забыть: в следующем отчёте строка снова будет без артикула"
+                          data-hint="Забыть: в следующем отчёте строка снова будет без артикула"
                           aria-label="Забыть сопоставление"
                           onClick={async () => {
                             try {
@@ -798,7 +798,7 @@ export function PartnerReportsPage() {
                         {isFormula && spec.formula && !editing[f.name] ? (
                           <div
                             className={`${inputClass} w-full flex items-center justify-between gap-3`}
-                            title={spec.formula}
+                            data-hint={spec.formula}
                           >
                             <span className="text-text-secondary">Рассчитано по формуле</span>
                             <button
@@ -1390,7 +1390,7 @@ export function PartnerReportsPage() {
                             e.stopPropagation();
                             remove(r);
                           }}
-                          title="Удалить отчёт"
+                          data-hint="Удалить отчёт"
                           aria-label="Удалить отчёт"
                           className="text-danger bg-transparent border-0 cursor-pointer p-0"
                         >

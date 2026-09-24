@@ -18,6 +18,7 @@ import {
 import { TagsProvider } from './api/TagsContext';
 import { ModalProvider } from './modals/ModalProvider';
 import { ModalRoot } from './modals/ModalRoot';
+import { HintLayer } from './components/ui/HintLayer';
 import { DraftProvider } from './drafts/DraftContext';
 import { DraftDock } from './drafts/DraftDock';
 import { AchievementToast } from './achievements/AchievementToast';
@@ -198,6 +199,9 @@ function AppShell() {
       </Routes>
       <DraftDock />
       <AchievementToast />
+      {/* Один слой подсказок на всё приложение: элементу достаточно
+          атрибута `data-hint`, см. HintLayer. */}
+      <HintLayer />
       <ModalRoot />
     </div>
   );

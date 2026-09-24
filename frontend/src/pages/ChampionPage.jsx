@@ -208,7 +208,7 @@ export function ChampionPage() {
               {/* Первые три места — медалями, дальше номером. Ширина общая,
                   чтобы имена стояли в одну колонку в обоих случаях. */}
               <span
-                title={r.place ? `${r.place} место` : 'пока без документов'}
+                data-hint={r.place ? `${r.place} место` : 'пока без документов'}
                 aria-label={r.place ? `${r.place} место` : 'пока без документов'}
                 className={`w-6 text-center flex-shrink-0 ${
                   r.place && r.place <= MEDALS.length

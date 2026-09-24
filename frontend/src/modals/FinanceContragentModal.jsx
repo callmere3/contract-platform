@@ -360,7 +360,7 @@ function Operation({ operation, canDelete, busy, onDelete }) {
             type="button"
             disabled={busy}
             onClick={onDelete}
-            title="Удалить операцию"
+            data-hint="Удалить операцию"
             aria-label="Удалить операцию"
             className="w-6 h-6 flex items-center justify-center rounded-full bg-transparent border-none cursor-pointer text-[13px] text-text-muted hover:text-danger font-sans"
           >

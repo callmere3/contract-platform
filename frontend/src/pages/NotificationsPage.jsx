@@ -249,7 +249,7 @@ export function NotificationsPage() {
                   {n.recipients.map((r) => (
                     <span
                       key={r.id}
-                      title={r.read_at ? `прочитал(а) ${formatWhen(r.read_at)}` : 'ещё не открыл(а)'}
+                      data-hint={r.read_at ? `прочитал(а) ${formatWhen(r.read_at)}` : 'ещё не открыл(а)'}
                       className={`text-[11.5px] px-2 py-1 rounded-badge border ${
                         r.read_at
                           ? 'border-transparent bg-accent-soft text-accent'

@@ -422,7 +422,7 @@ function RightsEditor({
           <button
             type="button"
             onClick={() => onRemove(right.key)}
-            title="Убрать правообладателя"
+            data-hint="Убрать правообладателя"
             aria-label="Убрать правообладателя"
             className="w-9 h-9 mb-0.5 rounded-input border border-border flex items-center justify-center text-danger bg-transparent cursor-pointer"
           >

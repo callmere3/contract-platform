@@ -326,7 +326,7 @@ export function LinkReportPaymentModal({ report, level, isTop, onChanged }) {
                       дата осталась в подсказке. */}
                   <span
                     className="text-text tabular-nums shrink-0"
-                    title={`Поступление от ${ru(p.occurred_on)}`}
+                    data-hint={`Поступление от ${ru(p.occurred_on)}`}
                   >
                     {p.number ? `№${p.number}` : '—'}
                     {monthOffset === null && (

@@ -19,7 +19,7 @@ export function AchievementCard({ achievement, onOpen, isFresh = false, revealIn
     <button
       type="button"
       onClick={onOpen}
-      title={hint}
+      data-hint={hint}
       className={`flex flex-col items-center text-center gap-1 px-1.5 py-2.5 rounded-input border cursor-pointer min-h-[80px] justify-center ${
         earned
           ? 'border-border bg-surface'

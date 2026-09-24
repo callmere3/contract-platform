@@ -699,7 +699,7 @@ export function PaymentsPage() {
                         <button
                           type="button"
                           onClick={() => remove(r)}
-                          title="Убрать строку"
+                          data-hint="Убрать строку"
                           aria-label="Убрать строку"
                           className="text-danger bg-transparent border-0 cursor-pointer p-0"
                         >

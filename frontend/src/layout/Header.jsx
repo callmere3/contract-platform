@@ -200,7 +200,7 @@ export function Header({ companyName = 'ML Docs' }) {
               type="button"
               onClick={() => setProductsOpen((open) => !open)}
               aria-expanded={productsOpen}
-              title="Переключить продукт"
+              data-hint="Переключить продукт"
               className="flex items-center gap-1.5 bg-transparent border-none p-0 cursor-pointer font-sans font-bold text-base tracking-[-0.01em] text-text"
             >
               {inFinance ? 'ML Finance' : companyName}
@@ -243,7 +243,7 @@ export function Header({ companyName = 'ML Docs' }) {
               key={tab.to}
               to={tab.to}
               end={tab.end}
-              title={tab.title}
+              data-hint={tab.title}
               aria-label={tab.title}
               className={({ isActive }) =>
                 `text-sm py-5 border-b-2 transition-colors no-underline inline-flex items-center gap-1.5 ${
@@ -276,7 +276,7 @@ export function Header({ companyName = 'ML Docs' }) {
         {canGrantDemoAchievement(user?.role) && (
           <button
             onClick={() => grantRandomAchievement()}
-            title="Выдать случайное достижение — для проверки механизма"
+            data-hint="Выдать случайное достижение — для проверки механизма"
             aria-label="Выдать случайное достижение"
             className="w-8 h-8 rounded-full border border-dashed border-border flex items-center justify-center text-sm text-text-secondary cursor-pointer bg-transparent"
           >
@@ -290,7 +290,7 @@ export function Header({ companyName = 'ML Docs' }) {
           <button
             ref={bellRef}
             onClick={() => setNotificationsOpen((open) => !open)}
-            title={unread > 0 ? `Непрочитанных: ${unread}` : 'Уведомления'}
+            data-hint={unread > 0 ? `Непрочитанных: ${unread}` : 'Уведомления'}
             aria-label="Уведомления"
             aria-expanded={notificationsOpen}
             className="relative w-8 h-8 rounded-full border border-border flex items-center justify-center text-sm text-text-secondary cursor-pointer bg-transparent"
@@ -327,7 +327,7 @@ export function Header({ companyName = 'ML Docs' }) {
             и вылетало по ошибке — теперь оно внутри карточки. */}
         <button
           onClick={() => openModal('profile')}
-          title={freshAchievements > 0 ? 'Профиль · есть новое достижение' : 'Профиль'}
+          data-hint={freshAchievements > 0 ? 'Профиль · есть новое достижение' : 'Профиль'}
           className="relative text-[13px] text-text-secondary hover:text-text bg-transparent border-none cursor-pointer p-0 font-sans"
         >
           {user?.full_name || user?.username}

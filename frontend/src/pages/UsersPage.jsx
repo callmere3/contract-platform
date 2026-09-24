@@ -153,7 +153,7 @@ export function UsersPage() {
                     <button
                       type="button"
                       onClick={() => openModal('userProfile', { userId: u.id })}
-                      title="Открыть профиль и достижения"
+                      data-hint="Открыть профиль и достижения"
                       className="bg-transparent border-none p-0 cursor-pointer font-sans text-[15px] font-semibold text-text truncate hover:text-accent"
                     >
                       {u.full_name || u.username}

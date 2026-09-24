@@ -311,7 +311,7 @@ function Plan({ plan, replace, setReplace, skipRows, setSkipRows }) {
             <button
               type="button"
               onClick={() => setOnlyErrors((v) => !v)}
-              title={
+              data-hint={
                 onlyErrors
                   ? 'Вернуться к началу файла'
                   : 'Показать все строки, которые не пройдут'
@@ -414,14 +414,14 @@ function Plan({ plan, replace, setReplace, skipRows, setSkipRows }) {
                         checked={!skipped}
                         disabled={!r.ok}
                         onChange={() => toggleRow(r.row)}
-                        title={
+                        data-hint={
                           r.ok ? 'Снять — не заливать эту строку' : 'Строка не прошла проверку'
                         }
                       />
                     </td>
                     <td className={`${cell} text-text-muted tabular-nums`}>{r.row}</td>
                     {r.values.map((v, i) => (
-                      <td key={i} className={`${cell} text-text max-w-[220px] truncate`} title={v}>
+                      <td key={i} className={`${cell} text-text max-w-[220px] truncate`} data-hint={v}>
                         {v}
                       </td>
                     ))}

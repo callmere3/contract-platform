@@ -146,7 +146,7 @@ export function NomenclaturePage() {
                   { replace: true },
                 )
               }
-              title={
+              data-hint={
                 inCatalog
                   ? 'Показать изъятые позиции (неКаталог)'
                   : 'Вернуться к активным трекам (Каталог)'
@@ -190,7 +190,7 @@ export function NomenclaturePage() {
               setOwner(e.target.value);
             }}
             placeholder="Правообладатель"
-            title={
+            data-hint={
               contragentId
                 ? 'Отбор по карточке контрагента. Начните печатать — станет обычным поиском по имени'
                 : undefined

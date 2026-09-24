@@ -123,7 +123,7 @@ export function NotificationsPanel({ onClose, anchorRef }) {
                 type="button"
                 disabled={removing === n.id}
                 onClick={() => remove(n.id)}
-                title="Убрать у себя"
+                data-hint="Убрать у себя"
                 aria-label="Убрать уведомление"
                 className="absolute top-2.5 right-2.5 w-6 h-6 flex items-center justify-center rounded-full bg-transparent border-none cursor-pointer text-[13px] text-text-muted hover:text-danger font-sans"
               >

@@ -35,7 +35,7 @@ export function DraftDock() {
       <button
         onClick={open}
         className="flex items-center gap-2.5 min-w-0 bg-transparent border-none cursor-pointer text-left p-0"
-        title="Продолжить заполнение"
+        data-hint="Продолжить заполнение"
       >
         <span className="text-accent text-sm flex-shrink-0" aria-hidden>
           ✎

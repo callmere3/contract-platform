@@ -117,7 +117,7 @@ export function ModalAction({ icon, title, onClick, danger = false, disabled = f
     <button
       type="button"
       onClick={onClick}
-      title={title}
+      data-hint={title}
       aria-label={title}
       disabled={disabled}
       className={`w-8 h-8 rounded-full border border-border flex items-center justify-center cursor-pointer bg-transparent disabled:opacity-40 disabled:cursor-default ${

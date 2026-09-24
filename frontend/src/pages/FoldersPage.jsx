@@ -245,7 +245,7 @@ export function FoldersPage() {
                         aria-label={
                           tpl.hidden_for_managers ? 'Показать менеджерам' : 'Скрыть от менеджеров'
                         }
-                        title={
+                        data-hint={
                           tpl.hidden_for_managers ? 'Показать менеджерам' : 'Скрыть от менеджеров'
                         }
                       >
