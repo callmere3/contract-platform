@@ -54,9 +54,9 @@ from app.models import (
 )
 from app.partner_reports import (
     ATTR_FIELDS,
-    IDENTITY_FIELDS,
     MAPPABLE_FIELDS,
     FIELDS,
+    sku_configured,
     FIELD_LABELS,
     artist_tokens,
     find_period,
@@ -667,6 +667,13 @@ def save_rule(
             raise HTTPException(400, f"Поле «{key}»: ожидается объект")
         column = str(spec.get("column") or "").strip()
         formula = str(spec.get("formula") or "").strip()
+        # «ЗАПОЛНЯЕТСЯ ПРАВИЛОМ» — осознанный выбор, а не пустое поле: артикул
+        # при нём ищут по коду площадки, по названию или вписывают руками.
+        # Хранится явным признаком, чтобы «пусто» осталось значить «ниоткуда
+        # не берётся», то есть ошибку настройки.
+        if key == "sku" and spec.get("auto") and not column and not formula:
+            clean[key] = {"auto": True}
+            continue
         # У ПАРАМЕТРОВ ФОРМУЛЫ НЕ БЫВАЕТ: формулы считают числа, а тип
         # контента и территория — слова. Либо колонка файла, либо одно
         # значение на весь отчёт (оно живёт не здесь, а рядом с правилом).
@@ -682,11 +689,11 @@ def save_rule(
             clean[key] = {"column": column}
         elif formula:
             clean[key] = {"formula": formula}
-    if not any(key in clean for key in IDENTITY_FIELDS):
+    if not sku_configured(clean):
         raise HTTPException(
             400,
-            "Не задано, по чему опознавать трек: нужна колонка «%s» или «%s»"
-            % (FIELD_LABELS["sku"], FIELD_LABELS["code"]),
+            "«%s» обязателен: выберите колонку или «заполняется правилом»"
+            % FIELD_LABELS["sku"],
         )
 
     rate = None
