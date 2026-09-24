@@ -72,31 +72,76 @@ function lastQuarter() {
   return { year, q };
 }
 
+// НАСТРОЙКИ ЗАПОМИНАЮТСЯ (просьба владельца 24.09.2026: «выбрал квартал и
+// вид отчёта — не хочу выбирать каждый раз заново»). В браузере, как
+// открытый период в «Поступлениях»: это «где я сейчас работаю», а не данные,
+// которыми делятся. Всё прочитанное проверяется — мусор в хранилище или
+// приватное окно, где оно бросает исключение, страницу не роняют: просто
+// открываются настройки по умолчанию.
+const STORE = 'ml_royalty_settings';
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+function loadSaved() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(STORE) || 'null');
+    return raw && typeof raw === 'object' ? raw : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Выбранные элементы списка: только {id, label, sub} со строковым id. */
+function savedItems(value) {
+  return Array.isArray(value)
+    ? value
+        .filter((x) => x && typeof x.id === 'string' && typeof x.label === 'string')
+        .map((x) => ({ id: x.id, label: x.label, sub: typeof x.sub === 'string' ? x.sub : '' }))
+    : [];
+}
+
+const pick = (value, allowed, fallback) => (allowed.includes(value) ? value : fallback);
+const bool = (value, fallback) => (typeof value === 'boolean' ? value : fallback);
+
 const inputClass =
   'bg-input-bg border border-border rounded-input px-3 py-2 text-[13px] text-text outline-none font-sans';
 
 export function RoyaltyReportsPage() {
-  const [mode, setMode] = useState('holders');
+  // Сохранённое читаем ОДИН раз — при открытии страницы.
+  const [saved] = useState(loadSaved);
+  const [mode, setMode] = useState(() => pick(saved.mode, ['holders', 'summary'], 'holders'));
   const [modeOpen, setModeOpen] = useState(false);
-  const [tab, setTab] = useState('main');
+  const [tab, setTab] = useState(() =>
+    pick(saved.tab, ['main', 'holders', 'partners', 'tracks'], 'main'),
+  );
 
   const start = lastQuarter();
-  const [year, setYear] = useState(start.year);
-  const [period, setPeriod] = useState(quarterRange(start.year, start.q));
-  const [dateBasis, setDateBasis] = useState('period');
-  const [kinds, setKinds] = useState({ summary: true, detailed: true });
-  const [groupDetail, setGroupDetail] = useState(true);
+  const [year, setYear] = useState(() =>
+    Number.isInteger(saved.year) && saved.year > 2000 && saved.year < 2100 ? saved.year : start.year,
+  );
+  const [period, setPeriod] = useState(() =>
+    DATE.test(saved.period?.from || '') && DATE.test(saved.period?.to || '')
+      ? { from: saved.period.from, to: saved.period.to }
+      : quarterRange(start.year, start.q),
+  );
+  const [dateBasis, setDateBasis] = useState(() =>
+    pick(saved.dateBasis, ['period', 'report'], 'period'),
+  );
+  const [kinds, setKinds] = useState(() => ({
+    summary: bool(saved.kinds?.summary, true),
+    detailed: bool(saved.kinds?.detailed, true),
+  }));
+  const [groupDetail, setGroupDetail] = useState(() => bool(saved.groupDetail, true));
 
   // Выбор: режим «все/по выбранным» и сам список. У правообладателей «все» —
   // это те, кому за период есть что начислить.
-  const [holdersAll, setHoldersAll] = useState(false);
-  const [holders, setHolders] = useState([]);
-  const [partnersAll, setPartnersAll] = useState(true);
-  const [partners, setPartners] = useState([]);
-  const [tracksAll, setTracksAll] = useState(true);
-  const [tracks, setTracks] = useState([]);
+  const [holdersAll, setHoldersAll] = useState(() => bool(saved.holdersAll, false));
+  const [holders, setHolders] = useState(() => savedItems(saved.holders));
+  const [partnersAll, setPartnersAll] = useState(() => bool(saved.partnersAll, true));
+  const [partners, setPartners] = useState(() => savedItems(saved.partners));
+  const [tracksAll, setTracksAll] = useState(() => bool(saved.tracksAll, true));
+  const [tracks, setTracks] = useState(() => savedItems(saved.tracks));
 
-  const [by, setBy] = useState('holder');
+  const [by, setBy] = useState(() => pick(saved.by, ['holder', 'track', 'partner'], 'holder'));
   const [preview, setPreview] = useState(null);
   const [summary, setSummary] = useState(null);
   const [busy, setBusy] = useState(null); // 'preview' | 'generate'
@@ -120,6 +165,23 @@ export function RoyaltyReportsPage() {
     setPreview(null);
     setSummary(null);
   }, [settingsKey, mode]);
+
+  // Любая правка — сразу в хранилище. Запись может не пройти (приватное окно,
+  // переполнение) — тогда просто не запомним, работать это не мешает.
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        STORE,
+        JSON.stringify({
+          mode, tab, year, period, dateBasis, kinds, groupDetail, by,
+          holdersAll, holders, partnersAll, partners, tracksAll, tracks,
+        }),
+      );
+    } catch {
+      /* не запомнили — не беда */
+    }
+  }, [mode, tab, year, period, dateBasis, kinds, groupDetail, by,
+      holdersAll, holders, partnersAll, partners, tracksAll, tracks]);
 
   const isSummary = mode === 'summary';
   const ready = holdersAll || holders.length > 0;
