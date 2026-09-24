@@ -427,6 +427,10 @@ def read_rows(worksheet, check_sums: bool = True):
     значит терять первый трек. Заодно так отсекается шапка, попавшая в
     середину файла: экспорт грида Dista её подмешивает.
     """
+    # Размеру листа из файла не верим — см. iter_table в partner_reports. У
+    # обычного (не read_only) листа такого метода нет, и он не нужен.
+    if hasattr(worksheet, "reset_dimensions"):
+        worksheet.reset_dimensions()
     for row_num, cells in enumerate(worksheet.iter_rows(), start=1):
         values = tuple(c.value for c in cells)
         percent_cols = {

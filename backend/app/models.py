@@ -1202,8 +1202,10 @@ class PartnerReportRow(Base):
     # «147.0456»), и округление каждой строки уводит итог отчёта от их же
     # «Итого» — на 668 строках набежало 84 копейки. Округляем один раз, в
     # итогах отчёта.
-    amount_author: Mapped[Decimal] = mapped_column(Numeric(16, 4), default=0)
-    amount_related: Mapped[Decimal] = mapped_column(Numeric(16, 4), default=0)
+    # Восемь знаков, а не копейки: округляем один раз, на итогах отчёта (см.
+    # PRECISION в partner_reports.py).
+    amount_author: Mapped[Decimal] = mapped_column(Numeric(20, 8), default=0)
+    amount_related: Mapped[Decimal] = mapped_column(Numeric(20, 8), default=0)
     track_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("tracks.id", ondelete="SET NULL"), index=True
     )

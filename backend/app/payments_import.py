@@ -250,6 +250,8 @@ def read_table(content: bytes, filename: str) -> list:
         wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True, read_only=True)
         out = []
         for sheet in wb.sheetnames:
+            # Размеру листа из файла не верим — см. iter_table в partner_reports.
+            wb[sheet].reset_dimensions()
             for row in wb[sheet].iter_rows(values_only=True):
                 out.append((sheet, list(row)))
         wb.close()
