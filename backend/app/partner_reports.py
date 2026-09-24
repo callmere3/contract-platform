@@ -520,6 +520,90 @@ def mapping_columns(mapping: dict) -> list:
     return out
 
 
+@dataclass(slots=True)
+class _Plan:
+    """
+    Всё, что зависит ТОЛЬКО от правила и шапки, посчитанное один раз.
+
+    Раньше это жило внутри цикла и пересчитывалось на каждой строке: список
+    денежных колонок, разбор формул на упомянутые колонки, нормализация
+    названий. На отчёте МТС в 657 строк такого не заметить, на Believe в 584
+    тысячи — это и есть основное время.
+
+    Вынесено в класс, потому что в одном листе бывает НЕСКОЛЬКО ТАБЛИЦ (у
+    Мегафона под основным отчётом идёт отчёт по пакетам со своей шапкой), и
+    на её строке план приходится собирать заново.
+    """
+
+    fields: list
+    sku_col: str | None
+    code_col: str | None
+    text_plan: list
+    text_only: set
+    presence_keys: list
+    qty_col: str | None
+    qty_formula: str | None
+    money_plan: list
+
+
+def _build_plan(mapping: dict, by_key: dict) -> _Plan:
+    """План разбора строки по правилу и шапке (`by_key`: колонка → номер)."""
+    wanted = mapping_columns(mapping)
+    fields = [
+        (key, by_key[key])
+        for key in dict.fromkeys(normalize_header(c) for c in wanted)
+        if key in by_key
+    ]
+    sku_spec = (mapping or {}).get("sku") or {}
+    code_spec = (mapping or {}).get("code") or {}
+    text_plan = [
+        (field, normalize_header(spec["column"]))
+        for field, spec in (
+            (f, (mapping or {}).get(f) or {}) for f in ("title", "artist", *ATTR_FIELDS)
+        )
+        if spec.get("column")
+    ]
+    # Колонки ПАРАМЕТРОВ читаются как текст и в `numbers` не попадают: числами
+    # они не бывают, а parse_number на каждой строке стоит времени — на отчёте
+    # в полмиллиона строк это заметно. Название и исполнителя отсюда
+    # исключаем: их колонку теоретически могут упомянуть в денежной формуле,
+    # и тогда число понадобится.
+    text_only = {
+        normalize_header(spec["column"])
+        for spec in ((mapping or {}).get(f) or {} for f in ATTR_FIELDS)
+        if spec.get("column")
+    }
+    qty_spec = (mapping or {}).get("quantity") or {}
+    qty_col = normalize_header(qty_spec["column"]) if qty_spec.get("column") else None
+    money_plan = []
+    for money_key in MONEY_FIELDS:
+        spec = (mapping or {}).get(money_key) or {}
+        money_plan.append((
+            money_key,
+            normalize_header(spec["column"]) if spec.get("column") else None,
+            spec.get("formula") if not spec.get("column") else None,
+            FIELD_LABELS[money_key].lower(),
+        ))
+    return _Plan(
+        fields=fields,
+        sku_col=normalize_header(sku_spec["column"]) if sku_spec.get("column") else None,
+        code_col=normalize_header(code_spec["column"]) if code_spec.get("column") else None,
+        text_plan=text_plan,
+        text_only=text_only,
+        # Колонки, по которым решается «в строке есть хоть одно число».
+        presence_keys=[
+            normalize_header(c)
+            for key, spec in (mapping or {}).items()
+            if key in (*MONEY_FIELDS, "quantity") and isinstance(spec, dict)
+            for c in ([spec["column"]] if spec.get("column") else [])
+            + formula_columns(spec.get("formula", ""))
+        ],
+        qty_col=qty_col,
+        qty_formula=qty_spec.get("formula") if not qty_col else None,
+        money_plan=money_plan,
+    )
+
+
 def parse_report(
     content: bytes,
     filename: str,
@@ -576,79 +660,51 @@ def parse_report(
     if limit is not None:
         data = islice(data, limit)
 
-    # ВСЁ, ЧТО НЕ ЗАВИСИТ ОТ СТРОКИ, СЧИТАЕМ ОДИН РАЗ — ЗДЕСЬ.
+    plan = _build_plan(mapping, by_key)
+
+    # ВТОРАЯ ТАБЛИЦА В ТОМ ЖЕ ЛИСТЕ. У Мегафона под основным отчётом идёт
+    # отчёт по пакетам: своя шапка, свои колонки, свои формулы. Строки его
+    # данных под правилом первой таблицы читались бы как мусор — с чужими
+    # числами в денежных колонках.
     #
-    # Раньше это жило внутри цикла и пересчитывалось на каждой строке: список
-    # денежных колонок, разбор формул на упомянутые колонки, нормализация
-    # названий. На отчёте МТС в 657 строк такого не заметить, на Believe в 584
-    # тысячи — это и есть основное время.
-    #
-    # И главное: `parse_number` звался на ВСЕХ колонках файла, хотя правилу
-    # нужны шесть. У Believe колонок 21, у Apple — 65.
-    fields = [
-        (key, by_key[key])
-        for key in dict.fromkeys(normalize_header(c) for c in wanted)
-        if key in by_key
+    # Узнаём по СОДЕРЖИМОМУ строки: встретили строку, где есть все колонки
+    # дополнительного правила, — дальше разбираем по нему. Тот же приём, что
+    # и с поиском шапки: на номера строк полагаться нельзя, длина первой
+    # таблицы меняется от месяца к месяцу.
+    tables = [
+        (t, {normalize_header(c) for c in mapping_columns(t)})
+        for t in (mapping or {}).get("tables") or []
     ]
-    sku_spec = (mapping or {}).get("sku") or {}
-    sku_col = normalize_header(sku_spec.get("column", "")) if sku_spec.get("column") else None
-    code_spec = (mapping or {}).get("code") or {}
-    code_col = normalize_header(code_spec.get("column", "")) if code_spec.get("column") else None
-    text_plan = [
-        (field, normalize_header(spec["column"]))
-        for field, spec in (
-            (f, (mapping or {}).get(f) or {}) for f in ("title", "artist", *ATTR_FIELDS)
-        )
-        if spec.get("column")
-    ]
-    # Колонки ПАРАМЕТРОВ читаются как текст и в `numbers` не попадают: числами
-    # они не бывают, а parse_number на каждой строке стоит времени — на отчёте
-    # в полмиллиона строк это заметно. Название и исполнителя отсюда
-    # исключаем: их колонку теоретически могут упомянуть в денежной формуле,
-    # и тогда число понадобится.
-    text_only = {
-        normalize_header(spec["column"])
-        for spec in ((mapping or {}).get(f) or {} for f in ATTR_FIELDS)
-        if spec.get("column")
-    }
-    # Колонки, по которым решается «в строке есть хоть одно число».
-    presence_keys = [
-        normalize_header(c)
-        for key, spec in (mapping or {}).items()
-        if key in (*MONEY_FIELDS, "quantity") and isinstance(spec, dict)
-        for c in ([spec["column"]] if spec.get("column") else [])
-        + formula_columns(spec.get("formula", ""))
-    ]
-    qty_spec = (mapping or {}).get("quantity") or {}
-    qty_col = normalize_header(qty_spec["column"]) if qty_spec.get("column") else None
-    qty_formula = qty_spec.get("formula") if not qty_col else None
-    money_plan = []
-    for money_key in MONEY_FIELDS:
-        spec = (mapping or {}).get(money_key) or {}
-        money_plan.append((
-            money_key,
-            normalize_header(spec["column"]) if spec.get("column") else None,
-            spec.get("formula") if not spec.get("column") else None,
-            FIELD_LABELS[money_key].lower(),
-        ))
 
     for offset, raw in enumerate(data):
         row_num = header_row + 2 + offset        # как в Excel: с единицы, с шапкой
         if not any(c is not None and str(c).strip() for c in raw):
             continue
+
+        if tables:
+            keys = {normalize_header(c) for c in header_names(raw) if c}
+            extra = next((t for t, wanted_keys in tables if wanted_keys <= keys), None)
+            if extra is not None:
+                here = {}
+                for i, name in enumerate(header_names(raw)):
+                    if name:
+                        here.setdefault(normalize_header(name), i)
+                plan = _build_plan(extra, here)
+                continue
+
         size = len(raw)
-        values = {key: (raw[i] if i < size else None) for key, i in fields}
+        values = {key: (raw[i] if i < size else None) for key, i in plan.fields}
 
         row = ReportRow(row_num=row_num)
-        row.sku = (_clean(values.get(sku_col)) or None) if sku_col else None
-        row.code = (_clean(values.get(code_col)) or None) if code_col else None
-        for text_field, column in text_plan:
+        row.sku = (_clean(values.get(plan.sku_col)) or None) if plan.sku_col else None
+        row.code = (_clean(values.get(plan.code_col)) or None) if plan.code_col else None
+        for text_field, column in plan.text_plan:
             setattr(row, text_field, _clean(values.get(column)) or None)
 
         numbers = {
             key: parse_number(value)
             for key, value in values.items()
-            if key not in text_only
+            if key not in plan.text_only
         }
 
         # СТРОКА БЕЗ ЕДИНОГО ЧИСЛА — НЕ ДАННЫЕ. В конце отчёта МТС идёт блок
@@ -656,15 +712,15 @@ def parse_report(
         # в таблицу как строки с мусором вместо артикула. Пустая ячейка и ноль
         # здесь разные вещи: ноль — это данные (площадка честно сообщает, что
         # денег не было), пустота — оформление.
-        if not any(numbers.get(key) is not None for key in presence_keys):
+        if not any(numbers.get(key) is not None for key in plan.presence_keys):
             continue
 
-        if qty_col:
-            row.quantity = numbers.get(qty_col)
-        elif qty_formula:
-            row.quantity = _apply_formula(qty_formula, numbers, row, "количество")
+        if plan.qty_col:
+            row.quantity = numbers.get(plan.qty_col)
+        elif plan.qty_formula:
+            row.quantity = _apply_formula(plan.qty_formula, numbers, row, "количество")
 
-        for money_key, column, formula, label in money_plan:
+        for money_key, column, formula, label in plan.money_plan:
             value = None
             if column:
                 value = numbers.get(column)
@@ -884,6 +940,21 @@ _MTS_RATE_RELATED = (
     "Ставка вознаграждения Лицензиара за смежные права на Исполнение и Фонограмму,%"
 )
 
+# МЕГАФОН. Имена колонок длинные, и в формулах они повторяются по четыре
+# раза — держим их здесь, чтобы опечатка не разъехалась между авторскими и
+# смежными.
+_MF_PRICE = "Стоимость загрузки, руб. без НДС"
+_MF_RATE_AUTHOR = "Ставка Лицензиара (авторские)"
+_MF_RATE_RELATED = "Ставка Лицензиара (смежные)"
+_MF_SHARE_AUTHOR = "Доля авторских прав, %"
+_MF_SHARE_RELATED = "Доля смежных прав, %"
+# Вторая таблица того же листа — отчёт по пакетам.
+_MF_PACK_PRICE = "Стоимость Запроса Пакета, руб. без НДС"
+_MF_PACK_RATE_AUTHOR = "Вознаграждение Лицензиара (авторские права), %"
+_MF_PACK_RATE_RELATED = "Вознаграждение Лицензиара (смежные права), %"
+_MF_PACK_OURS = "Кол-во единиц Мобильного контента Правообладателя в пакете"
+_MF_PACK_TOTAL = "Общее кол-во единиц Мобильного контента в Пакете"
+
 BUILTIN_RULES = (
     {
         "name": "МТС",
@@ -976,6 +1047,70 @@ BUILTIN_RULES = (
             # соседней колонке «Паблишер». Авторских поэтому нет вовсе —
             # отсутствующее поле сервер считает нулём.
             "amount_related": {"column": "Правообладатель (2)"},
+        },
+    },
+    {
+        "name": "МегаФон",
+        # Приметы — колонки ОСНОВНОЙ таблицы: «Тип Мобильного контента» и обе
+        # ставки лицензиара вместе не встречаются больше нигде.
+        "signature": (_MF_PRICE, _MF_RATE_AUTHOR, _MF_RATE_RELATED, "Кол-во загрузок"),
+        "partner_names": ("МегаФон",),
+        # Суммы в отчёте БЕЗ НДС: колонка так и подписана, а строка «Итого с
+        # НДС» идёт отдельно в самом низу.
+        "vat_rate": None,
+        "attributes": {
+            "content_type": "RBT",
+            "usage_type": "—",
+            "usage_kind": "Mobile",
+            "territory": "RU",
+        },
+        "mapping": {
+            "sku": {"column": "Код"},
+            "title": {"column": "Наименование"},
+            "artist": {"column": "Исполнитель"},
+            "quantity": {"column": "Кол-во загрузок"},
+            # ОТДЕЛЬНЫХ КОЛОНОК С СУММАМИ НЕТ: есть общая «Сумма
+            # вознаграждения», а авторские и смежные считаются из цены,
+            # ставки, количества и ДОЛИ. Доля обязательна: в майском отчёте
+            # три строки из 206 идут с долей 0.4, 0.25 и 0.5 при нулевой доле
+            # смежных, и без неё суммы по ним завышались бы вдвое-вчетверо.
+            # Сверено с расчётом владельца: 206 строк, расхождений ноль.
+            "amount_author": {
+                "formula": f"[{_MF_PRICE}] * [{_MF_RATE_AUTHOR}]"
+                           f" * [Кол-во загрузок] * [{_MF_SHARE_AUTHOR}]"
+            },
+            "amount_related": {
+                "formula": f"[{_MF_PRICE}] * [{_MF_RATE_RELATED}]"
+                           f" * [Кол-во загрузок] * [{_MF_SHARE_RELATED}]"
+            },
+            # ВТОРАЯ ТАБЛИЦА ТОГО ЖЕ ЛИСТА — «Отчет распространения пакетов».
+            # У неё своя шапка ниже основной, свои колонки и своя формула, а в
+            # готовом отчёте владельца её не было вовсе: считали только
+            # основную. Теперь учитываем обе (просьба владельца 24.09.2026).
+            #
+            # ФОРМУЛА ВЫВЕДЕНА ИЗ САМОГО ФАЙЛА, а не придумана: у площадки
+            # есть своя колонка «Сумма Вознаграждения Лицензиара, руб. без
+            # НДС», и произведение ниже сходится с ней на всех трёх строках
+            # (8.64, 40.67, 3.50). Деньги за пакет делятся по числу вещей в
+            # нём — отсюда доля «наших единиц» к общему числу.
+            "tables": [
+                {
+                    "sku": {"column": "Код"},
+                    "title": {"column": "Наименование Произведения/Фонограммы в составе Пакета"},
+                    "artist": {"column": "Исполнитель"},
+                    "quantity": {"column": "Кол-во Запросов"},
+                    "amount_author": {
+                        "formula": f"[{_MF_PACK_PRICE}] * [Кол-во Запросов]"
+                                   f" * [{_MF_PACK_OURS}] / [{_MF_PACK_TOTAL}]"
+                                   f" * [{_MF_PACK_RATE_AUTHOR}] * [{_MF_SHARE_AUTHOR}]"
+                    },
+                    "amount_related": {
+                        "formula": f"[{_MF_PACK_PRICE}] * [Кол-во Запросов]"
+                                   f" * [{_MF_PACK_OURS}] / [{_MF_PACK_TOTAL}]"
+                                   f" * [{_MF_PACK_RATE_RELATED}] * [{_MF_SHARE_RELATED}]"
+                    },
+                }
+            ],
         },
     },
 )

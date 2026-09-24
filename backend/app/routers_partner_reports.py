@@ -623,6 +623,48 @@ def get_rule(partner_id: uuid.UUID, db: Session = Depends(get_session)) -> dict:
     ]}
 
 
+def _clean_fields(parsed: dict) -> dict:
+    """
+    Поля правила из присланного JSON: только известные, только «колонка либо
+    формула». Общая и для основной таблицы, и для дополнительных (`tables`).
+    """
+    if not isinstance(parsed, dict):
+        raise HTTPException(400, "правило: ожидается объект")
+    clean: dict = {}
+    for key, spec in parsed.items():
+        if key == "tables":
+            continue                       # разбирается отдельно, см. вызов
+        if key not in MAPPABLE_FIELDS:
+            raise HTTPException(400, f"Неизвестное поле правила: «{key}»")
+        if not isinstance(spec, dict):
+            raise HTTPException(400, f"Поле «{key}»: ожидается объект")
+        column = str(spec.get("column") or "").strip()
+        formula = str(spec.get("formula") or "").strip()
+        # «ЗАПОЛНЯЕТСЯ ПРАВИЛОМ» — осознанный выбор, а не пустое поле: артикул
+        # при нём ищут по коду площадки, по названию или вписывают руками.
+        # Хранится явным признаком, чтобы «пусто» осталось значить «ниоткуда
+        # не берётся», то есть ошибку настройки.
+        if key == "sku" and spec.get("auto") and not column and not formula:
+            clean[key] = {"auto": True}
+            continue
+        # У ПАРАМЕТРОВ ФОРМУЛЫ НЕ БЫВАЕТ: формулы считают числа, а тип
+        # контента и территория — слова. Либо колонка файла, либо одно
+        # значение на весь отчёт (оно живёт не здесь, а рядом с правилом).
+        if key in ATTR_FIELDS and formula:
+            raise HTTPException(
+                400, f"Поле «{FIELD_LABELS[key]}»: формулой не задаётся — только колонкой"
+            )
+        if column and formula:
+            raise HTTPException(
+                400, f"Поле «{FIELD_LABELS[key]}»: либо колонка, либо формула, не оба"
+            )
+        if column:
+            clean[key] = {"column": column}
+        elif formula:
+            clean[key] = {"formula": formula}
+    return clean
+
+
 @partner_reports_router.put(
     "/rules/{partner_id}",
     dependencies=[Depends(require_role(*CAN_MANAGE_PARTNER_REPORTS))],
@@ -659,36 +701,19 @@ def save_rule(
     if not isinstance(parsed, dict):
         raise HTTPException(400, "mapping должен быть объектом")
 
-    clean: dict = {}
-    for key, spec in parsed.items():
-        if key not in MAPPABLE_FIELDS:
-            raise HTTPException(400, f"Неизвестное поле правила: «{key}»")
-        if not isinstance(spec, dict):
-            raise HTTPException(400, f"Поле «{key}»: ожидается объект")
-        column = str(spec.get("column") or "").strip()
-        formula = str(spec.get("formula") or "").strip()
-        # «ЗАПОЛНЯЕТСЯ ПРАВИЛОМ» — осознанный выбор, а не пустое поле: артикул
-        # при нём ищут по коду площадки, по названию или вписывают руками.
-        # Хранится явным признаком, чтобы «пусто» осталось значить «ниоткуда
-        # не берётся», то есть ошибку настройки.
-        if key == "sku" and spec.get("auto") and not column and not formula:
-            clean[key] = {"auto": True}
-            continue
-        # У ПАРАМЕТРОВ ФОРМУЛЫ НЕ БЫВАЕТ: формулы считают числа, а тип
-        # контента и территория — слова. Либо колонка файла, либо одно
-        # значение на весь отчёт (оно живёт не здесь, а рядом с правилом).
-        if key in ATTR_FIELDS and formula:
-            raise HTTPException(
-                400, f"Поле «{FIELD_LABELS[key]}»: формулой не задаётся — только колонкой"
-            )
-        if column and formula:
-            raise HTTPException(
-                400, f"Поле «{FIELD_LABELS[key]}»: либо колонка, либо формула, не оба"
-            )
-        if column:
-            clean[key] = {"column": column}
-        elif formula:
-            clean[key] = {"formula": formula}
+    clean = _clean_fields(parsed)
+    # ВТОРАЯ ТАБЛИЦА ТОГО ЖЕ ЛИСТА — СПИСКОМ ВНУТРИ ПРАВИЛА (`tables`, у
+    # Мегафона это отчёт по пакетам под основным). Не отдельной колонкой в
+    # базе: правило целиком лежит одним JSON, и так вторая таблица ездит
+    # вместе с ним и в сохранённое правило партнёра, и обратно в форму.
+    # Настраивают её только в коде (`BUILTIN_RULES`): у формата с двумя
+    # шапками руками не разберёшься, а подставить форму не подо что.
+    extra = parsed.get("tables")
+    if extra is not None:
+        if not isinstance(extra, list):
+            raise HTTPException(400, "tables: ожидается список правил")
+        clean["tables"] = [_clean_fields(t) for t in extra]
+
     if not sku_configured(clean):
         raise HTTPException(
             400,
