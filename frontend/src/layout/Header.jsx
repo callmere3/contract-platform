@@ -4,17 +4,18 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useTheme } from '../theme/ThemeContext';
 import { useAuth } from '../auth/AuthContext';
 import {
+  canGenerateRoyaltyReports,
+  canGrantDemoAchievement,
   canHaveAchievements,
+  canSendNotifications,
+  canUseDistaSync,
   canUseDocs,
+  canUseFinance,
+  canViewChampionBoard,
+  canViewGenerationHistory,
   canViewPartnerReports,
   canViewPayments,
   canViewUsers,
-  canViewGenerationHistory,
-  canSendNotifications,
-  canUseDistaSync,
-  canViewChampionBoard,
-  canGrantDemoAchievement,
-  canUseFinance,
 } from '../auth/permissions';
 import { notificationsCount, NOTIFICATIONS_CHANGED_EVENT } from '../api/notifications';
 import {
@@ -156,6 +157,11 @@ export function Header({ companyName = 'ML Docs' }) {
   }
   if (canViewPayments(user?.role)) {
     financeTabs = [...financeTabs, { to: '/finance/payments', label: 'Поступления' }];
+  }
+  // «Генерация отчётов» — после отчётов и поступлений: это следующий шаг
+  // расчёта — из того, что пришло, посчитать, сколько отдать.
+  if (canGenerateRoyaltyReports(user?.role)) {
+    financeTabs = [...financeTabs, { to: '/finance/royalty', label: 'Генерация отчётов' }];
   }
   if (canUseDistaSync(user?.role)) {
     financeTabs = [...financeTabs, { to: '/dista', label: 'Dista Connect' }];

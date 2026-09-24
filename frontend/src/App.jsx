@@ -3,17 +3,18 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { ThemeProvider } from './theme/ThemeContext';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import {
-  canUseDocs,
-  canViewUsers,
-  canViewGenerationHistory,
+  canGenerateRoyaltyReports,
   canSendNotifications,
   canUseDistaSync,
-  canViewChampionBoard,
+  canUseDocs,
   canUseFinance,
+  canViewChampionBoard,
+  canViewGenerationHistory,
   canViewNomenclature,
   canViewPartnerReports,
-  canViewPayments,
   canViewPartners,
+  canViewPayments,
+  canViewUsers,
 } from './auth/permissions';
 import { TagsProvider } from './api/TagsContext';
 import { ModalProvider } from './modals/ModalProvider';
@@ -37,6 +38,7 @@ import { FinancePage } from './pages/FinancePage';
 import { NomenclaturePage } from './pages/NomenclaturePage';
 import { PartnerReportsPage } from './pages/PartnerReportsPage';
 import { PaymentsPage } from './pages/PaymentsPage';
+import { RoyaltyReportsPage } from './pages/RoyaltyReportsPage';
 import { PartnersPage } from './pages/PartnersPage';
 import { ChampionPage } from './pages/ChampionPage';
 
@@ -179,6 +181,14 @@ function AppShell() {
         />
         {/* Поступления от площадок — та же защита от прямого захода по
             адресу, что и у остальных вкладок ML Finance. */}
+        {/* Генерация отчётов правообладателям — та же защита от прямого
+            захода по адресу. */}
+        <Route
+          path="/finance/royalty"
+          element={
+            canGenerateRoyaltyReports(user?.role) ? <RoyaltyReportsPage /> : <Navigate to={home} replace />
+          }
+        />
         <Route
           path="/finance/payments"
           element={canViewPayments(user?.role) ? <PaymentsPage /> : <Navigate to={home} replace />}

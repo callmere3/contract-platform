@@ -163,6 +163,10 @@ export const canManagePartnerReports = (role) => is(role, ADMIN, DIRECTOR);
 export const canViewPayments = (role) => is(role, ADMIN, DIRECTOR);
 export const canManagePayments = (role) => is(role, ADMIN, DIRECTOR);
 
+// backend: CAN_GENERATE_ROYALTY_REPORTS. Отчёты правообладателям — уже не
+// «что пришло», а «сколько отдать»; право своё, хоть пока и совпадает.
+export const canGenerateRoyaltyReports = (role) => is(role, ADMIN, DIRECTOR);
+
 // backend: CAN_EXPORT_CONTRAGENTS = (ADMIN, DIRECTOR) — у top_manager/tester убран
 export const canExport = (role) => is(role, ADMIN, DIRECTOR);
 
