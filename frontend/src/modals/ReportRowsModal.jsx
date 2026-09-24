@@ -127,7 +127,11 @@ export function ReportRowsModal({
       onClose={closeModal}
       level={level}
       isTop={isTop}
-      width={1320}
+      // ВО ВЕСЬ ЭКРАН (просьба владельца 24.09.2026): отчёт — это таблица на
+      // сотни строк, и в окне 1320×85% её листали чаще нужного, а поле
+      // вокруг пустовало. Шапка отчёта стоит на месте, таблица забирает всю
+      // оставшуюся высоту и прокручивается сама.
+      fullscreen
       actions={
         !editing && (
           <>
@@ -182,7 +186,7 @@ export function ReportRowsModal({
     >
       {/* ШАПКА ДОКУМЕНТА — только наши поля. Роль «Основания» из Dista здесь
           играет имя файла: по нему отчёт и находят среди присланного. */}
-      <div className="grid grid-cols-[auto_1fr_auto_1fr] gap-x-4 gap-y-2 items-center text-[12.5px] mb-4">
+      <div className="grid grid-cols-[auto_1fr_auto_1fr] gap-x-4 gap-y-2 items-center text-[12.5px] mb-4 shrink-0">
         <span className="text-text-secondary">Площадка</span>
         <span className="text-text font-semibold">{card.partner}</span>
         <span className="text-text-secondary">Период</span>
@@ -281,7 +285,7 @@ export function ReportRowsModal({
       {loading && <div className="text-[13px] text-text-muted">Загрузка…</div>}
 
       {!loading && (
-        <div className="border border-border rounded-card overflow-auto max-h-[46vh]">
+        <div className="border border-border rounded-card overflow-auto flex-1 min-h-0">
           <table className="w-full border-collapse">
             <thead>
               <tr>
@@ -334,7 +338,7 @@ export function ReportRowsModal({
           браузер на них ляжет. По двести — столько же, сколько в
           предпросмотре импорта номенклатуры. */}
       {pages > 1 && (
-        <div className="flex items-center gap-3 mt-3 text-[12.5px] text-text-secondary">
+        <div className="flex items-center gap-3 mt-3 text-[12.5px] text-text-secondary shrink-0">
           <Button
             variant="secondary"
             size="sm"

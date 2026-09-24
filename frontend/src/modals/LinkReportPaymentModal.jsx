@@ -194,10 +194,7 @@ export function LinkReportPaymentModal({ report, level, isTop, onChanged, relink
       onClose={closeModal}
       level={level}
       isTop={isTop}
-      // ВО ВЕСЬ ЭКРАН (просьба владельца 24.09.2026): поступлений за
-      // квартал десятки, и в окне 760×320 их листали внутри окна, а поле
-      // вокруг пустовало. Прокрутка теперь одна — у самого окна.
-      fullscreen
+      width={760}
       footer={
         report.payment_id ? (
           <>
@@ -306,7 +303,7 @@ export function LinkReportPaymentModal({ report, level, isTop, onChanged, relink
       )}
 
       {!loading && shown.length > 0 && (
-        <div className="border border-border rounded-card divide-y divide-border">
+        <div className="border border-border rounded-card divide-y divide-border max-h-[320px] overflow-y-auto">
           {shown.map((p) => {
             // Чужая площадка — строку видно, но выбрать нельзя: сервер такую
             // связку не примет, и лучше сказать об этом здесь, чем дать
