@@ -373,7 +373,7 @@ def zip_name(s: Settings, results: list) -> str:
 
 _BOLD = Font(bold=True)
 _TITLE = Font(bold=True, size=14)
-_HEAD_FILL = PatternFill("solid", fgColor="EFEBE4")
+_HEAD_FILL = PatternFill("solid", fgColor="E4E4E4")  # как у Dista (Fill 15000804)
 _THIN = Side(style="thin", color="BFBFBF")
 _BOX = Border(left=_THIN, right=_THIN, top=_THIN, bottom=_THIN)
 _WRAP = Alignment(wrap_text=True, vertical="top")
@@ -386,7 +386,14 @@ _WRAP = Alignment(wrap_text=True, vertical="top")
 # вправо, к краю листа, а суммы — в рамки с «руб.» отдельной ячейкой справа.
 # Ширины и объединения сняты с готовых файлов Dista один в один; шрифт —
 # Arial 11, подписи сторон — 9 жирным, как в шаблоне.
-_FRONT_WIDTHS = [16.83, 12.62, 12.62, 12.62, 4.21, 6.31, 2.52, 2.95, 7.15, 3.79]
+#
+# ОТЛИЧИЯ ОТ DISTA — ТОЛЬКО ТАМ, ГДЕ У НЕЁ ОБРЕЗАЕТСЯ (правка 25.09.2026,
+# замечание владельца). Dista рисует лист своим движком, а Excel объединение
+# не переполняет: текст шире объединения режется по краю. Поэтому период
+# лежит в D7:J7, а не F7:J7 («с 01.07.2026» терял начало), подписи баланса и
+# выплат — в A:F, а не A:B, а колонка J шире (3.79 → 5.5): «руб.» в неё не
+# помещался и вылезал за рамку.
+_FRONT_WIDTHS = [16.83, 12.62, 12.62, 12.62, 4.21, 6.31, 2.52, 2.95, 7.15, 5.5]
 _ARIAL = "Arial"
 _F = Font(name=_ARIAL, size=11)
 _FB = Font(name=_ARIAL, size=11, bold=True)
@@ -447,7 +454,7 @@ def _front_page(ws, res: Result, s: Settings, summary: bool) -> None:
     _put(ws, "A6", "Лицензиар")
     _put(ws, "D6:J6", res.title, _FB, _RIGHT)
     _put(ws, "A7", "Отчётный период")
-    _put(ws, "F7:J7", period_text(s), _FB, _RIGHT)
+    _put(ws, "D7:J7", period_text(s), _FB, _RIGHT)
     _put(ws, "A9:J9", "Доход Лицензиара от использования Прав за отчетный период составил:", _FB)
 
     _put(ws, "E11:F11", "Кол-во", align=_CENTER, box="ltb")
@@ -463,14 +470,14 @@ def _front_page(ws, res: Result, s: Settings, summary: bool) -> None:
     row = 15
     if summary:
         # Баланс и выплаты пока не ведутся — нули, как в образце из Dista.
-        _put(ws, f"A{row}:B{row}", "Баланс  на начало периода", _FB)
+        _put(ws, f"A{row}:F{row}", "Баланс  на начало периода", _FB)
         _put(ws, f"G{row}:I{row}", 0.0, align=_RIGHT, box="ltb", fmt=money)
         _put(ws, f"J{row}", "руб.", box="rtb")
-        _put(ws, f"A{row + 1}:B{row + 1}", "Выплачено Лицензиару за период", _FB)
+        _put(ws, f"A{row + 1}:F{row + 1}", "Выплачено Лицензиару за период", _FB)
         _put(ws, f"G{row + 1}:I{row + 1}", 0.0, align=_RIGHT, box="ltb", fmt=money)
         _put(ws, f"J{row + 1}", "руб.", box="rtb")
         row += 3
-    _put(ws, f"A{row}:B{row}", "К выплате Лицензиару за период", _FB)
+    _put(ws, f"A{row}:F{row}", "К выплате Лицензиару за период", _FB)
     _put(ws, f"G{row}:I{row}", total, _FB, _RIGHT, box="ltb", fmt=money)
     _put(ws, f"J{row}", "руб.", box="rtb")
     _put(ws, f"A{row + 1}", "НДС не облагается")
@@ -494,21 +501,48 @@ def _front_page(ws, res: Result, s: Settings, summary: bool) -> None:
     ws.sheet_properties.pageSetUpPr.fitToPage = True
 
 
-def _table(ws, s: Settings, header: list, rows: list, widths: list, money_cols: set,
-           money_format: str) -> None:
+# ДЕТАЛИЗАЦИЯ — ТОЖЕ КАК У DISTA (правка 25.09.2026, образец владельца):
+# все колонки ОДНОЙ ширины 12.2, Calibri 12, шапка серой заливкой E4E4E4 с
+# переносом и высотой 42.8, у каждой ячейки тонкая чёрная рамка, строки
+# данных высотой 15.4 без переноса — длинное название обрезается, как в
+# образце. Текст — влево, код и числа — по центру; деньги в сводном — вправо
+# (так у Dista: там они с разрядами и копейками, а в детализированном
+# «сырые» и по центру).
+_T_FONT = Font(name="Calibri", size=12)
+_T_BOX = Border(left=_BLACK, right=_BLACK, top=_BLACK, bottom=_BLACK)
+_T_HEAD = Alignment(horizontal="left", vertical="center", wrap_text=True)
+_T_WIDTH = 12.2
+
+
+def _table(ws, s: Settings, header: list, rows: list, money_cols: set, money_format: str,
+           text_cols: set, money_right: bool) -> None:
+    """`text_cols`, `money_cols` — номера колонок с 1."""
     ws["A1"] = f"Детализация к отчетной ведомости за период {period_text(s)}"
-    ws["A1"].font = _BOLD
+    ws["A1"].font = _T_FONT
+    ws["A1"].alignment = _LEFT
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=min(10, len(header)))
+    ws.row_dimensions[1].height = 14.27
     ws.append(header)
+    ws.row_dimensions[2].height = 42.8
     for c in ws[2]:
-        c.font, c.fill, c.border, c.alignment = _BOLD, _HEAD_FILL, _BOX, _WRAP
-    for r in rows:
+        c.font, c.fill, c.border, c.alignment = _T_FONT, _HEAD_FILL, _T_BOX, _T_HEAD
+    aligns = []
+    for i in range(1, len(header) + 1):
+        if i in text_cols:
+            aligns.append((_LEFT, None))
+        elif i in money_cols:
+            aligns.append((_RIGHT if money_right else _CENTER, money_format))
+        else:
+            aligns.append((_CENTER, None))
+    for n, r in enumerate(rows, 3):
         ws.append(r)
-    for i, w in enumerate(widths, 1):
-        ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = w
-    for col in money_cols:
-        letter = openpyxl.utils.get_column_letter(col)
-        for c in ws[letter][2:]:
-            c.number_format = money_format
+        ws.row_dimensions[n].height = 15.41
+        for c, (align, fmt) in zip(ws[n], aligns):
+            c.font, c.border, c.alignment = _T_FONT, _T_BOX, align
+            if fmt:
+                c.number_format = fmt
+    for i in range(1, len(header) + 1):
+        ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = _T_WIDTH
     ws.freeze_panes = "A3"
 
 
@@ -551,7 +585,7 @@ def summary_xlsx(res: Result, s: Settings) -> bytes:
         "Количество", "Сумма реализации Лицензиара", "Роялти авторские права",
         "Лицензиар вознаграждение авторские", "Роялти смежные права",
         "Лицензиар вознаграждение смежные", "Лицензиар вознаграждение итого",
-    ], rows, [11, 36, 28, 11, 11, 12, 16, 11, 16, 11, 16, 16], {7, 9, 11, 12}, "#,##0.00")
+    ], rows, {7, 9, 11, 12}, "#,##0.00", text_cols={2, 3}, money_right=True)
     return _save(wb)
 
 
@@ -577,10 +611,11 @@ def detailed_xlsx(res: Result, s: Settings) -> bytes:
         "Роялти авторские права", "Лицензиар вознаграждение авторские",
         "Роялти смежные права", "Лицензиар вознаграждение смежные",
         "Лицензиар вознаграждение итого",
-    ], rows, [11, 15, 32, 26, 30, 10, 10, 20, 14, 18, 14, 11, 12, 12, 11, 14, 14, 10, 14, 10, 14, 14],
-        {16, 17, 19, 21, 22}, "0.00######")
+    ], rows, {16, 17, 19, 21, 22}, "0.00######", text_cols={3, 4, 5, 8, 9, 10, 11},
+        money_right=False)
     for c in list(ws["M"][2:]) + list(ws["N"][2:]):
         c.number_format = "DD.MM.YYYY"
+        c.alignment = _LEFT
     return _save(wb)
 
 
