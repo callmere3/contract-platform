@@ -333,149 +333,159 @@ export function ReportRowsModal({
       }
     >
       {/* ШАПКА ДОКУМЕНТА — только наши поля. Роль «Основания» из Dista здесь
-          играет имя файла: по нему отчёт и находят среди присланного. */}
-      <div className="grid grid-cols-[auto_1fr_auto_1fr] gap-x-4 gap-y-2 items-center text-[12.5px] mb-4 shrink-0">
-        <span className="text-text-secondary">Площадка</span>
-        <span className="text-text font-semibold">{card.partner}</span>
-        <span className="text-text-secondary">Период</span>
-        <span className="text-text">
-          {editing ? (
-            <span className="flex items-center gap-2">
-              <input
-                type="date"
-                value={draft.from}
-                onChange={(e) => setDraft((d) => ({ ...d, from: e.target.value }))}
-                className={`${field} tabular-nums`}
-              />
-              <span className="text-text-muted">—</span>
-              <input
-                type="date"
-                value={draft.to}
-                onChange={(e) => setDraft((d) => ({ ...d, to: e.target.value }))}
-                className={`${field} tabular-nums`}
-              />
-            </span>
-          ) : (
-            card.period_label
-          )}
-        </span>
+          играет имя файла: по нему отчёт и находят среди присланного.
 
-        <span className="text-text-secondary">Файл</span>
-        <span className="text-text truncate" data-hint={card.file_name}>
-          {card.file_name}
-          {card.sheet ? ` · лист «${card.sheet}»` : ''}
-        </span>
-        <span className="text-text-secondary">НДС в суммах</span>
-        <span className="text-text">
-          {card.vat_rate ? `${String(card.vat_rate).replace('.', ',')}%` : 'нет'}
-          {/* Отчёт в валюте: суммы уже в рублях, а здесь — по какому курсу
-              их перевели. Без этого числа в отчёте нечем объяснить. */}
-        </span>
+          ДВЕ КОЛОНКИ С ПОСТОЯННЫМ ПОРЯДКОМ (замечание владельца 24.09.2026).
+          Раньше это была одна сетка пар «подпись — значение», и у валютного
+          отчёта строка «Курс к рублю» сдвигала всё, что шло после неё:
+          «Поступление» и «Вне каталога» переезжали из колонки в колонку.
+          Теперь привязка и выгрузка всегда третьей и четвёртой строкой
+          слева, а курс — последней, чтобы ничего не двигать. */}
+      <div className="grid grid-cols-2 gap-x-10 text-[12.5px] mb-4 shrink-0">
+        <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 items-center content-start">
+          <span className="text-text-secondary">Площадка</span>
+          <span className="text-text font-semibold">{card.partner}</span>
+          <span className="text-text-secondary">Файл</span>
+          <span className="text-text truncate" data-hint={card.file_name}>
+            {card.file_name}
+            {card.sheet ? ` · лист «${card.sheet}»` : ''}
+          </span>
+          <span className="text-text-secondary">Поступление</span>
+          <span className="text-text">
+            {card.payment_label ?? <span className="text-text-muted">не привязано</span>}{' '}
+            <button
+              type="button"
+              onClick={() =>
+                // Свежая карточка приходит обратно: иначе в шапке так и висело
+                // бы прежнее поступление, пока окно не откроют заново.
+                onLink?.(card, (fresh) => {
+                  if (!fresh) return;
+                  setCard(fresh);
+                  // Привязка ставит курс и пересчитывает СТРОКИ в рубли, а
+                  // отвязка возвращает их в валюту — перечитываем и строки, не
+                  // только шапку (замечание владельца 24.09.2026).
+                  setGen((g) => g + 1);
+                })
+              }
+              className="text-accent bg-transparent border-0 p-0 cursor-pointer font-sans text-[12.5px]"
+            >
+              {card.payment_id ? 'изменить' : 'привязать'}
+            </button>
+          </span>
+          <span className="text-text-secondary">Вне каталога</span>
+          <span className={Number(card.unmatched_amount) > 0 ? 'text-danger' : 'text-text-muted'}>
+            {Number(card.unmatched_amount) > 0
+              ? `${money(card.unmatched_amount)} · строк ${card.unmatched_count}`
+              : 'нет'}
+            {/* ВЫГРУЗКА ЭТИХ СТРОК — ЗДЕСЬ, у загруженного отчёта, а не в импорте
+                (просьба владельца 24.09.2026): заводить недостающие позиции в
+                номенклатуру — отдельная работа, к загрузке файла она не
+                относится. Выгружаются все такие строки. */}
+            {card.unmatched_count > 0 && (
+              <>
+                {' '}
+                <button
+                  type="button"
+                  onClick={downloadUnmatched}
+                  disabled={exporting}
+                  className="text-accent bg-transparent border-0 p-0 cursor-pointer font-sans text-[12.5px]"
+                >
+                  {exporting ? 'выгружаем…' : 'выгрузить в Excel'}
+                </button>
+              </>
+            )}
+          </span>
 
-        {/* ВАЛЮТА И КУРС — своей строкой: курс правится (просьба владельца
-            24.09.2026). При привязке к поступлению он ставится сам, если
-            сошлась сумма в валюте, а поправить его вправе человек — суммы
-            отчёта и фактический завод поступления пересчитаются. */}
-        {foreign && (
-          <>
-            <span className="text-text-secondary">Курс к рублю</span>
-            <span className="text-text">
-              {editing ? (
-                <input
-                  value={draft.rate}
-                  onChange={(e) => setDraft((d) => ({ ...d, rate: e.target.value }))}
-                  placeholder="не задан"
-                  className={`${field} w-[140px] tabular-nums`}
-                />
-              ) : card.currency_rate ? (
-                rateText(card.currency_rate)
-              ) : (
-                <span className="text-danger">не задан — суммы пока в {card.currency}</span>
-              )}
-              <span className="text-text-muted">
-                {' '}· файл в {card.currency}, итог {formatMoney(card.currency_total).replace('₽', currencySign({ ...card, rate_pending: true }) || card.currency)}
-              </span>
-            </span>
-          </>
-        )}
-
-        <span className="text-text-secondary">Поступление</span>
-        <span className="text-text">
-          {card.payment_label ?? <span className="text-text-muted">не привязано</span>}{' '}
-          <button
-            type="button"
-            onClick={() =>
-              // Свежая карточка приходит обратно: иначе в шапке так и висело
-              // бы прежнее поступление, пока окно не откроют заново.
-              onLink?.(card, (fresh) => {
-                if (!fresh) return;
-                setCard(fresh);
-                // Привязка ставит курс и пересчитывает СТРОКИ в рубли, а
-                // отвязка возвращает их в валюту — перечитываем и строки, не
-                // только шапку (замечание владельца 24.09.2026).
-                setGen((g) => g + 1);
-              })
-            }
-            className="text-accent bg-transparent border-0 p-0 cursor-pointer font-sans text-[12.5px]"
-          >
-            {card.payment_id ? 'изменить' : 'привязать'}
-          </button>
-        </span>
-        <span className="text-text-secondary">Вне каталога</span>
-        <span className={Number(card.unmatched_amount) > 0 ? 'text-danger' : 'text-text-muted'}>
-          {Number(card.unmatched_amount) > 0
-            ? `${money(card.unmatched_amount)} · строк ${card.unmatched_count}`
-            : 'нет'}
-          {/* ВЫГРУЗКА ЭТИХ СТРОК — ЗДЕСЬ, у загруженного отчёта, а не в импорте
-              (просьба владельца 24.09.2026): заводить недостающие позиции в
-              номенклатуру — отдельная работа, к загрузке файла она не
-              относится. Выгружаются все такие строки. */}
-          {card.unmatched_count > 0 && (
+          {/* ВАЛЮТА И КУРС — своей строкой: курс правится (просьба владельца
+              24.09.2026). При привязке к поступлению он ставится сам, если
+              сошлась сумма в валюте, а поправить его вправе человек — суммы
+              отчёта и фактический завод поступления пересчитаются. */}
+          {foreign && (
             <>
-              {' '}
-              <button
-                type="button"
-                onClick={downloadUnmatched}
-                disabled={exporting}
-                className="text-accent bg-transparent border-0 p-0 cursor-pointer font-sans text-[12.5px]"
-              >
-                {exporting ? 'выгружаем…' : 'выгрузить в Excel'}
-              </button>
+              <span className="text-text-secondary">Курс к рублю</span>
+              <span className="text-text">
+                {editing ? (
+                  <input
+                    value={draft.rate}
+                    onChange={(e) => setDraft((d) => ({ ...d, rate: e.target.value }))}
+                    placeholder="не задан"
+                    className={`${field} w-[140px] tabular-nums`}
+                  />
+                ) : card.currency_rate ? (
+                  rateText(card.currency_rate)
+                ) : (
+                  <span className="text-danger">не задан — суммы пока в {card.currency}</span>
+                )}
+                <span className="text-text-muted">
+                  {' '}· файл в {card.currency}, итог {formatMoney(card.currency_total).replace('₽', currencySign({ ...card, rate_pending: true }) || card.currency)}
+                </span>
+              </span>
             </>
           )}
-        </span>
-
-        {/* ЧЕТЫРЕ ПАРАМЕТРА — В ШАПКЕ, а не только столбцами таблицы: у
-            большинства площадок они одни на весь отчёт, и повторять их в
-            каждой из полумиллиона строк незачем. */}
-        {ATTRS.map((a) => (
-          <Wrap key={a.name} label={a.label}>
-            {editing && !perRow[a.name] ? (
-              <ComboCell
-                value={draft[a.name] ?? ''}
-                options={attrOptions[a.name] ?? []}
-                onChange={(v) => setDraft((d) => ({ ...d, [a.name]: v }))}
-                placeholder="—"
-                arrowLabel={`Показать значения: ${a.label}`}
-                inputClassName={`${field} w-full pr-6`}
-              />
-            ) : perRow[a.name] ? (
-              /* ПАРАМЕТР ИЗ КОЛОНКИ ФАЙЛА НЕ ПРАВИТСЯ (просьба владельца
-                 24.09.2026): у него своё значение в каждой строке, и одно
-                 поле на весь отчёт их не заменит — а заменило бы, так
-                 затёрло бы данные площадки. Значения видны в таблице ниже,
-                 своим столбцом. */
-              <span
-                className="text-text-secondary"
-                data-hint="Берётся из колонки файла — у каждой строки своё значение, смотрите столбец в таблице"
-              >
-                из колонки файла
+        </div>
+        <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 items-center content-start">
+          <span className="text-text-secondary">Период</span>
+          <span className="text-text">
+            {editing ? (
+              <span className="flex items-center gap-2">
+                <input
+                  type="date"
+                  value={draft.from}
+                  onChange={(e) => setDraft((d) => ({ ...d, from: e.target.value }))}
+                  className={`${field} tabular-nums`}
+                />
+                <span className="text-text-muted">—</span>
+                <input
+                  type="date"
+                  value={draft.to}
+                  onChange={(e) => setDraft((d) => ({ ...d, to: e.target.value }))}
+                  className={`${field} tabular-nums`}
+                />
               </span>
             ) : (
-              <span className="text-text">{card[a.name] || '—'}</span>
+              card.period_label
             )}
-          </Wrap>
-        ))}
+          </span>
+
+          <span className="text-text-secondary">НДС в суммах</span>
+          <span className="text-text">
+            {card.vat_rate ? `${String(card.vat_rate).replace('.', ',')}%` : 'нет'}
+            {/* Отчёт в валюте: суммы уже в рублях, а здесь — по какому курсу
+                их перевели. Без этого числа в отчёте нечем объяснить. */}
+          </span>
+
+          {/* ЧЕТЫРЕ ПАРАМЕТРА — В ШАПКЕ, а не только столбцами таблицы: у
+              большинства площадок они одни на весь отчёт, и повторять их в
+              каждой из полумиллиона строк незачем. */}
+          {ATTRS.map((a) => (
+            <Wrap key={a.name} label={a.label}>
+              {editing && !perRow[a.name] ? (
+                <ComboCell
+                  value={draft[a.name] ?? ''}
+                  options={attrOptions[a.name] ?? []}
+                  onChange={(v) => setDraft((d) => ({ ...d, [a.name]: v }))}
+                  placeholder="—"
+                  arrowLabel={`Показать значения: ${a.label}`}
+                  inputClassName={`${field} w-full pr-6`}
+                />
+              ) : perRow[a.name] ? (
+                /* ПАРАМЕТР ИЗ КОЛОНКИ ФАЙЛА НЕ ПРАВИТСЯ (просьба владельца
+                   24.09.2026): у него своё значение в каждой строке, и одно
+                   поле на весь отчёт их не заменит — а заменило бы, так
+                   затёрло бы данные площадки. Значения видны в таблице ниже,
+                   своим столбцом. */
+                <span
+                  className="text-text-secondary"
+                  data-hint="Берётся из колонки файла — у каждой строки своё значение, смотрите столбец в таблице"
+                >
+                  из колонки файла
+                </span>
+              ) : (
+                <span className="text-text">{card[a.name] || '—'}</span>
+              )}
+            </Wrap>
+          ))}
+        </div>
       </div>
 
       {error && <div className="text-[13px] text-danger mb-3">{error}</div>}
