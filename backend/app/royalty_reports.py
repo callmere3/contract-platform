@@ -26,7 +26,7 @@ import io
 import re
 import zipfile
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 
 import openpyxl
@@ -34,7 +34,9 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
-from app.models import Contragent, Partner, PartnerReport, PartnerReportRow, Track, TrackRight
+from app.models import (
+    Contragent, Partner, PartnerPayment, PartnerReport, PartnerReportRow, Track, TrackRight,
+)
 
 # Подписи Лицензиата — «своя организация» из Dista. Одна на все отчёты;
 # понадобится менять — это строка здесь, а не настройка в интерфейсе.
@@ -56,8 +58,9 @@ def cents(value) -> Decimal:
 class Settings:
     period_from: date
     period_to: date
-    # 'period' — по дате реализации площадки (период отчёта целиком внутри);
-    # 'uploaded' — по дате формирования отчёта, то есть его загрузки к нам.
+    # 'period' — по дате реализации: отчёты, привязанные к поступлениям за
+    # выбранный период (правило владельца 24.09.2026);
+    # 'report' — по дате формирования отчёта: его собственный период внутри.
     date_basis: str = "period"
     contragent_ids: list | None = None      # None — все, у кого есть начисления
     partner_ids: list | None = None         # None — все площадки
@@ -132,17 +135,24 @@ class Result:
 
 def _report_filter(s: Settings):
     """Какие отчёты площадок идут в расчёт."""
-    if s.date_basis == "uploaded":
-        start = datetime.combine(s.period_from, datetime.min.time())
-        end = datetime.combine(s.period_to, datetime.max.time())
-        cond = and_(PartnerReport.uploaded_at >= start, PartnerReport.uploaded_at <= end)
-    else:
+    if s.date_basis == "report":
         # Период отчёта ЦЕЛИКОМ внутри выбранного: отчёт за июнь в II квартал
         # входит, за июнь—июль — нет, иначе его деньги легли бы в два квартала.
         cond = and_(
             PartnerReport.period_from >= s.period_from,
             PartnerReport.period_to <= s.period_to,
         )
+    else:
+        # КВАРТАЛ ОТЧЁТА — ЭТО КВАРТАЛ ПОСТУПЛЕНИЯ, к которому он привязан
+        # (правило владельца 24.09.2026). Площадки платят не квартал в квартал:
+        # за апрель—июнь деньги приходят в июле, и ведомость III квартала —
+        # это то, за что в III квартале заплатили. Отчёт без привязки к
+        # поступлению в такую ведомость не попадает (см. unlinked_reports).
+        paid = select(PartnerPayment.id).where(
+            PartnerPayment.occurred_on >= s.period_from,
+            PartnerPayment.occurred_on <= s.period_to,
+        )
+        cond = PartnerReport.payment_id.in_(paid)
     if s.partner_ids:
         cond = and_(cond, PartnerReport.partner_id.in_(s.partner_ids))
     return cond
@@ -168,6 +178,34 @@ def pending_reports(db: Session, s: Settings) -> list:
     return [
         {"partner": r[0], "period_from": r[1].isoformat(), "period_to": r[2].isoformat(),
          "file_name": r[3], "currency": r[4]}
+        for r in rows
+    ]
+
+
+def unlinked_reports(db: Session, s: Settings) -> list:
+    """
+    Отчёты, НЕ привязанные к поступлению, чей период лежит в выбранном: при
+    расчёте по дате реализации они в ведомость не попадают, и человек должен
+    это видеть — скорее всего, их просто забыли привязать.
+    """
+    if s.date_basis == "report":
+        return []
+    cond = and_(
+        PartnerReport.payment_id.is_(None),
+        PartnerReport.period_to <= s.period_to,
+    )
+    if s.partner_ids:
+        cond = and_(cond, PartnerReport.partner_id.in_(s.partner_ids))
+    rows = db.execute(
+        select(Partner.name, PartnerReport.period_from, PartnerReport.period_to,
+               PartnerReport.file_name)
+        .join(Partner, Partner.id == PartnerReport.partner_id)
+        .where(cond)
+        .order_by(PartnerReport.period_from)
+    ).all()
+    return [
+        {"partner": r[0], "period_from": r[1].isoformat(), "period_to": r[2].isoformat(),
+         "file_name": r[3]}
         for r in rows
     ]
 

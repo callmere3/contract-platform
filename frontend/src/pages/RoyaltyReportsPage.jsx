@@ -439,21 +439,23 @@ function MainTab({
             <span>
               По дате реализации площадки
               <span className="block text-[12.5px] text-text-muted">
-                отчёты, чей период целиком внутри выбранного: июньский отчёт — во II квартал
+                отчёты, привязанные к поступлениям за выбранный период: площадки платят позже,
+                и июньский отчёт, оплаченный в июле, — это III квартал
               </span>
             </span>
           </label>
           <label className="flex items-start gap-2 cursor-pointer">
             <input
               type="radio"
-              checked={dateBasis === 'uploaded'}
-              onChange={() => setDateBasis('uploaded')}
+              checked={dateBasis === 'report'}
+              onChange={() => setDateBasis('report')}
               className="mt-1"
             />
             <span>
               По дате формирования отчёта
               <span className="block text-[12.5px] text-text-muted">
-                отчёты, загруженные в сервис за выбранный период
+                по периоду самого отчёта площадки, целиком внутри выбранного — независимо от
+                поступления
               </span>
             </span>
           </label>
@@ -632,6 +634,7 @@ function PreviewTable({ preview }) {
   const td = 'px-3 py-2 border-t border-border text-[13px]';
   const num = `${td} tabular-nums text-right`;
   const skipped = preview.skipped_reports ?? [];
+  const unlinked = preview.unlinked_reports ?? [];
   return (
     <div className="flex flex-col gap-3">
       {skipped.length > 0 && (
@@ -641,6 +644,15 @@ function PreviewTable({ preview }) {
             .map((r) => `${r.partner} (${ru(r.period_from)} — ${ru(r.period_to)}, ${r.currency})`)
             .join('; ')}
           . Привяжите их к поступлению или задайте курс в окне отчёта.
+        </div>
+      )}
+      {unlinked.length > 0 && (
+        <div className="rounded-md border border-border bg-accent-soft px-3 py-2 text-[13px] text-text">
+          Не привязаны к поступлению и потому не вошли:{' '}
+          {unlinked
+            .map((r) => `${r.partner} (${ru(r.period_from)} — ${ru(r.period_to)})`)
+            .join('; ')}
+          . Привязать можно во вкладке «Отчёты».
         </div>
       )}
       {!preview.contragents.length ? (

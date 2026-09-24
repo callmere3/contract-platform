@@ -25,6 +25,7 @@ from app.royalty_reports import (
     cents,
     compute,
     pending_reports,
+    unlinked_reports,
     period_slug,
     zip_files,
 )
@@ -58,8 +59,8 @@ class RoyaltyRequest(BaseModel):
 def _settings(body: RoyaltyRequest) -> Settings:
     if body.period_to < body.period_from:
         raise HTTPException(400, "Конец периода раньше начала")
-    if body.date_basis not in ("period", "uploaded"):
-        raise HTTPException(400, "date_basis: «period» или «uploaded»")
+    if body.date_basis not in ("period", "report"):
+        raise HTTPException(400, "date_basis: «period» или «report»")
     return Settings(
         period_from=body.period_from,
         period_to=body.period_to,
@@ -104,6 +105,8 @@ def preview(body: RoyaltyRequest, db: Session = Depends(get_session)) -> dict:
         # Валютные отчёты без курса: в расчёт не вошли, и человек должен это
         # видеть ДО того, как отправит отчёт правообладателю.
         "skipped_reports": pending_reports(db, s),
+        # Отчёты без поступления: в ведомость по дате реализации не попали.
+        "unlinked_reports": unlinked_reports(db, s),
     }
 
 
