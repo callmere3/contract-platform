@@ -1121,6 +1121,13 @@ class PartnerReport(Base):
     total_author: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
     total_related: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
     vat_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
+    # ВАЛЮТА И КУРС К РУБЛЮ (24.09.2026, отчёты Believe KZ в EUR и AE в USD).
+    # Суммы строк уже пересчитаны в рубли при разборе; здесь — снимок того,
+    # в какой валюте был файл и по какому курсу его перевели, как у НДС:
+    # отчёт обязан объяснять свои числа. Курс хранится как вписан — «76,75»
+    # (умножали) или «0,012216938» (делили), см. currency_factor.
+    currency: Mapped[str | None] = mapped_column(String(32))
+    currency_rate: Mapped[Decimal | None] = mapped_column(Numeric(20, 10))
     # К КАКОМУ ПОСТУПЛЕНИЮ ОТНОСИТСЯ отчёт (19.09.2026). Связь со стороны
     # отчёта, а не платежа: одним платежом закрывают несколько отчётов, и
     # обратная ссылка потребовала бы третьей таблицы ради того же самого.

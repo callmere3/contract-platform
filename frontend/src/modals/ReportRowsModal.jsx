@@ -332,6 +332,13 @@ export function ReportRowsModal({
         <span className="text-text-secondary">НДС в суммах</span>
         <span className="text-text">
           {card.vat_rate ? `${String(card.vat_rate).replace('.', ',')}%` : 'нет'}
+          {/* Отчёт в валюте: суммы уже в рублях, а здесь — по какому курсу
+              их перевели. Без этого числа в отчёте нечем объяснить. */}
+          {card.currency && card.currency !== 'RUB' && (
+            <span className="text-text-secondary">
+              {' '}· файл в {card.currency}, курс {String(card.currency_rate ?? '—').replace('.', ',')}
+            </span>
+          )}
         </span>
 
         <span className="text-text-secondary">Поступление</span>

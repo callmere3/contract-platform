@@ -278,6 +278,9 @@ export function PartnerReportsPage() {
   // должна появляться только тогда.
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState(false);
+  // КУРС К РУБЛЮ для отчёта в валюте. Спрашивается, только когда сервер
+  // увидел в файле не рубли (`needs_rate`); без него такой отчёт не грузится.
+  const [currencyRate, setCurrencyRate] = useState('');
   // Номер текущего разбора: ответ на устаревший запрос (сменили файл, нажали
   // «Загрузить», пересобрали с другим правилом) должен быть выброшен, а не
   // лечь поверх свежего.
@@ -353,6 +356,7 @@ export function PartnerReportsPage() {
     nextMapping = mapping,
     nextVat = vatRate,
     nextPartner = partnerId,
+    nextRate = currencyRate,
   ) {
     if (!nextFile) return;
     const seq = ++previewSeq.current;
@@ -367,6 +371,7 @@ export function PartnerReportsPage() {
       // партнёра или догадайся по названиям колонок».
       mapping: Object.keys(nextMapping).length ? nextMapping : null,
       vatRate: nextVat,
+      currencyRate: nextRate,
       manualSkus,
     };
     // ДВА ШАГА (просьба владельца 24.09.2026): сначала шапка — за доли
@@ -448,6 +453,8 @@ export function PartnerReportsPage() {
     // приедет из его правила. Оставь мы прежнюю — файл площадки «без НДС»
     // молча поделился бы на 1.22.
     setVatRate('');
+    // Курс — свойство ОТЧЁТА: у следующего файла валюта может быть другой.
+    setCurrencyRate('');
     // Новый файл — новые номера строк: вписанные артикулы к нему отношения не
     // имеют, и оставить их значит проставить код чужой строке.
     setManualSkus({});
@@ -485,6 +492,7 @@ export function PartnerReportsPage() {
         file,
         mapping,
         vatRate,
+        currencyRate,
         manualSkus,
       });
       const url = URL.createObjectURL(blob);
@@ -516,6 +524,7 @@ export function PartnerReportsPage() {
         file,
         mapping,
         vatRate,
+        currencyRate,
         manualSkus,
         // Параметр, взятый из колонки, значением НЕ шлём: у него своё в
         // каждой строке, а снимок в шапке отчёта означал бы обратное.
@@ -1271,9 +1280,43 @@ export function PartnerReportsPage() {
                   по верху файла, и ждать разбора строк, чтобы нажать
                   «Загрузить», незачем. Не показываем только при отказе
                   разбора — грузить тогда нечего. */}
+              {/* КУРС — ТОЛЬКО У ОТЧЁТА В ВАЛЮТЕ, и прямо над кнопкой, а не в
+                  настройке колонок: без него такой отчёт не грузится, и
+                  прятать поле значило бы заставить искать, почему «Загрузить»
+                  не работает. Применяется Enter'ом или уходом из поля —
+                  строки пересчитываются в рубли заново. */}
+              {preview.needs_rate && (
+                <div className="mt-4 flex flex-wrap items-center gap-3 text-[13px]">
+                  <span className="text-text">
+                    Суммы отчёта в <b>{(preview.currencies || []).filter((c) => c !== 'RUB').join(', ')}</b>
+                    . Курс к рублю:
+                  </span>
+                  <input
+                    value={currencyRate}
+                    onChange={(e) => setCurrencyRate(e.target.value)}
+                    onBlur={() => {
+                      if ((currencyRate || '') !== (preview.currency_rate || '')) {
+                        runPreview(file, mapping, vatRate, partnerId, currencyRate);
+                      }
+                    }}
+                    onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+                    placeholder="76,75 или 0,0122"
+                    className={`${inputClass} w-[150px] py-1 tabular-nums`}
+                  />
+                  <span className="text-[12.5px] text-text-muted">
+                    больше 1 — умножаем (рублей за единицу), меньше 1 — делим (единиц за рубль)
+                  </span>
+                </div>
+              )}
+
               {!(preview.problems || []).length && (
                 <div className="mt-4 flex flex-wrap items-center gap-4">
-                  <Button variant="accent" size="sm" onClick={save} disabled={busy}>
+                  <Button
+                    variant="accent"
+                    size="sm"
+                    onClick={save}
+                    disabled={busy || (preview.needs_rate && !preview.currency_rate)}
+                  >
                     {saving ? 'Загружаем…' : 'Загрузить отчёт'}
                   </Button>
                   <span className="text-[12.5px] text-text-muted">

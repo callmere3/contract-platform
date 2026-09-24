@@ -110,8 +110,20 @@ export function fetchAttributeOptions() {
   return apiJson(`${API}/partner-reports/attributes`);
 }
 
-function uploadBody({ partnerId, file, mapping, vatRate, sheet, manualSkus, attributes }) {
+function uploadBody({
+  partnerId,
+  file,
+  mapping,
+  vatRate,
+  currencyRate,
+  sheet,
+  manualSkus,
+  attributes,
+}) {
   const body = new FormData();
+  // Курс к рублю — только у отчётов в валюте (Believe KZ в евро, AE в
+  // долларах). Больше 1 — умножаем, меньше 1 — делим (см. currency_factor).
+  if (currencyRate) body.append('currency_rate', currencyRate);
   // Партнёр может быть не выбран: предпросмотр узнаёт площадку по колонкам
   // файла и возвращает её. При сохранении он, наоборот, обязателен.
   body.append('partner_id', partnerId || '');

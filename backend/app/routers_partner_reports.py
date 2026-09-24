@@ -59,6 +59,9 @@ from app.models import (
     User,
 )
 from app.partner_reports import (
+    column_values,
+    currency_factor,
+    period_from_column,
     ATTR_FIELDS,
     MAPPABLE_FIELDS,
     FIELDS,
@@ -611,6 +614,11 @@ def _report_out(report: PartnerReport, partner_name: str, payment_date=None,
         "total_related": _money(report.total_related),
         "total": _money((report.total_author or 0) + (report.total_related or 0)),
         "vat_rate": _money(report.vat_rate),
+        "currency": report.currency,
+        # Курс строкой как есть (0,012216938 в копейки не округлишь).
+        "currency_rate": (
+            format(report.currency_rate.normalize(), "f") if report.currency_rate else None
+        ),
         "payment_id": str(report.payment_id) if report.payment_id else None,
         # Дата привязанного поступления: в списке отчётов её показывают
         # столбцом, и ходить за ней вторым запросом ради одной ячейки незачем.
@@ -1101,7 +1109,7 @@ def find_track_by_sku(sku: str = "", db: Session = Depends(get_session)) -> dict
 
 def _head_info(
     db: Session, partner_id: str, content: bytes, filename: str,
-    mapping: str, vat_rate: str, sheet: str,
+    mapping: str, vat_rate: str, sheet: str, currency_rate: str = "",
 ) -> dict:
     """
     Всё, что читается по ВЕРХУ файла: площадка, правило, лист, НДС, период и
@@ -1147,11 +1155,31 @@ def _head_info(
     # человек вводит руками, и ошибиться в нём легче всего: файл за июнь
     # грузят в июле. Это подсказка — форма подставит, а править можно.
     found_period = find_period(file_head, header_row)
+    # У Believe периода в шапке нет — он в колонке «месяц отчёта» каждой строки.
+    period_spec = (active_mapping or {}).get("period") or {}
+    if found_period is None and period_spec.get("column"):
+        found_period = period_from_column(file_head, header_row, period_spec["column"])
+
+    # ВАЛЮТА ВИДНА ПО ПЕРВЫМ СТРОКАМ: она одна на весь отчёт, и форма должна
+    # спросить курс сразу, а не после разбора полумиллиона строк.
+    currency_spec = (active_mapping or {}).get("currency") or {}
+    currencies = sorted({
+        " ".join(str(v).split()).upper()
+        for v in column_values(file_head, header_row, currency_spec["column"])
+    }) if currency_spec.get("column") else []
+    currency_rate = (currency_rate or "").strip()
+    if currency_rate:
+        try:
+            currency_factor(currency_rate)
+        except Exception:
+            raise HTTPException(400, f"Курс «{currency_rate}» — это не число больше нуля")
     return {
         "partner": partner,
         "sheet": chosen_sheet,
         "mapping": active_mapping,
         "rate": rate,
+        "currency_rate": currency_rate,
+        "currencies": currencies,
         "out": {
             "partner": {"id": str(partner.id), "name": partner.name},
             "file_name": filename,
@@ -1166,6 +1194,11 @@ def _head_info(
             "rule_source": chosen["source"],
             "rule_name": chosen["name"],
             "vat_rate": rate or None,
+            # Валюта сумм и курс к рублю. Отчёт не в рублях без курса НЕ
+            # ГРУЗИТСЯ (см. create_report): доллары легли бы рублями.
+            "currencies": currencies,
+            "needs_rate": any(c != "RUB" for c in currencies),
+            "currency_rate": currency_rate or None,
             # Параметры отчёта: что запомнено у партнёра — то и подставим, а чего
             # не запомнено, берём из заготовки готового правила площадки (у МТС
             # это «RBT · <не участвует> · Mobile · RU»).
@@ -1234,6 +1267,13 @@ PARSED_TTL = 600
 PARSED_KEEP = 2
 _parsed: dict = {}
 _parsed_lock = threading.Lock()
+# РАЗБОР — ПО ОДНОМУ ЗА РАЗ (замер на проде 24.09.2026). Отчёт Believe RU на
+# 596 тыс. строк занимает в памяти ~650 МБ, а у сервера их свободно ~850, и
+# подкачки нет. Два таких разбора одновременно — и система убивает процесс
+# api целиком, со всеми, кто в нём работает. Второй разбор ждёт первого;
+# ГОТОВЫЕ записи памяти при этом выбрасываются перед началом нового, иначе
+# они лежали бы рядом с ним.
+_parse_gate = threading.Semaphore(1)
 
 
 def _parsed_key(content: bytes, filename: str, head: dict, manual: dict) -> str:
@@ -1247,6 +1287,7 @@ def _parsed_key(content: bytes, filename: str, head: dict, manual: dict) -> str:
         (filename or "").lower().rsplit(".", 1)[-1],
         json.dumps(head["mapping"], sort_keys=True, ensure_ascii=False),
         rate,
+        head["currency_rate"] or "",
         head["sheet"] or "",
         json.dumps(sorted(manual.items())),
         str(head["partner"].id),
@@ -1276,10 +1317,15 @@ def _parse_and_resolve(db: Session, content: bytes, filename: str, head: dict, m
             for k in sorted(_parsed, key=lambda k: _parsed[k]["at"])[:-PARSED_KEEP]:
                 _parsed.pop(k, None)
     if owner:
+        _parse_gate.acquire()
+        with _parsed_lock:
+            for k in [k for k, e in _parsed.items() if k != key and "value" in e]:
+                _parsed.pop(k, None)
         try:
             result = parse_report(
                 content, filename, head["mapping"],
                 vat_rate=head["rate"] or None, sheet=head["sheet"],
+                currency_rate=head["currency_rate"] or None,
             )
             # Артикулы, вписанные руками в предпросмотре, — до привязки к каталогу.
             _apply_manual(result.rows, manual)
@@ -1300,6 +1346,7 @@ def _parse_and_resolve(db: Session, content: bytes, filename: str, head: dict, m
                     _parsed.pop(key, None)
             raise
         finally:
+            _parse_gate.release()
             entry["event"].set()
         return entry["value"]
     # Чужой расчёт того же файла уже идёт — ждём его, а не начинаем свой.
@@ -1324,6 +1371,7 @@ def inspect(
     mapping: str = Form(""),
     vat_rate: str = Form(""),
     sheet: str = Form(""),
+    currency_rate: str = Form(""),
     db: Session = Depends(get_session),
 ) -> dict:
     """
@@ -1335,7 +1383,7 @@ def inspect(
     «нет в номенклатуре» считает следом `preview`.
     """
     content = _read_upload(file)
-    return _head_info(db, partner_id, content, file.filename, mapping, vat_rate, sheet)["out"]
+    return _head_info(db, partner_id, content, file.filename, mapping, vat_rate, sheet, currency_rate)["out"]
 
 
 @partner_reports_router.post(
@@ -1347,6 +1395,7 @@ def preview(
     mapping: str = Form(""),
     vat_rate: str = Form(""),
     sheet: str = Form(""),
+    currency_rate: str = Form(""),
     manual_skus: str = Form(""),
     db: Session = Depends(get_session),
 ) -> dict:
@@ -1359,7 +1408,7 @@ def preview(
     (в Dista его приходилось вбивать руками — «пропустить строк сверху»).
     """
     content = _read_upload(file)
-    head = _head_info(db, partner_id, content, file.filename, mapping, vat_rate, sheet)
+    head = _head_info(db, partner_id, content, file.filename, mapping, vat_rate, sheet, currency_rate)
     manual = _manual_skus(manual_skus)
 
     # Разбираем ВЕСЬ файл, а не первые сто строк: итоги человек сверяет с
@@ -1380,6 +1429,10 @@ def preview(
         "columns": result.columns,
         "header_row": result.header_row + 1,
         "problems": result.problems,
+        # Валюты по ВСЕМ строкам, а не только по верху файла.
+        "currencies": sorted(result.currencies) or head["out"]["currencies"],
+        "needs_rate": any(c != "RUB" for c in result.currencies)
+        or head["out"]["needs_rate"],
         # Предупреждения не мешают загрузке, но должны быть видны до неё:
         # сейчас это «файл потерял буквы» (см. _warn_if_lossy).
         "warnings": result.warnings,
@@ -1415,6 +1468,7 @@ def export_unmatched(
     mapping: str = Form(""),
     vat_rate: str = Form(""),
     sheet: str = Form(""),
+    currency_rate: str = Form(""),
     manual_skus: str = Form(""),
     db: Session = Depends(get_session),
 ) -> StreamingResponse:
@@ -1428,7 +1482,7 @@ def export_unmatched(
     Имя файла — «Вне каталога <площадка>.xlsx».
     """
     content = _read_upload(file)
-    head = _head_info(db, partner_id, content, file.filename, mapping, vat_rate, sheet)
+    head = _head_info(db, partner_id, content, file.filename, mapping, vat_rate, sheet, currency_rate)
     manual = _manual_skus(manual_skus)
     result, resolved = _parse_and_resolve(db, content, file.filename, head, manual)
     missing = [r for r in result.rows if r.row_num not in resolved]
@@ -1548,6 +1602,7 @@ def create_report(
     mapping: str = Form(""),
     vat_rate: str = Form(""),
     sheet: str = Form(""),
+    currency_rate: str = Form(""),
     manual_skus: str = Form(""),
     content_type: str = Form(""),
     usage_type: str = Form(""),
@@ -1590,7 +1645,7 @@ def create_report(
     )
     # Шапка и правило — тем же кодом, что в предпросмотре: иначе ключ разбора
     # разошёлся бы с предпросмотром, и загрузка считала бы всё заново.
-    head = _head_info(db, str(partner_id), content, file.filename, mapping, vat_rate, sheet)
+    head = _head_info(db, str(partner_id), content, file.filename, mapping, vat_rate, sheet, currency_rate)
     chosen_sheet = head["sheet"]
     active_mapping = head["mapping"]
     rate = head["rate"]
@@ -1604,6 +1659,15 @@ def create_report(
     forget_all_parsed()
     if result.problems:
         raise HTTPException(400, "; ".join(result.problems))
+    # ОТЧЁТ В ВАЛЮТЕ БЕЗ КУРСА НЕ ГРУЗИМ: доллары легли бы в базу рублями, и
+    # ошибку на два порядка на глаз не заметить — итог просто выглядел бы
+    # маленьким. Курс вписывают в форме загрузки.
+    foreign = sorted(c for c in result.currencies if c != "RUB")
+    if foreign and not head["currency_rate"]:
+        raise HTTPException(
+            400,
+            "Суммы отчёта в %s — укажите курс к рублю" % ", ".join(foreign),
+        )
     if not result.rows:
         raise HTTPException(400, "В файле не нашлось ни одной строки с данными")
     if len(result.rows) > MAX_ROWS:
@@ -1650,6 +1714,12 @@ def create_report(
         total_author=totals["amount_author"],
         total_related=totals["amount_related"],
         vat_rate=Decimal(rate) if rate else None,
+        # Валюта и курс — снимком, как НДС: отчёт обязан объяснять свои числа.
+        currency=", ".join(sorted(result.currencies)) or None,
+        currency_rate=(
+            Decimal(head["currency_rate"].replace(",", ".").replace(" ", ""))
+            if head["currency_rate"] else None
+        ),
         uploaded_by=current_user.id,
     )
     db.add(report)
@@ -1732,6 +1802,8 @@ def create_report(
             "remembered": remembered,
             "author": str(report.total_author),
             "related": str(report.total_related),
+            "currency": report.currency,
+            "currency_rate": head["currency_rate"] or None,
         },
     )
     db.commit()

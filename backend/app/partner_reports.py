@@ -42,12 +42,14 @@ import codecs
 import csv
 import io
 import re
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from dataclasses import dataclass, field
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 from itertools import chain, islice
 
 import openpyxl
+
+from app.countries import country_code
 
 # Поля единого формата. `title` необязателен и нужен только человеку — чтобы в
 # предпросмотре было видно, что за трек, если артикул не опознан.
@@ -171,6 +173,10 @@ class ParseResult:
     # что-то не так, и человек должен это увидеть до загрузки. `problems`
     # для этого не годятся: они отказывают в загрузке.
     warnings: list = field(default_factory=list)
+    # ВАЛЮТЫ СУММ, если правило знает колонку валюты (`mapping["currency"]`).
+    # У Believe отчёты приходят в USD, EUR и RUB, и без курса доллары легли бы
+    # в базу рублями — ошибка на два порядка, которую на глаз не заметить.
+    currencies: set = field(default_factory=set)
 
     @property
     def totals(self) -> dict:
@@ -520,6 +526,50 @@ def rubles(value) -> Decimal:
 # -------------------------------------------------------------------- разбор
 
 
+def code_text(value) -> str:
+    """
+    Артикул или код из ячейки — строкой, и целое число без «.0».
+
+    Excel хранит числа дробными: артикул 4100040, набранный числом, читается
+    как 4100040.0, и с `tracks.sku` «4100040» он не совпал бы никогда. Так
+    приходят номера релизов в отчёте Believe AE (24.09.2026). То же со
+    строкой «4100040.0» — её так записывает выгрузка площадки.
+    """
+    if isinstance(value, bool):
+        return _clean(value)
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    text = _clean(value)
+    if _INTEGRAL_FLOAT.fullmatch(text):
+        return text.split(".", 1)[0]
+    return text
+
+
+_INTEGRAL_FLOAT = re.compile(r"\d+\.0+")
+
+# ПЕРЕВОДЫ ЗНАЧЕНИЙ ПАРАМЕТРОВ: `{"column": "...", "as": "country"}` в правиле.
+# Площадка пишет страну названием, а в отчёте правообладателю нужен код.
+TEXT_TRANSFORMS = {"country": country_code}
+
+
+def currency_factor(rate) -> Decimal:
+    """
+    Множитель пересчёта валюты в рубли по КУРСУ, как его вписал человек.
+
+    Курс бывает записан ДВУМЯ СПОСОБАМИ, и различаются они величиной (правило
+    владельца 24.09.2026): «76,75» — рублей за доллар, на него умножают;
+    «0,012216938» — долларов за рубль, на него делят ($13 430,19 / 0,012216938
+    = 1 099 309,02 ₽). Курса ровно 1 не бывает, а меньше единицы рублей за
+    валюту — тоже: у всех валют, в которых платят площадки, рубль дешевле.
+    """
+    if rate in (None, ""):
+        return Decimal(1)
+    value = Decimal(str(rate).replace(",", ".").replace(" ", ""))
+    if value <= 0:
+        raise ValueError("курс должен быть больше нуля")
+    return value if value >= 1 else Decimal(1) / value
+
+
 def mapping_columns(mapping: dict) -> list:
     """Все названия колонок, которые упоминает правило (прямо или в формуле)."""
     out = []
@@ -550,6 +600,7 @@ class _Plan:
     fields: list
     sku_col: str | None
     code_col: str | None
+    currency_col: str | None
     text_plan: list
     text_only: set
     presence_keys: list
@@ -569,12 +620,13 @@ def _build_plan(mapping: dict, by_key: dict) -> _Plan:
     sku_spec = (mapping or {}).get("sku") or {}
     code_spec = (mapping or {}).get("code") or {}
     text_plan = [
-        (field, normalize_header(spec["column"]))
+        (field, normalize_header(spec["column"]), TEXT_TRANSFORMS.get(spec.get("as")))
         for field, spec in (
             (f, (mapping or {}).get(f) or {}) for f in ("title", "artist", *ATTR_FIELDS)
         )
         if spec.get("column")
     ]
+    currency_spec = (mapping or {}).get("currency") or {}
     # Колонки ПАРАМЕТРОВ читаются как текст и в `numbers` не попадают: числами
     # они не бывают, а parse_number на каждой строке стоит времени — на отчёте
     # в полмиллиона строк это заметно. Название и исполнителя отсюда
@@ -582,7 +634,7 @@ def _build_plan(mapping: dict, by_key: dict) -> _Plan:
     # и тогда число понадобится.
     text_only = {
         normalize_header(spec["column"])
-        for spec in ((mapping or {}).get(f) or {} for f in ATTR_FIELDS)
+        for spec in ((mapping or {}).get(f) or {} for f in (*ATTR_FIELDS, "currency"))
         if spec.get("column")
     }
     qty_spec = (mapping or {}).get("quantity") or {}
@@ -600,6 +652,9 @@ def _build_plan(mapping: dict, by_key: dict) -> _Plan:
         fields=fields,
         sku_col=normalize_header(sku_spec["column"]) if sku_spec.get("column") else None,
         code_col=normalize_header(code_spec["column"]) if code_spec.get("column") else None,
+        currency_col=(
+            normalize_header(currency_spec["column"]) if currency_spec.get("column") else None
+        ),
         text_plan=text_plan,
         text_only=text_only,
         # Колонки, по которым решается «в строке есть хоть одно число».
@@ -623,6 +678,7 @@ def parse_report(
     vat_rate=None,
     sheet: str | None = None,
     limit: int | None = None,
+    currency_rate=None,
 ) -> ParseResult:
     """
     Файл площадки → строки единого формата.
@@ -630,6 +686,10 @@ def parse_report(
     `vat_rate` — ставка НДС, которую надо ВЫЧЕСТЬ из сумм (20 → делим на 1.2).
     Свойство отчёта целиком, а не отдельной колонки: в одном файле сумма либо
     с налогом, либо без.
+
+    `currency_rate` — курс к рублю для отчёта в валюте (см. `currency_factor`):
+    суммы переводятся в рубли ПРИ РАЗБОРЕ, и дальше отчёт ничем не отличается
+    от рублёвого — сверка с платежом, выгрузки и расчёт работают как всегда.
 
     `limit` — сколько строк разобрать (для предпросмотра). Итоги считаются по
     разобранному, и в предпросмотре это честно подписано.
@@ -667,6 +727,14 @@ def parse_report(
     divisor = Decimal(1)
     if vat_rate:
         divisor = Decimal(1) + Decimal(str(vat_rate)) / Decimal(100)
+    # Курс — отдельным множителем, а НДС по-прежнему делением: свернуть их в
+    # одно число нельзя, 1/1.22 — бесконечная дробь, и на границе округления
+    # строка изредка расходилась бы с прежним расчётом.
+    try:
+        factor = currency_factor(currency_rate)
+    except (ValueError, InvalidOperation):
+        result.problems.append(f"курс «{currency_rate}» — это не число больше нуля")
+        return result
 
     data = chain(head[header_row + 1:], rows_iter)
     if limit is not None:
@@ -708,10 +776,15 @@ def parse_report(
         values = {key: (raw[i] if i < size else None) for key, i in plan.fields}
 
         row = ReportRow(row_num=row_num)
-        row.sku = (_clean(values.get(plan.sku_col)) or None) if plan.sku_col else None
-        row.code = (_clean(values.get(plan.code_col)) or None) if plan.code_col else None
-        for text_field, column in plan.text_plan:
-            setattr(row, text_field, _clean(values.get(column)) or None)
+        row.sku = (code_text(values.get(plan.sku_col)) or None) if plan.sku_col else None
+        row.code = (code_text(values.get(plan.code_col)) or None) if plan.code_col else None
+        for text_field, column, transform in plan.text_plan:
+            text = _clean(values.get(column)) or None
+            setattr(row, text_field, transform(text) if transform and text else text)
+        if plan.currency_col:
+            currency = _clean(values.get(plan.currency_col)).upper()
+            if currency:
+                result.currencies.add(currency)
 
         numbers = {
             key: parse_number(value)
@@ -742,7 +815,7 @@ def parse_report(
                     )
             elif formula:
                 value = _apply_formula(formula, numbers, row, label)
-            setattr(row, money_key, money((value or Decimal(0)) / divisor))
+            setattr(row, money_key, money((value or Decimal(0)) * factor / divisor))
 
         # Итоговая строка в конце файла — не данные: пропускаем целиком, иначе
         # её сумма удвоит отчёт.
@@ -1177,6 +1250,101 @@ BUILTIN_RULES = (
             "amount_related": {"column": _ZN_RELATED},
         },
     },
+    # BELIEVE (24.09.2026, образцы владельца — отчёты за май 2026: RU на 596
+    # тыс. строк, KZ на 280 тыс., AE на 86 тыс.). Правил ДВА, потому что шапка
+    # у отчётов разная: RU подписан по-английски, KZ и AE — по-русски, а
+    # столбцы и смысл у них одни и те же. Сверено с итогами файлов до копейки:
+    # RU 4 858 741,81 ₽, KZ 10 456,59 €, AE 2 950,91 $.
+    {
+        "name": 'Believe',
+        "signature": ('Release Catalog nb', 'Client Payment Currency', 'Net Revenue', 'Sales Type', 'Platform'),
+        # Площадка в справочнике одна на все три отчёта (RU, KZ, AE): платежи
+        # от Believe приходят от «BELEIVE DIGITAL» (опечатка в справочнике
+        # живёт давно, и на неё завязано сопоставление платежей).
+        "partner_names": ("BELEIVE DIGITAL",),
+        "vat_rate": None,
+        # Вид использования у Believe один на все строки — «streaming», как в
+        # детализированном отчёте правообладателю из Dista. Остальные три
+        # параметра идут ИЗ КОЛОНОК: у Believe в одном отчёте сотни сочетаний
+        # площадки, типа продажи и страны.
+        "attributes": {
+            "usage_kind": "streaming",
+        },
+        "mapping": {
+            # АРТИКУЛ — КАТАЛОЖНЫЙ НОМЕР РЕЛИЗА, и он главный (решение
+            # владельца 24.09.2026: «именно по нашему артикулу мы сверяем в
+            # первую очередь»). У альбома, сборника и YouTube-канала это номер
+            # всей позиции (4100008 — канал Александра Иванова, 200 с лишним
+            # видео), и деньги ложатся на неё, как в Dista. ISRC — запасной
+            # путь, когда номера релиза нет в каталоге или он пуст.
+            "sku": {"column": 'Release Catalog nb'},
+            "code": {"column": 'ISRC'},
+            "title": {"column": 'Track title'},
+            "artist": {"column": 'Artist Name'},
+            "quantity": {"column": 'Quantity'},
+            # ВСЁ — В СМЕЖНЫЕ: «Сумма вознаграждения» (Net Revenue) по формуле
+            # Dista владельца. Механика (Mechanical Fee) не берётся: она почти
+            # всегда ноль (39 строк на 534 ₽ в RU за май).
+            "amount_related": {"column": 'Net Revenue'},
+            # Параметры — по формуле Dista: площадка → тип использования, тип
+            # продажи → тип контента, страна → территория КОДОМ («Germany» →
+            # «DE», см. app/countries.py).
+            "usage_type": {"column": 'Platform'},
+            "content_type": {"column": 'Sales Type'},
+            "territory": {"column": 'Country / Region', "as": "country"},
+            # ВАЛЮТА: RU приходит в рублях, KZ в евро, AE в долларах. По этой
+            # колонке сервис понимает, что нужен курс, и без него отчёт в
+            # валюте не загрузит.
+            "currency": {"column": 'Client Payment Currency'},
+            # ПЕРИОД — ИЗ КОЛОНКИ «месяц отчёта»: в шапке файла его нет.
+            "period": {"column": 'Reporting month'},
+        },
+    },
+    {
+        "name": 'Believe (русская шапка)',
+        "signature": ('Каталожный номер релиза', 'Валюта', 'Сумма вознаграждения', 'Тип продажи', 'Платформа'),
+        # Площадка в справочнике одна на все три отчёта (RU, KZ, AE): платежи
+        # от Believe приходят от «BELEIVE DIGITAL» (опечатка в справочнике
+        # живёт давно, и на неё завязано сопоставление платежей).
+        "partner_names": ("BELEIVE DIGITAL",),
+        "vat_rate": None,
+        # Вид использования у Believe один на все строки — «streaming», как в
+        # детализированном отчёте правообладателю из Dista. Остальные три
+        # параметра идут ИЗ КОЛОНОК: у Believe в одном отчёте сотни сочетаний
+        # площадки, типа продажи и страны.
+        "attributes": {
+            "usage_kind": "streaming",
+        },
+        "mapping": {
+            # АРТИКУЛ — КАТАЛОЖНЫЙ НОМЕР РЕЛИЗА, и он главный (решение
+            # владельца 24.09.2026: «именно по нашему артикулу мы сверяем в
+            # первую очередь»). У альбома, сборника и YouTube-канала это номер
+            # всей позиции (4100008 — канал Александра Иванова, 200 с лишним
+            # видео), и деньги ложатся на неё, как в Dista. ISRC — запасной
+            # путь, когда номера релиза нет в каталоге или он пуст.
+            "sku": {"column": 'Каталожный номер релиза'},
+            "code": {"column": 'ISRC'},
+            "title": {"column": 'Название трека'},
+            "artist": {"column": 'Исполнитель'},
+            "quantity": {"column": 'Количество'},
+            # ВСЁ — В СМЕЖНЫЕ: «Сумма вознаграждения» (Net Revenue) по формуле
+            # Dista владельца. Механика (Mechanical Fee) не берётся: она почти
+            # всегда ноль (39 строк на 534 ₽ в RU за май).
+            "amount_related": {"column": 'Сумма вознаграждения'},
+            # Параметры — по формуле Dista: площадка → тип использования, тип
+            # продажи → тип контента, страна → территория КОДОМ («Germany» →
+            # «DE», см. app/countries.py).
+            "usage_type": {"column": 'Платформа'},
+            "content_type": {"column": 'Тип продажи'},
+            "territory": {"column": 'страна / регион', "as": "country"},
+            # ВАЛЮТА: RU приходит в рублях, KZ в евро, AE в долларах. По этой
+            # колонке сервис понимает, что нужен курс, и без него отчёт в
+            # валюте не загрузит.
+            "currency": {"column": 'Валюта'},
+            # ПЕРИОД — ИЗ КОЛОНКИ «месяц отчёта»: в шапке файла его нет.
+            "period": {"column": 'Месяц отчета'},
+        },
+    },
 )
 
 
@@ -1244,6 +1412,55 @@ def _month_number(word: str) -> int | None:
 
 def _month_end(year: int, month: int) -> date:
     return date(year + (month == 12), month % 12 + 1, 1) - timedelta(days=1)
+
+
+def column_values(head: list, header_row: int, column: str) -> list:
+    """
+    Значения колонки в строках данных, попавших в верх файла (`head`).
+
+    Для того, что одинаково во всём отчёте и видно по первым строкам: валюта,
+    месяц отчёта. Весь файл ради этого читать незачем — у Believe он на
+    полмиллиона строк.
+    """
+    if header_row >= len(head):
+        return []
+    key = normalize_header(column)
+    names = [normalize_header(c) for c in header_names(head[header_row])]
+    if key not in names:
+        return []
+    i = names.index(key)
+    return [r[i] for r in head[header_row + 1:] if i < len(r) and _clean(r[i])]
+
+
+_ISO_DAY = re.compile(r"(\d{4})[/.-](\d{1,2})[/.-](\d{1,2})")
+
+
+def period_from_column(head: list, header_row: int, column: str) -> tuple | None:
+    """
+    Период отчёта ПО КОЛОНКЕ МЕСЯЦА — месяц целиком, от первого до последнего
+    числа. У Believe периода в шапке нет вовсе, зато в каждой строке стоит
+    «Месяц отчёта» («2026/05/01»): это и есть отчётный месяц (24.09.2026).
+    Строки с разными месяцами дают период с первого по последний.
+    """
+    import calendar
+
+    months = set()
+    for value in column_values(head, header_row, column):
+        if isinstance(value, datetime):
+            months.add((value.year, value.month))
+        elif isinstance(value, date):
+            months.add((value.year, value.month))
+        else:
+            m = _ISO_DAY.search(_clean(value))
+            if m and 1 <= int(m.group(2)) <= 12:
+                months.add((int(m.group(1)), int(m.group(2))))
+    if not months:
+        return None
+    first, last = min(months), max(months)
+    return (
+        date(first[0], first[1], 1),
+        date(last[0], last[1], calendar.monthrange(last[0], last[1])[1]),
+    )
 
 
 def find_period(table: list, header_row: int) -> tuple | None:
