@@ -297,7 +297,10 @@ export function LinkReportPaymentModal({ report, level, isTop, onChanged }) {
                 disabled={busy || otherPartner || current}
                 onClick={() => link(p)}
                 className={`block w-full text-left px-3 py-2.5 border-0 font-sans ${
-                  advice ? 'bg-accent-soft' : 'bg-transparent'
+                  // ТЕКУЩАЯ ПРИВЯЗКА — ЗЕЛЁНЫМ (просьба владельца 24.09.2026),
+                  // подсказка — цветом акцента: «уже связано» и «похоже, эта»
+                  // — разные ответы, и путать их глазом нельзя.
+                  current ? 'bg-success/10' : advice ? 'bg-accent-soft' : 'bg-transparent'
                 } ${
                   otherPartner || current ? 'cursor-default' : 'cursor-pointer hover:bg-hover'
                 }`}
@@ -344,7 +347,7 @@ export function LinkReportPaymentModal({ report, level, isTop, onChanged }) {
                 </div>
                 <div className="text-[11.5px] mt-0.5">
                   {current ? (
-                    <span className="text-text-muted">отчёт уже привязан к этой строке</span>
+                    <span className="text-success">отчёт привязан к этой строке</span>
                   ) : otherPartner ? (
                     <span className="text-text-muted">другая площадка — привязать нельзя</span>
                   ) : advice ? (
