@@ -1181,12 +1181,19 @@ export function PartnerReportsPage() {
                               {r.matched ? (
                                 r.sku || '—'
                               ) : (
-                                <div className="flex flex-col gap-1">
+                                /* СТРОКА С ПОЛЕМ — ТОЙ ЖЕ ВЫСОТЫ, ЧТО ОБЫЧНАЯ
+                                   (замечание владельца 24.09.2026): поле ростом
+                                   с строку текста и заходит в отступы ячейки
+                                   отрицательным полем, а ответ «что за трек»
+                                   стоит справа, а не второй строкой. Иначе
+                                   список вне каталога выходил заметно выше
+                                   остальных строк и меньше помещался в окно. */
+                                <div className="flex items-center gap-2 whitespace-nowrap">
                                   <input
                                     value={manualSkus[r.row] ?? r.sku ?? ''}
                                     placeholder="артикул"
                                     onChange={(e) => lookupSku(r.row, e.target.value)}
-                                    className={`${inputClass} w-[120px] py-1 font-mono text-[12px]`}
+                                    className={`${inputClass} w-[110px] h-[22px] -my-[2px] px-2 py-0 font-mono text-[12px] leading-none`}
                                   />
                                   {/* Найденный трек показываем НАЗВАНИЕМ: код
                                       из соседней системы сам по себе не
