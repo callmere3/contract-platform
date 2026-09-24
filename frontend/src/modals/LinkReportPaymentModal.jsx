@@ -48,22 +48,36 @@ const ru = (isoDate) => {
 };
 
 /**
- * Одна ли это сумма. СРАВНИВАЕМ КАК СТРОКИ, приведя к копейкам.
+ * Сумма в КОПЕЙКАХ, целым числом, — или null, если это не число.
  *
- * `Number()` на деньгах — тот самый способ получить 1234.0999999999999, от
- * которого мы бережёмся по всему ML Finance. Складывать и делить здесь нечего,
- * нужен ровно вопрос «одно и то же число или нет», а на него отвечает
- * приведение к виду «целое.дд».
+ * Деньги приходят строками, и `Number('1234.10')` — тот самый способ получить
+ * 1234.0999999999999, от которого мы бережёмся по всему ML Finance. Целые
+ * копейки складывать и вычитать можно без оглядки: рублёвые суммы до сотни
+ * триллионов укладываются в точное целое.
  */
 const kopecks = (value) => {
   const text = String(value ?? '').replace(/\s/g, '').replace(',', '.');
   if (!/^-?\d+(\.\d*)?$/.test(text)) return null;
-  const [whole, fraction = ''] = text.split('.');
-  return `${whole}.${(fraction + '00').slice(0, 2)}`;
+  const negative = text.startsWith('-');
+  const [whole, fraction = ''] = text.replace('-', '').split('.');
+  const total = Number(whole) * 100 + Number((fraction + '00').slice(0, 2));
+  return negative ? -total : total;
 };
-const sameMoney = (a, b) => {
+
+/**
+ * Одна ли это сумма — С ДОПУСКОМ В КОПЕЙКУ.
+ *
+ * Та же копейка, что и у знака «≠» в таблице поступлений (TRANSFER_TOLERANCE
+ * на сервере), и появляется она ровно так же. Настоящий случай: отчёт «101 и
+ * К» складывается из четырёх строк, делённых на 1.22 каждая, и даёт
+ * 48 063,78; а сумма завода в выписке посчитана от округлённого итога и равна
+ * 48 063,79. Требуй мы точного совпадения — подсказка не сработала бы на
+ * первом же настоящем отчёте.
+ */
+const closeMoney = (a, b) => {
   const one = kopecks(a);
-  return one !== null && one === kopecks(b);
+  const other = kopecks(b);
+  return one !== null && other !== null && Math.abs(one - other) <= 1;
 };
 
 export function LinkReportPaymentModal({ report, level, isTop, onChanged }) {
@@ -144,7 +158,7 @@ export function LinkReportPaymentModal({ report, level, isTop, onChanged }) {
     p.id !== report.payment_id &&
     !!p.partner_id &&
     p.partner_id === report.partner_id &&
-    sameMoney(p.transfer_amount, report.total);
+    closeMoney(p.transfer_amount, report.total);
   const ordered = [...rows.filter(advised), ...rows.filter((p) => !advised(p))];
   const adviceCount = rows.filter(advised).length;
 
