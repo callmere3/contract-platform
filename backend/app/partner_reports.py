@@ -52,7 +52,7 @@ import openpyxl
 # Поля единого формата. `title` необязателен и нужен только человеку — чтобы в
 # предпросмотре было видно, что за трек, если артикул не опознан.
 MONEY_FIELDS = ("amount_author", "amount_related")
-FIELDS = ("sku", "title", "artist", "quantity", *MONEY_FIELDS)
+FIELDS = ("sku", "code", "title", "artist", "quantity", *MONEY_FIELDS)
 
 # ЧЕТЫРЕ ПАРАМЕТРА ОТЧЁТА, КОТОРЫЕ БЫВАЮТ И ПОСТРОЧНЫМИ (24.09.2026, разбор
 # настоящего отчёта контрагенту). У МТС и «101 и К» они одни на весь файл и
@@ -69,6 +69,7 @@ ATTR_FIELDS = ("content_type", "usage_type", "usage_kind", "territory")
 MAPPABLE_FIELDS = (*FIELDS, *ATTR_FIELDS)
 FIELD_LABELS = {
     "sku": "Артикул",
+    "code": "Код площадки (ISRC/UPC)",
     "title": "Наименование",
     "artist": "Исполнитель",
     "quantity": "Количество",
@@ -81,7 +82,11 @@ FIELD_LABELS = {
 }
 # Без артикула строку не к чему привязать, без сумм она бессмысленна. Остальное
 # необязательно: количество есть не во всех отчётах, название — тем более.
-REQUIRED_FIELDS = ("sku",)
+# НУЖЕН ХОТЯ БЫ ОДИН СПОСОБ ОПОЗНАТЬ ТРЕК. Обычно это НАШ артикул, но у
+# части площадок его в отчёте нет вовсе — у «101 и К» есть только «UPC /
+# ISRC». Раньше такую колонку приходилось подставлять в «Артикул», и поле
+# врало: в нём стоял чужой код, а в строку уезжал наш, найденный по нему.
+IDENTITY_FIELDS = ("sku", "code")
 
 # Слова, по которым узнаётся ИТОГОВАЯ строка в конце отчёта. У МТС это
 # «Итого:», «НДС 22%:», «Итого с НДС:» — строки без кода объекта, но с суммой в
@@ -115,6 +120,9 @@ class ReportRow:
 
     row_num: int
     sku: str | None = None
+    # КОД САМОЙ ПЛОЩАДКИ (ISRC/UPC), если нашего артикула в отчёте нет. По
+    # нему трек находится в каталоге, а в `sku` уезжает уже НАШ артикул.
+    code: str | None = None
     # Строка без артикула НЕ ошибка разбора: в отчёте МТС таких два десятка —
     # у площадки не проставлен код объекта. Деньги по ним пришли, и молча
     # выкинуть их нельзя; они грузятся, а артикул подбирается по названию и
@@ -546,10 +554,12 @@ def parse_report(
             "в файле нет колонок: " + ", ".join(f"«{c}»" for c in missing)
         )
         return result
-    for key in REQUIRED_FIELDS:
-        if not (mapping or {}).get(key):
-            result.problems.append(f"в правиле не задано поле «{FIELD_LABELS[key]}»")
-            return result
+    if not any((mapping or {}).get(key) for key in IDENTITY_FIELDS):
+        result.problems.append(
+            "в правиле не задано, по чему опознавать трек: нужен «%s» или «%s»"
+            % (FIELD_LABELS["sku"], FIELD_LABELS["code"])
+        )
+        return result
 
     divisor = Decimal(1)
     if vat_rate:
@@ -573,7 +583,10 @@ def parse_report(
         for key in dict.fromkeys(normalize_header(c) for c in wanted)
         if key in by_key
     ]
-    sku_col = normalize_header(mapping["sku"].get("column", ""))
+    sku_spec = (mapping or {}).get("sku") or {}
+    sku_col = normalize_header(sku_spec.get("column", "")) if sku_spec.get("column") else None
+    code_spec = (mapping or {}).get("code") or {}
+    code_col = normalize_header(code_spec.get("column", "")) if code_spec.get("column") else None
     text_plan = [
         (field, normalize_header(spec["column"]))
         for field, spec in (
@@ -620,7 +633,8 @@ def parse_report(
         values = {key: (raw[i] if i < size else None) for key, i in fields}
 
         row = ReportRow(row_num=row_num)
-        row.sku = _clean(values.get(sku_col)) or None
+        row.sku = (_clean(values.get(sku_col)) or None) if sku_col else None
+        row.code = (_clean(values.get(code_col)) or None) if code_col else None
         for text_field, column in text_plan:
             setattr(row, text_field, _clean(values.get(column)) or None)
 
@@ -657,7 +671,7 @@ def parse_report(
 
         # Итоговая строка в конце файла — не данные: пропускаем целиком, иначе
         # её сумма удвоит отчёт.
-        if not row.sku:
+        if not row.sku and not row.code:
             text = " ".join(_clean(c).lower() for c in raw)
             if any(marker in text for marker in TOTALS_MARKERS):
                 continue
@@ -930,11 +944,12 @@ BUILTIN_RULES = (
         },
         "mapping": {
             # НАШЕГО АРТИКУЛА В ОТЧЁТЕ НЕТ — есть «UPC / ISRC» одной ячейкой
-            # («3617380567893 / DG-A0P-23-16666»). Трек находится по ISRC
-            # (_code_candidates в роутере), и артикул подставляется наш.
+            # («3617380567893 / DG-A0P-23-16666»). Поэтому колонка ложится в
+            # КОД ПЛОЩАДКИ, а не в артикул: по коду трек находится в каталоге
+            # (_code_candidates в роутере), и в строку уезжает НАШ артикул.
             # У строки без кода остаётся подбор по названию и исполнителю —
             # так находится «Ёлка — Понедельник», у которой ячейка пуста.
-            "sku": {"column": "UPC / ISRC"},
+            "code": {"column": "UPC / ISRC"},
             "title": {"column": "Название"},
             "artist": {"column": "Имя"},
             # КОЛИЧЕСТВО ВСЕГДА 1 (правило владельца): отчёт сводный, в нём
@@ -1106,6 +1121,9 @@ def suggest_mapping(columns: list) -> dict:
     # строки, а не артикул, и попасться на него легко.
     hints = {
         "sku": ("код объекта", "артикул", "код товара", "sku", "код", "номер", "№"),
+        # ISRC и UPC — код САМОЙ ПЛОЩАДКИ, а не наш артикул: по нему трек
+        # находят в каталоге, но в отчёт правообладателю уходит наш.
+        "code": ("isrc", "upc"),
         "title": ("название объекта", "наименование", "название", "трек", "title", "track"),
         "artist": ("исполнитель", "артист", "artist", "performer"),
         "quantity": ("кол-во продаж", "количество", "кол-во", "прослушивания", "quantity", "streams"),

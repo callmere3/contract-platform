@@ -54,6 +54,7 @@ from app.models import (
 )
 from app.partner_reports import (
     ATTR_FIELDS,
+    IDENTITY_FIELDS,
     MAPPABLE_FIELDS,
     FIELDS,
     FIELD_LABELS,
@@ -268,15 +269,18 @@ def _resolve_tracks(db: Session, rows: list, partner_id=None) -> dict:
                 row.matched_by = "alias"
                 resolved[row.row_num] = track_id
 
-    # ПО КОДУ ПЛОЩАДКИ (ISRC/UPC) — если «артикул» из файла нашим не оказался.
-    # Отчёт «101 и К» устроен именно так: нашего артикула в нём нет вовсе, а
-    # есть «UPC / ISRC», и по ISRC трек находится точно. Ниже запомненных
-    # сопоставлений: там решение человека, а это опознание по коду.
-    unresolved = [r for r in rows if r.row_num not in resolved and r.sku]
+    # ПО КОДУ ПЛОЩАДКИ (ISRC/UPC). Отчёт «101 и К» устроен именно так: нашего
+    # артикула в нём нет вовсе, а есть «UPC / ISRC», и по ISRC трек находится
+    # точно. Ниже запомненных сопоставлений: там решение человека, а это
+    # опознание по коду.
+    unresolved = [r for r in rows if r.row_num not in resolved and (r.code or r.sku)]
     if unresolved:
         candidates: dict = {}
         for row in unresolved:
-            for code in _code_candidates(row.sku):
+            # Сперва колонка кода площадки, если правило её задало; иначе —
+            # то, что стояло в «Артикуле»: у площадки там может лежать её
+            # собственный код, который нашим артикулом не оказался.
+            for code in _code_candidates(row.code or row.sku):
                 candidates.setdefault(code, []).append(row)
         by_code = _tracks_by_code(db, list(candidates))
         for code, waiting in candidates.items():
@@ -678,8 +682,12 @@ def save_rule(
             clean[key] = {"column": column}
         elif formula:
             clean[key] = {"formula": formula}
-    if "sku" not in clean:
-        raise HTTPException(400, "Без колонки с артикулом отчёт не разобрать")
+    if not any(key in clean for key in IDENTITY_FIELDS):
+        raise HTTPException(
+            400,
+            "Не задано, по чему опознавать трек: нужна колонка «%s» или «%s»"
+            % (FIELD_LABELS["sku"], FIELD_LABELS["code"]),
+        )
 
     rate = None
     if str(vat_rate).strip():

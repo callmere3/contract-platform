@@ -67,7 +67,12 @@ const ATTRS = [
 
 // Поля единого формата: к ним сводится любой отчёт площадки.
 const FIELDS = [
-  { name: 'sku', label: 'Артикул', required: true },
+  // АРТИКУЛ НЕ ОБЯЗАН БЫТЬ КОЛОНКОЙ (замечание владельца 24.09.2026): у
+  // «101 и К» нашего артикула в отчёте нет вовсе, он находится по коду
+  // площадки или по названию. Раньше в это поле подставляли колонку
+  // «UPC / ISRC», и оно врало: в нём стоял чужой код, а в строку уезжал наш.
+  { name: 'sku', label: 'Артикул' },
+  { name: 'code', label: 'Код площадки (ISRC/UPC)' },
   { name: 'quantity', label: 'Количество' },
   { name: 'amount_author', label: 'Сумма авторских' },
   { name: 'amount_related', label: 'Сумма смежных' },
@@ -106,6 +111,21 @@ function RateField({ value, onChange, className }) {
       className={className}
     />
   );
+}
+
+/**
+ * Количество для ячейки: «493 817», а не «493817.00».
+ *
+ * Сервер отдаёт его строкой с двумя знаками, как и деньги (колонка в базе
+ * `Numeric(16,2)`), но количество — это счёт прослушиваний, и хвост «,00»
+ * в нём читается как машинный вид. Дробное сохраняем: у части площадок
+ * количество приходит долями.
+ */
+function count(value) {
+  if (value == null || value === '') return '—';
+  const number = Number(value);
+  if (!Number.isFinite(number)) return String(value);
+  return number.toLocaleString('ru-RU', { maximumFractionDigits: 2 });
 }
 
 /** Сумма для ячейки таблицы: те же тысячи, но без «₽» — он в шапке колонки. */
@@ -704,7 +724,13 @@ export function PartnerReportsPage() {
                             }
                             className={`${inputClass} w-full`}
                           >
-                            <option value="">— нет —</option>
+                            {/* У АРТИКУЛА «пусто» значит не «не настроено», а
+                                «находим сами» — по коду площадки, по названию
+                                или руками в предпросмотре. Для остальных
+                                полей пусто — это правда «нет такой колонки». */}
+                            <option value="">
+                              {f.name === 'sku' ? '— заполняется правилом —' : '— нет —'}
+                            </option>
                             {preview.columns.filter(Boolean).map((c) => (
                               <option key={c} value={c}>
                                 {c}
@@ -972,7 +998,7 @@ export function PartnerReportsPage() {
                             </td>
                             <td className={td}>{r.title || '—'}</td>
                             <td className={td}>{r.artist || '—'}</td>
-                            <td className={`${td} tabular-nums`}>{r.quantity ?? '—'}</td>
+                            <td className={`${td} tabular-nums`}>{count(r.quantity)}</td>
                             <td className={`${td} tabular-nums`}>{amount(r.amount_author)}</td>
                             <td className={`${td} tabular-nums`}>{amount(r.amount_related)}</td>
                             {shownAttrs.map((a) => (
