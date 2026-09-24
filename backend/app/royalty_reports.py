@@ -356,46 +356,115 @@ _BOX = Border(left=_THIN, right=_THIN, top=_THIN, bottom=_THIN)
 _WRAP = Alignment(wrap_text=True, vertical="top")
 
 
+# ТИТУЛЬНЫЙ ЛИСТ — СЕТКА DISTA (правка 25.09.2026, образец владельца: её
+# шаблон «Отчетная_ведомость_по_расчетам_с_правообладателем_Медиаленд_сж_2.fr3»
+# и файлы, которые она по нему собирает). Лист — десять узких колонок A–J,
+# а надписи и числа лежат в объединениях поверх них: так значения встают
+# вправо, к краю листа, а суммы — в рамки с «руб.» отдельной ячейкой справа.
+# Ширины и объединения сняты с готовых файлов Dista один в один; шрифт —
+# Arial 11, подписи сторон — 9 жирным, как в шаблоне.
+_FRONT_WIDTHS = [16.83, 12.62, 12.62, 12.62, 4.21, 6.31, 2.52, 2.95, 7.15, 3.79]
+_ARIAL = "Arial"
+_F = Font(name=_ARIAL, size=11)
+_FB = Font(name=_ARIAL, size=11, bold=True)
+_F_TITLE = Font(name=_ARIAL, size=12, bold=True)
+_F_SIGN = Font(name=_ARIAL, size=9, bold=True)
+_BLACK = Side(style="thin", color="000000")
+_LEFT = Alignment(horizontal="left", vertical="center")
+_RIGHT = Alignment(horizontal="right", vertical="center")
+_CENTER = Alignment(horizontal="center", vertical="center")
+
+
+def _put(ws, ref: str, value, font=_F, align=_LEFT, box: str = "", fmt: str | None = None) -> None:
+    """
+    Пишет значение в ячейку или объединение «A12:D12». `box` — какие стороны
+    обвести: «ltrb» (как Frame.Typ в шаблоне Dista: у суммы нет правой
+    стороны, у «руб.» — левой, и вместе они выглядят одной рамкой).
+    """
+    if ":" in ref:
+        ws.merge_cells(ref)
+    first, _, last = ref.partition(":")
+    ws[first] = value
+    ws[first].font, ws[first].alignment = font, align
+    if fmt:
+        ws[first].number_format = fmt
+    if box:
+        cells = [c for row in ws[ref] for c in row] if last else [ws[first]]
+        top = min(c.row for c in cells)
+        bottom = max(c.row for c in cells)
+        left = min(c.column for c in cells)
+        right = max(c.column for c in cells)
+        for c in cells:
+            c.border = Border(
+                left=_BLACK if "l" in box and c.column == left else None,
+                right=_BLACK if "r" in box and c.column == right else None,
+                top=_BLACK if "t" in box and c.row == top else None,
+                bottom=_BLACK if "b" in box and c.row == bottom else None,
+            )
+
+
 def _front_page(ws, res: Result, s: Settings, summary: bool) -> None:
-    """«Страница 1» — отчётная ведомость с итогами и подписями."""
-    total = cents(res.reward)
-    ws["A1"] = "Отчетная ведомость"
-    ws["A1"].font = _TITLE
-    ws["A5"] = CITY
-    ws["E5"] = date.today().strftime("%d.%m.%Y")
-    ws["A6"], ws["B6"] = "Лицензиар", res.title
-    ws["A7"], ws["B7"] = "Отчётный период", period_text(s)
-    ws["A9"] = "Доход Лицензиара от использования Прав за отчетный период составил:"
-    ws["C11"], ws["D11"] = "Кол-во", "Сумма"
-    ws["C11"].font = ws["D11"].font = _BOLD
-    ws["A12"] = "Доход от использования Произведений / Объектов"
-    ws["C12"], ws["D12"], ws["E12"] = float(res.quantity), float(total), "руб."
-    ws["A13"], ws["D13"], ws["E13"] = "Итого доход Лицензиара", float(total), "руб."
-    ws["A13"].font = _BOLD
+    """
+    «Страница 1» — отчётная ведомость с итогами и подписями, в сетке Dista.
+    Баланс и «Выплачено» — только в сводном, как у Dista: в детализированном
+    их нет.
+    """
+    total = float(cents(res.reward))
+    money = "#,##0.00"
+    for i, w in enumerate(_FRONT_WIDTHS, 1):
+        ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = w
+
+    _put(ws, "A1:J1", "Отчетная ведомость", _F_TITLE, _CENTER)
+    _put(ws, "A5", CITY)
+    _put(ws, "H5:J5", date.today().strftime("%d.%m.%Y"), _FB, _RIGHT)
+    _put(ws, "A6", "Лицензиар")
+    _put(ws, "D6:J6", res.title, _FB, _RIGHT)
+    _put(ws, "A7", "Отчётный период")
+    _put(ws, "F7:J7", period_text(s), _FB, _RIGHT)
+    _put(ws, "A9:J9", "Доход Лицензиара от использования Прав за отчетный период составил:", _FB)
+
+    _put(ws, "E11:F11", "Кол-во", align=_CENTER, box="ltb")
+    _put(ws, "G11:J11", "Сумма", align=_CENTER, box="ltrb")
+    _put(ws, "A12:D12", "Доход от использования Произведений / Объектов", box="ltrb")
+    _put(ws, "E12:F12", float(res.quantity), align=_RIGHT, box="ltb", fmt="#,##0")
+    _put(ws, "G12:I12", total, align=_RIGHT, box="ltb", fmt=money)
+    _put(ws, "J12", "руб.", box="rtb")
+    _put(ws, "A13:F13", "Итого доход Лицензиара", _FB, _RIGHT, box="ltrb")
+    _put(ws, "G13:I13", total, _FB, _RIGHT, box="ltb", fmt=money)
+    _put(ws, "J13", "руб.", box="rtb")
+
     row = 15
     if summary:
         # Баланс и выплаты пока не ведутся — нули, как в образце из Dista.
-        ws[f"A{row}"], ws[f"D{row}"], ws[f"E{row}"] = "Баланс  на начало периода", 0.0, "руб."
-        ws[f"A{row + 1}"], ws[f"D{row + 1}"], ws[f"E{row + 1}"] = "Выплачено Лицензиару за период", 0.0, "руб."
+        _put(ws, f"A{row}:B{row}", "Баланс  на начало периода", _FB)
+        _put(ws, f"G{row}:I{row}", 0.0, align=_RIGHT, box="ltb", fmt=money)
+        _put(ws, f"J{row}", "руб.", box="rtb")
+        _put(ws, f"A{row + 1}:B{row + 1}", "Выплачено Лицензиару за период", _FB)
+        _put(ws, f"G{row + 1}:I{row + 1}", 0.0, align=_RIGHT, box="ltb", fmt=money)
+        _put(ws, f"J{row + 1}", "руб.", box="rtb")
         row += 3
-    ws[f"A{row}"], ws[f"D{row}"], ws[f"E{row}"] = "К выплате Лицензиару за период", float(total), "руб."
-    ws[f"A{row}"].font = _BOLD
-    ws[f"A{row + 1}"] = "НДС не облагается"
-    ws[f"A{row + 3}"] = "Подписи сторон:"
-    ws[f"A{row + 5}"], ws[f"D{row + 5}"] = "Лицензиат", "Лицензиар"
-    ws[f"A{row + 6}"], ws[f"D{row + 6}"] = LICENSEE_SIGNATURE, "\n" + res.title
-    ws[f"A{row + 6}"].alignment = ws[f"D{row + 6}"].alignment = _WRAP
-    ws.row_dimensions[row + 6].height = 48
-    ws[f"A{row + 8}"], ws[f"D{row + 8}"] = "МП", "МП"
-    for r in range(12, row + 1):
-        if isinstance(ws[f"D{r}"].value, float):
-            ws[f"D{r}"].number_format = "#,##0.00"
-    ws["C12"].number_format = "#,##0"
-    ws.column_dimensions["A"].width = 50
-    ws.column_dimensions["B"].width = 34
-    ws.column_dimensions["C"].width = 14
-    ws.column_dimensions["D"].width = 30
-    ws.column_dimensions["E"].width = 8
+    _put(ws, f"A{row}:B{row}", "К выплате Лицензиару за период", _FB)
+    _put(ws, f"G{row}:I{row}", total, _FB, _RIGHT, box="ltb", fmt=money)
+    _put(ws, f"J{row}", "руб.", box="rtb")
+    _put(ws, f"A{row + 1}", "НДС не облагается")
+
+    _put(ws, f"A{row + 3}:J{row + 3}", "Подписи сторон:", align=_CENTER)
+    _put(ws, f"A{row + 5}:B{row + 5}", "Лицензиат")
+    _put(ws, f"E{row + 5}:J{row + 5}", "Лицензиар")
+    top = Alignment(horizontal="left", vertical="top", wrap_text=True)
+    _put(ws, f"A{row + 6}:B{row + 6}", LICENSEE_SIGNATURE, _F_SIGN, top)
+    _put(ws, f"E{row + 6}:J{row + 6}", "\n" + res.title, _F_SIGN, top)
+    ws.row_dimensions[row + 6].height = 40
+    # Черта под подпись и «МП» под ней.
+    _put(ws, f"A{row + 7}", None, box="b")
+    _put(ws, f"E{row + 7}:H{row + 7}", None, box="b")
+    _put(ws, f"A{row + 8}", "МП", align=_CENTER)
+    _put(ws, f"E{row + 8}:H{row + 8}", "МП", align=_CENTER)
+    ws.row_dimensions[row + 8].height = 24
+
+    ws.page_setup.orientation = "portrait"
+    ws.page_setup.fitToWidth, ws.page_setup.fitToHeight = 1, 0
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
 
 
 def _table(ws, s: Settings, header: list, rows: list, widths: list, money_cols: set,
