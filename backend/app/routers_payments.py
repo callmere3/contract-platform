@@ -235,6 +235,27 @@ def _difference(payment: PartnerPayment):
     return _money(payment.transfer_amount - payment.actual_amount)
 
 
+def _difference_matches(payment: PartnerPayment):
+    """
+    Сошлось ли — С ДОПУСКОМ В КОПЕЙКУ (`TRANSFER_TOLERANCE`).
+
+    Та же копейка, что у знака «≠», и берётся она оттуда же. Настоящий случай
+    (владелец, 24.09.2026): у отчёта «101 и К» фактический завод 48 063,78, а
+    сумма завода 48 063,79. Обе верны: площадка считает с точностью до
+    четвёртого знака и в её файле стоит 58 637,8176, а банк двигает рубли с
+    копейками и в выписке 58 637,82 — деление даёт разные копейки.
+    Расхождение в копейку тут не находка, а неизбежность, и красить его
+    красным значит приучить не смотреть на этот столбец.
+
+    САМО ЧИСЛО НИКУДА НЕ ПРЯЧЕТСЯ: оно по-прежнему в `difference` и видно в
+    подсказке. Мы меняем только то, как оно читается.
+    """
+    value = _difference(payment)
+    if value is None:
+        return None
+    return abs(Decimal(value)) <= TRANSFER_TOLERANCE
+
+
 def _expected_transfer(payment: PartnerPayment):
     """
     Сколько ДОЛЖНО завестись: сумма поступления / (1 + НДС/100).
@@ -312,6 +333,8 @@ def _out(payment: PartnerPayment, partner_name: str | None, linked: int = 0,
         # нельзя. Пусто, пока не заполнены оба числа: разница с неизвестным —
         # не ноль и не «весь завод», а просто «ещё не с чем сверять».
         "difference": _difference(payment),
+        # Сошлось ли по существу — решает сервер: см. `_difference_matches`.
+        "difference_matches": _difference_matches(payment),
         # СКОЛЬКО ДОЛЖНО ЗАВЕСТИСЬ ПО ФОРМУЛЕ: поступление / курс / (1+НДС).
         # Считает сервер — на экране деньги не делят, они там строки.
         "expected_transfer": _expected_transfer(payment),
@@ -466,10 +489,15 @@ def list_payments(
             # Итог расхождений — только по СВЕРЕННЫМ строкам, где есть оба
             # числа. Иначе в сумму попал бы завод строк, которые ещё не с чем
             # сравнивать, и итог показывал бы расхождение там, где его нет.
+            # В ИТОГ ИДУТ ТОЛЬКО НАСТОЯЩИЕ РАСХОЖДЕНИЯ — те, что больше
+            # копейки. Иначе итог набирал бы по копейке со строк, про каждую
+            # из которых на экране написано «сошлось», и противоречил бы
+            # самому себе.
             "difference": _money(sum(
                 (p.transfer_amount - p.actual_amount
                  for p, _ in rows
-                 if p.transfer_amount is not None and p.actual_amount is not None),
+                 if p.transfer_amount is not None and p.actual_amount is not None
+                 and abs(p.transfer_amount - p.actual_amount) > TRANSFER_TOLERANCE),
                 Decimal(0),
             )),
             # Сколько строк ещё не заведено: столбец с галочками читается

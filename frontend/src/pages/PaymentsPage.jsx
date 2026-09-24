@@ -658,14 +658,33 @@ export function PaymentsPage() {
                         <span className="inline-block px-2 py-0.5 text-[12.5px] text-text-muted">
                           —
                         </span>
+                      ) : r.difference_matches ? (
+                        /* СОШЛОСЬ — С ДОПУСКОМ В КОПЕЙКУ, и решает это сервер
+                           (`difference_matches`). Копейка здесь неизбежна:
+                           площадка считает с точностью до четвёртого знака, а
+                           банк двигает рубли с копейками, и деление на НДС
+                           даёт разные копейки. Само число не спрятано — оно в
+                           подсказке. */
+                        <Tooltip
+                          text={
+                            Number(r.difference) === 0
+                              ? 'Сумма завода сошлась с фактическим'
+                              : `Расходится на ${amount(r.difference)} ₽ — это округление:
+`
+                                + 'площадка считает до четвёртого знака, банк — до копеек'
+                          }
+                          className="inline-block"
+                        >
+                          <span className="inline-block px-2 py-0.5 text-[12.5px] text-text-muted cursor-help">
+                            сошлось
+                          </span>
+                        </Tooltip>
                       ) : (
                         <span
-                          className={`inline-block px-2 py-0.5 text-[12.5px] tabular-nums ${
-                            Number(r.difference) === 0 ? 'text-text-muted' : 'text-danger'
-                          }`}
+                          className="inline-block px-2 py-0.5 text-[12.5px] tabular-nums text-danger"
                           title="Сумма завода минус сумма фактического завода"
                         >
-                          {Number(r.difference) === 0 ? 'сошлось' : amount(r.difference)}
+                          {amount(r.difference)}
                         </span>
                       )}
                     </td>
