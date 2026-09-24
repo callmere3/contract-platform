@@ -82,14 +82,24 @@ const closeMoney = (a, b) => {
 
 export function LinkReportPaymentModal({ report, level, isTop, onChanged }) {
   const { closeModal } = useModal();
-  const today = new Date();
-  const [year, setYear] = useState(today.getFullYear());
-  const [quarter, setQuarter] = useState(Math.floor(today.getMonth() / 3) + 1);
+  // УЖЕ ПРИВЯЗАННЫЙ ОТЧЁТ ОТКРЫВАЕТСЯ НА СВОЁМ МЕСЯЦЕ (просьба владельца
+  // 24.09.2026). Раньше окно всегда показывало текущий квартал и весь список
+  // поступлений — то есть предлагало выбрать заново то, что уже выбрано.
+  // Вопрос к открытому окну теперь один: «с чем это связано», и ответ на
+  // него виден сразу.
+  const linkedOn = report.payment_date ? new Date(`${report.payment_date}T00:00:00Z`) : null;
+  const today = linkedOn ?? new Date();
+  const [year, setYear] = useState(today.getUTCFullYear?.() ?? today.getFullYear());
+  const [quarter, setQuarter] = useState(
+    Math.floor((linkedOn ? today.getUTCMonth() : today.getMonth()) / 3) + 1,
+  );
   // НОМЕР ПОСТУПЛЕНИЯ СВОЙ У КАЖДОГО МЕСЯЦА, а в квартале месяцев три — и
   // «№1» встречается трижды (замечание владельца 23.09.2026). Поэтому здесь
   // есть выбор месяца, а пока смотрят квартал целиком, рядом с номером
   // подписан месяц: иначе строки не различить.
-  const [monthOffset, setMonthOffset] = useState(null);   // null — весь квартал
+  const [monthOffset, setMonthOffset] = useState(
+    linkedOn ? linkedOn.getUTCMonth() % 3 : null,          // null — весь квартал
+  );
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -160,7 +170,13 @@ export function LinkReportPaymentModal({ report, level, isTop, onChanged }) {
     p.partner_id === report.partner_id &&
     closeMoney(p.transfer_amount, report.total);
   const ordered = [...rows.filter(advised), ...rows.filter((p) => !advised(p))];
-  const adviceCount = rows.filter(advised).length;
+  const adviceCount = report.payment_id ? 0 : rows.filter(advised).length;
+  // Привязан — показываем ровно ту строку, к которой привязан, и ничего
+  // больше: список «куда можно привязать» отвечает на вопрос, который уже
+  // решён.
+  const shown = report.payment_id
+    ? ordered.filter((p) => p.id === report.payment_id)
+    : ordered;
 
   const tab = (active) =>
     `px-3 py-1.5 text-[12.5px] rounded-input border cursor-pointer bg-transparent font-sans ${
@@ -191,45 +207,85 @@ export function LinkReportPaymentModal({ report, level, isTop, onChanged }) {
       <div className="text-[13px] text-text mb-4">
         <b>{report.partner}</b> · {report.period_label} · итог{' '}
         <b className="tabular-nums">{formatMoney(report.total)}</b>
+        {/* СУММА ВНЕ КАТАЛОГА — РЯДОМ С ИТОГОМ (просьба владельца
+            24.09.2026): сверяя отчёт с платежом, полезно сразу видеть, какая
+            его часть пока ни на что не отнесена. Пишем, только если она есть:
+            «вне каталога 0,00» — лишний шум в строке, которую читают за
+            секунду. */}
+        {Number(report.unmatched_amount) > 0 && (
+          <>
+            {' '}· вне каталога{' '}
+            <b className="tabular-nums text-danger">
+              {formatMoney(report.unmatched_amount)}
+            </b>
+          </>
+        )}
       </div>
 
-      <div className="text-[12px] text-text-secondary mb-1.5">Квартал поступления</div>
-      <div className="flex flex-wrap items-center gap-2 mb-4">
-        {[1, 2, 3, 4].map((q) => (
-          <button key={q} type="button" className={tab(q === quarter)} onClick={() => setQuarter(q)}>
-            {ROMAN[q - 1]} квартал
-          </button>
-        ))}
-        <input
-          value={year}
-          onChange={(e) => setYear(Number(e.target.value.replace(/\D/g, '')) || '')}
-          className="bg-input-bg border border-border rounded-input px-3 py-2 text-[13px] text-text outline-none font-sans w-[86px] tabular-nums"
-        />
-      </div>
+      {/* У ПРИВЯЗАННОГО ОТЧЁТА ВЫБИРАТЬ НЕЧЕГО (просьба владельца
+          24.09.2026): квартал и месяц показываем текстом, а список
+          поступлений не рисуем вовсе — ниже останется одна привязанная
+          строка. Раньше окно предлагало выбрать заново то, что уже выбрано,
+          и найти среди тридцати строк ту самую было отдельной задачей.
+          Перепривязать по-прежнему можно: «Отвязать» внизу вернёт выбор. */}
+      {report.payment_id ? (
+        <div className="text-[13px] text-text mb-4">
+          <span className="text-text-secondary">Поступление за </span>
+          {ROMAN[quarter - 1]} квартал {year}
+          {monthOffset !== null && `, ${MONTHS[(quarter - 1) * 3 + monthOffset]}`}
+        </div>
+      ) : (
+        <>
+          <div className="text-[12px] text-text-secondary mb-1.5">Квартал поступления</div>
+          <div className="flex flex-wrap items-center gap-2 mb-4">
+            {[1, 2, 3, 4].map((q) => (
+              <button
+                key={q}
+                type="button"
+                className={tab(q === quarter)}
+                onClick={() => setQuarter(q)}
+              >
+                {ROMAN[q - 1]} квартал
+              </button>
+            ))}
+            <input
+              value={year}
+              onChange={(e) => setYear(Number(e.target.value.replace(/\D/g, '')) || '')}
+              className="bg-input-bg border border-border rounded-input px-3 py-2 text-[13px] text-text outline-none font-sans w-[86px] tabular-nums"
+            />
+          </div>
 
-      <div className="text-[12px] text-text-secondary mb-1.5">Месяц</div>
-      <div className="flex flex-wrap items-center gap-2 mb-4">
-        <button type="button" className={tab(monthOffset === null)} onClick={() => setMonthOffset(null)}>
-          Весь квартал
-        </button>
-        {[0, 1, 2].map((offset) => (
-          <button
-            key={offset}
-            type="button"
-            className={tab(offset === monthOffset)}
-            onClick={() => setMonthOffset(offset)}
-          >
-            {MONTHS[(quarter - 1) * 3 + offset]}
-          </button>
-        ))}
-      </div>
+          <div className="text-[12px] text-text-secondary mb-1.5">Месяц</div>
+          <div className="flex flex-wrap items-center gap-2 mb-4">
+            <button
+              type="button"
+              className={tab(monthOffset === null)}
+              onClick={() => setMonthOffset(null)}
+            >
+              Весь квартал
+            </button>
+            {[0, 1, 2].map((offset) => (
+              <button
+                key={offset}
+                type="button"
+                className={tab(offset === monthOffset)}
+                onClick={() => setMonthOffset(offset)}
+              >
+                {MONTHS[(quarter - 1) * 3 + offset]}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
 
       {loading && <div className="text-[13px] text-text-muted">Загрузка…</div>}
       {error && <div className="text-[13px] text-danger mb-3">{error}</div>}
 
-      {!loading && rows.length === 0 && (
+      {!loading && shown.length === 0 && (
         <div className="text-[13px] text-text-muted">
-          За этот квартал поступлений нет — заведите строку во вкладке «Поступления».
+          {report.payment_id
+            ? 'Строка поступления, к которой привязан отчёт, не найдена — возможно, её убрали.'
+            : 'За этот квартал поступлений нет — заведите строку во вкладке «Поступления».'}
         </div>
       )}
 
@@ -241,9 +297,9 @@ export function LinkReportPaymentModal({ report, level, isTop, onChanged }) {
         </div>
       )}
 
-      {!loading && rows.length > 0 && (
+      {!loading && shown.length > 0 && (
         <div className="border border-border rounded-card divide-y divide-border max-h-[320px] overflow-y-auto">
-          {ordered.map((p) => {
+          {shown.map((p) => {
             // Чужая площадка — строку видно, но выбрать нельзя: сервер такую
             // связку не примет, и лучше сказать об этом здесь, чем дать
             // нажать и показать отказ.

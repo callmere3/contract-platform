@@ -4,6 +4,7 @@ import { Card } from '../components/ui/Card';
 import { PageHeader } from '../components/ui/PageHeader';
 import { ComboCell } from '../components/ui/ComboCell';
 import { PartnerPicker } from '../components/ui/PartnerPicker';
+import { Tooltip } from '../components/ui/Tooltip';
 import { TrashIcon } from '../components/ui/icons';
 import { useAuth } from '../auth/AuthContext';
 import { canManagePartnerReports } from '../auth/permissions';
@@ -1154,9 +1155,15 @@ export function PartnerReportsPage() {
                         считались одним кодом. */}
                     <td className={`${td} whitespace-nowrap`}>
                       {r.payment_label ? (
-                        <span title={`Поступление от ${ru(r.payment_date)}`}>
-                          {r.payment_label}
-                        </span>
+                        /* Подсказка наша, а не браузерная (просьба владельца
+                           24.09.2026): та появляется через секунду, сама
+                           пропадает и рисуется мимо темы. */
+                        <Tooltip
+                          text={`Поступление от ${ru(r.payment_date)}`}
+                          className="inline-block"
+                        >
+                          <span className="cursor-help">{r.payment_label}</span>
+                        </Tooltip>
                       ) : (
                         <span className="text-text-muted">—</span>
                       )}
@@ -1164,13 +1171,30 @@ export function PartnerReportsPage() {
                     {/* СУММА, а не число строк (просьба владельца 18.09.2026):
                         десять строк по рублю и одна на сто тысяч выглядят
                         одинаково, если считать строки. */}
+                    {/* ПОДСКАЗКА НАША, А НЕ БРАУЗЕРНАЯ (просьба владельца
+                        24.09.2026): браузерная появляется через секунду, сама
+                        пропадает и рисуется системным шрифтом мимо темы — а
+                        здесь она часть работы, по ней решают, лезть ли в
+                        отчёт. То же решение, что в «Поступлениях». */}
                     <td
                       className={`${td} tabular-nums ${
                         Number(r.unmatched_amount) > 0 ? 'text-danger' : 'text-text-muted'
                       }`}
-                      title={`Строк без трека: ${r.unmatched_count}. Это суммы, которые пока не на что отнести.`}
                     >
-                      {Number(r.unmatched_amount) > 0 ? amount(r.unmatched_amount) : '—'}
+                      {Number(r.unmatched_amount) > 0 ? (
+                        <Tooltip
+                          text={
+                            `Строк без трека: ${r.unmatched_count}.\n` +
+                            'Эти деньги пока не на что отнести: они привязаны к\n' +
+                            'служебной позиции «Вне каталога», артикул 0000001'
+                          }
+                          className="inline-block"
+                        >
+                          <span className="cursor-help">{amount(r.unmatched_amount)}</span>
+                        </Tooltip>
+                      ) : (
+                        '—'
+                      )}
                     </td>
                     <td className={`${td} tabular-nums`}>{amount(r.total_author)}</td>
                     <td className={`${td} tabular-nums`}>{amount(r.total_related)}</td>
