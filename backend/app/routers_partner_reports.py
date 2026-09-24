@@ -70,7 +70,9 @@ from app.partner_reports import (
     artist_tokens,
     find_period,
     normalize_name,
+    mapping_columns,
     match_builtin,
+    normalize_header,
     parse_report,
     period_label,
     pick_track,
@@ -906,6 +908,12 @@ def _read_upload(file: UploadFile) -> bytes:
     return file.file.read()
 
 
+def _fits(mapping: dict, columns: list) -> bool:
+    """Все колонки, которые называет правило, есть в шапке файла."""
+    keys = {normalize_header(c) for c in columns if c}
+    return all(normalize_header(c) in keys for c in mapping_columns(mapping))
+
+
 def _pick_rule(rule: PartnerReportRule | None, mapping_json: str, columns: list) -> dict:
     """
     Чьё правило применяем — и откуда оно взялось.
@@ -926,9 +934,20 @@ def _pick_rule(rule: PartnerReportRule | None, mapping_json: str, columns: list)
             raise HTTPException(400, "mapping должен быть корректным JSON")
         if parsed:
             return {"mapping": parsed, "source": "form", "name": None, "vat_rate": None}
-    if rule is not None and rule.mapping:
-        return {"mapping": rule.mapping, "source": "partner", "name": None, "vat_rate": None}
+    # СОХРАНЁННОЕ ПРАВИЛО — ТОЛЬКО ЕСЛИ ОНО ПОДХОДИТ К ФАЙЛУ (баг, найден
+    # владельцем 24.09.2026). У Believe файлы с разной шапкой: RU подписан
+    # по-английски, KZ и AE — по-русски. После загрузки AE с «запомнить
+    # правило» у площадки легло русское правило, и английский файл RU
+    # перестал читаться вовсе: «нет колонок», период пустой.
+    #
+    # Правило партнёра не подходит к файлу → берём встроенное, ЕСЛИ файл им
+    # узнан. Не узнан ничем — остаётся правило партнёра, и человек получает
+    # внятный отказ «в файле нет колонок: …»: площадка, скорее всего,
+    # переименовала колонку, и молча переходить к догадке по названиям
+    # значило бы разобрать деньги не теми колонками.
     builtin = match_builtin(columns)
+    if rule is not None and rule.mapping and (_fits(rule.mapping, columns) or builtin is None):
+        return {"mapping": rule.mapping, "source": "partner", "name": None, "vat_rate": None}
     if builtin is not None:
         return {
             "mapping": builtin["mapping"],
