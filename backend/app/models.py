@@ -36,6 +36,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     SmallInteger,
@@ -1164,12 +1165,18 @@ class PartnerReportRow(Base):
     пришли, а кому их делить, неизвестно, и молчать об этом нельзя.
     """
     __tablename__ = "partner_report_rows"
+    # Строки читают ПО ПОРЯДКУ внутри отчёта (окно отчёта подгружает их
+    # кусками при прокрутке) — составной индекс отдаёт их уже отсортированными.
+    # Отдельного индекса по report_id нет: составной начинается с него.
+    __table_args__ = (
+        Index("ix_partner_report_rows_report_row", "report_id", "row_num"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     report_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("partner_reports.id", ondelete="CASCADE"), index=True
+        ForeignKey("partner_reports.id", ondelete="CASCADE")
     )
     row_num: Mapped[int] = mapped_column(Integer)
     # Артикул НЕОБЯЗАТЕЛЕН: у площадки он бывает не проставлен (в отчёте МТС

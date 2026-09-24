@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Modal, ModalAction } from '../components/ui/Modal';
 import { Button } from '../components/ui/Button';
 import { ComboCell } from '../components/ui/ComboCell';
@@ -33,7 +33,36 @@ import { formatMoney } from '../api/finance';
  * каталогу не меняются — «исправленный» отчёт, у которого файл говорит
  * одно, а база другое, объяснить потом нечем.
  */
-const PAGE = 200;
+
+/**
+ * ВЕСЬ ОТЧЁТ ОДНОЙ ТАБЛИЦЕЙ, БЕЗ СТРАНИЦ (просьба владельца 24.09.2026:
+ * «всё на одной странице, даже если будет большая прокрутка»).
+ *
+ * Отрисовать всё разом нельзя: у Believe полмиллиона строк, у ОМА полтора
+ * миллиона, и браузер на таком ляжет. Поэтому прокрутка — на весь отчёт, а
+ * в документе живут только видимые строки плюс запас (`OVERSCAN`); сверху и
+ * снизу их подпирают пустые строки нужной высоты. Сами строки приезжают с
+ * сервера кусками по `BLOCK` по мере прокрутки и держатся в кеше, пока
+ * человек рядом (`KEEP_BLOCKS`).
+ *
+ * ВЫСОТА СТРОКИ ЗАДАНА ЖЁСТКО (`ROW_H`), и на этом держится весь расчёт:
+ * номер строки получается делением прокрутки на высоту. Поэтому ячейки не
+ * переносят текст, а обрезают его многоточием, и полный текст — в
+ * подсказке. По той же причине ширины колонок заданы (`table-fixed`): иначе
+ * таблица пересчитывала бы их по каждому новому куску, и колонки прыгали бы
+ * под рукой.
+ *
+ * ОЧЕНЬ ДЛИННЫЙ ОТЧЁТ ПРОКРУЧИВАЕТСЯ В МАСШТАБЕ. Браузеры не рисуют
+ * элементы выше нескольких миллионов пикселей (Firefox — около 17,9 млн), а
+ * полтора миллиона строк по 27 px — это 40 млн. Выше `MAX_HEIGHT` высота
+ * таблицы перестаёт расти, и полоса прокрутки просто пробегает весь отчёт
+ * пропорционально: одно деление колеса мыши тогда сдвигает больше строк.
+ */
+const BLOCK = 500; // строк за запрос — столько отдаёт сервер максимум
+const ROW_H = 27;
+const OVERSCAN = 20;
+const MAX_HEIGHT = 8_000_000;
+const KEEP_BLOCKS = 40;
 
 const ATTRS = [
   { name: 'content_type', label: 'Тип контента' },
@@ -55,35 +84,115 @@ export function ReportRowsModal({
   // Карточка живёт в состоянии: после правки сервер возвращает её целиком, и
   // окно должно показать новое, не дожидаясь, пока перечитается список.
   const [card, setCard] = useState(report);
-  const [rows, setRows] = useState([]);
   const [perRow, setPerRow] = useState({});
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
-  const [loading, setLoading] = useState(true);
+  // null — отчёт ещё не открылся: пока не знаем числа строк, рисовать нечего.
+  const [total, setTotal] = useState(null);
   const [error, setError] = useState('');
+
+  // Куски строк: номер куска → строки. В ref, а не в состоянии: их много и
+  // они приходят вразнобой; перерисовку зовёт счётчик `version`.
+  const blocks = useRef(new Map());
+  const inflight = useRef(new Set());
+  const [version, setVersion] = useState(0);
+  // Поколение данных. После правки шапки куски перечитываются (в строках
+  // лежит снимок параметров), и ответ, пришедший на старый запрос, должен
+  // быть выброшен, а не лечь в свежий кеш.
+  const [gen, setGen] = useState(0);
+  const genRef = useRef(0);
+
+  const scroller = useRef(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewH, setViewH] = useState(800);
 
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(null);
   const [saving, setSaving] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const data = await reportRows(card.id, { page, pageSize: PAGE });
-      setRows(data.rows ?? []);
-      setTotal(data.total ?? 0);
-      setPerRow(data.per_row_attributes ?? {});
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [card.id, page]);
-
+  // Первый кусок заодно говорит, сколько строк в отчёте и какие параметры
+  // взяты из колонок файла.
   useEffect(() => {
-    load();
-  }, [load]);
+    genRef.current = gen;
+    blocks.current = new Map();
+    inflight.current = new Set();
+    let cancelled = false;
+    reportRows(card.id, { page: 1, pageSize: BLOCK })
+      .then((data) => {
+        if (cancelled) return;
+        blocks.current.set(0, data.rows ?? []);
+        setTotal(data.total ?? 0);
+        setPerRow(data.per_row_attributes ?? {});
+        setVersion((v) => v + 1);
+      })
+      .catch((e) => !cancelled && setError(e.message));
+    return () => {
+      cancelled = true;
+    };
+  }, [card.id, gen]);
+
+  // Высота видимой части: окно во весь экран, и она меняется вместе с окном
+  // браузера.
+  const tableShown = total !== null;
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    const measure = () => setViewH(el.clientHeight);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [tableShown]);
+
+  // КАКИЕ СТРОКИ СЕЙЧАС НА ЭКРАНЕ. Без масштаба это просто прокрутка,
+  // делённая на высоту строки; с масштабом — доля пройденной прокрутки от
+  // всего отчёта (см. MAX_HEIGHT в начале файла).
+  const rowsCount = total ?? 0;
+  const fullH = rowsCount * ROW_H;
+  const bodyH = Math.min(fullH, MAX_HEIGHT);
+  const viewRows = Math.ceil(viewH / ROW_H);
+  const lastStart = Math.max(0, rowsCount - viewRows);
+  const maxScroll = Math.max(1, bodyH - viewH);
+  const startExact =
+    fullH <= MAX_HEIGHT
+      ? scrollTop / ROW_H
+      : Math.min(1, scrollTop / maxScroll) * lastStart;
+  const first = Math.max(0, Math.floor(startExact) - OVERSCAN);
+  const last = Math.min(rowsCount, Math.ceil(startExact) + viewRows + OVERSCAN);
+  const topPad = Math.min(bodyH, Math.max(0, scrollTop - (startExact - first) * ROW_H));
+  const bottomPad = Math.max(0, bodyH - topPad - (last - first) * ROW_H);
+
+  // ДОГРУЗКА КУСКОВ — с задержкой: пока ползунок тащат, экран пробегает
+  // сотни кусков, и просить каждый из них незачем. Спрашиваем то, на чём
+  // остановились.
+  useEffect(() => {
+    if (total === null || last <= first) return;
+    const timer = setTimeout(() => {
+      const from = Math.floor(first / BLOCK);
+      const to = Math.floor((last - 1) / BLOCK);
+      const myGen = genRef.current;
+      for (let b = from; b <= to; b += 1) {
+        if (blocks.current.has(b) || inflight.current.has(b)) continue;
+        inflight.current.add(b);
+        reportRows(card.id, { page: b + 1, pageSize: BLOCK })
+          .then((data) => {
+            if (genRef.current !== myGen) return;
+            blocks.current.set(b, data.rows ?? []);
+            // Кеш не растёт бесконечно: дальние от экрана куски выбрасываем,
+            // вернётся человек — приедут заново.
+            if (blocks.current.size > KEEP_BLOCKS) {
+              const center = (from + to) / 2;
+              const far = [...blocks.current.keys()]
+                .sort((x, y) => Math.abs(y - center) - Math.abs(x - center))
+                .slice(0, blocks.current.size - KEEP_BLOCKS);
+              for (const key of far) blocks.current.delete(key);
+            }
+            setVersion((v) => v + 1);
+          })
+          .catch((e) => genRef.current === myGen && setError(e.message))
+          .finally(() => inflight.current.delete(b));
+      }
+    }, 120);
+    return () => clearTimeout(timer);
+  }, [card.id, total, first, last, version]);
 
   function startEdit() {
     setDraft({
@@ -105,6 +214,8 @@ export function ReportRowsModal({
       });
       setCard(fresh);
       setEditing(false);
+      // В строках лежит снимок параметров отчёта — перечитываем их.
+      setGen((g) => g + 1);
       onChanged?.();
     } catch (e) {
       setError(e.message);
@@ -114,11 +225,12 @@ export function ReportRowsModal({
   }
 
   const th =
-    'text-left font-semibold text-[11px] uppercase tracking-[0.04em] text-text-muted px-2 py-1.5 whitespace-nowrap border-b border-border bg-surface sticky top-0';
-  const td = 'px-2 py-1 border-t border-border-soft text-[12.5px] whitespace-nowrap';
+    'text-left font-semibold text-[11px] uppercase tracking-[0.04em] text-text-muted px-2 py-1.5 whitespace-nowrap border-b border-border bg-surface sticky top-0 z-[1]';
+  // Высота строки задана жёстко — см. ROW_H: ячейка не переносит текст.
+  const td =
+    'px-2 py-0 border-t border-border-soft text-[12.5px] whitespace-nowrap overflow-hidden text-ellipsis';
   const field =
     'bg-input-bg border border-border rounded-input px-2 py-1 text-[12.5px] text-text outline-none font-sans';
-  const pages = Math.max(1, Math.ceil(total / PAGE));
   const count = (v) => Number(v ?? 0).toLocaleString('ru-RU', { maximumFractionDigits: 2 });
 
   return (
@@ -282,11 +394,20 @@ export function ReportRowsModal({
       </div>
 
       {error && <div className="text-[13px] text-danger mb-3">{error}</div>}
-      {loading && <div className="text-[13px] text-text-muted">Загрузка…</div>}
+      {!tableShown && !error && <div className="text-[13px] text-text-muted">Загрузка…</div>}
 
-      {!loading && (
-        <div className="border border-border rounded-card overflow-auto flex-1 min-h-0">
-          <table className="w-full border-collapse">
+      {tableShown && (
+        <div
+          ref={scroller}
+          onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
+          className="border border-border rounded-card overflow-auto flex-1 min-h-0"
+        >
+          <table className="w-full min-w-[1400px] table-fixed border-collapse">
+            <colgroup>
+              {COLUMN_WIDTHS.map((w, i) => (
+                <col key={i} style={{ width: w }} />
+              ))}
+            </colgroup>
             <thead>
               <tr>
                 <th className={th}>Артикул</th>
@@ -304,19 +425,36 @@ export function ReportRowsModal({
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
-                <tr
-                  key={r.row}
-                  /* Строку, которой нет в номенклатуре, подсвечиваем: её
-                     деньги ушли в «Вне каталога», и это видно сразу. */
-                  className={r.matched ? undefined : 'bg-danger-soft'}
-                >
+              {topPad > 0 && <Spacer height={topPad} />}
+              {Array.from({ length: last - first }, (_, k) => first + k).map((i) => {
+                const r = blocks.current.get(Math.floor(i / BLOCK))?.[i % BLOCK];
+                if (!r) {
+                  // Кусок ещё едет — место под строку держим, чтобы
+                  // прокрутка не прыгала, когда он приедет.
+                  return (
+                    <tr key={`wait-${i}`} style={{ height: ROW_H }}>
+                      <td colSpan={COLUMN_WIDTHS.length} className={`${td} text-text-muted`}>
+                        …
+                      </td>
+                    </tr>
+                  );
+                }
+                return (
+                  <tr
+                    key={r.row}
+                    style={{ height: ROW_H }}
+                    /* Строку, которой нет в номенклатуре, подсвечиваем: её
+                       деньги ушли в «Вне каталога», и это видно сразу. */
+                    className={r.matched ? undefined : 'bg-danger-soft'}
+                  >
                   <td className={`${td} font-mono`}>{r.sku || '—'}</td>
-                  <td className={`${td} font-mono text-text-secondary`}>{r.code || '—'}</td>
-                  <td className={`${td} max-w-[280px] truncate`} data-hint={r.title}>
+                  <td className={`${td} font-mono text-text-secondary`} data-hint={r.code}>
+                    {r.code || '—'}
+                  </td>
+                  <td className={td} data-hint={r.title}>
                     {r.title || '—'}
                   </td>
-                  <td className={`${td} max-w-[200px] truncate text-text-secondary`}>
+                  <td className={`${td} text-text-secondary`} data-hint={r.artist}>
                     {r.artist || '—'}
                   </td>
                   <td className={`${td} text-text-secondary`}>{r.content_type || '—'}</td>
@@ -327,40 +465,29 @@ export function ReportRowsModal({
                   <td className={`${td} tabular-nums text-right`}>{r.total}</td>
                   <td className={`${td} tabular-nums text-right`}>{r.amount_author}</td>
                   <td className={`${td} tabular-nums text-right`}>{r.amount_related}</td>
-                </tr>
-              ))}
+                  </tr>
+                );
+              })}
+              {bottomPad > 0 && <Spacer height={bottomPad} />}
             </tbody>
           </table>
         </div>
       )}
 
-      {/* СТРАНИЦЫ, А НЕ ВСЁ РАЗОМ: в отчёте Believe полмиллиона строк, и
-          браузер на них ляжет. По двести — столько же, сколько в
-          предпросмотре импорта номенклатуры. */}
-      {pages > 1 && (
-        <div className="flex items-center gap-3 mt-3 text-[12.5px] text-text-secondary shrink-0">
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={page <= 1 || loading}
-            onClick={() => setPage((v) => v - 1)}
-          >
-            Назад
-          </Button>
-          <span className="tabular-nums">
-            {page} из {pages}
-          </span>
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={page >= pages || loading}
-            onClick={() => setPage((v) => v + 1)}
-          >
-            Вперёд
-          </Button>
-        </div>
-      )}
     </Modal>
+  );
+}
+
+// Ширины колонок — по порядку заголовков. Заданы, а не посчитаны по
+// содержимому: иначе они менялись бы с каждым приехавшим куском строк.
+const COLUMN_WIDTHS = [96, 150, '22%', '14%', 110, 130, 130, 96, 90, 110, 110, 110];
+
+/** Пустая строка-подпорка: держит высоту строк, которых сейчас нет в документе. */
+function Spacer({ height }) {
+  return (
+    <tr aria-hidden style={{ height }}>
+      <td colSpan={COLUMN_WIDTHS.length} className="p-0 border-0" />
+    </tr>
   );
 }
 
