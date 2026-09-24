@@ -60,6 +60,23 @@ export function Modal({
     if (!card.current.contains(document.activeElement)) card.current.focus();
   }, [isTop]);
 
+  // ОКНО ВО ВЕСЬ ЭКРАН ПРЯЧЕТ ПРОКРУТКУ СТРАНИЦЫ ПОД СОБОЙ (замечание
+  // владельца 24.09.2026). Окно лежит поверх страницы, а страница под ним
+  // длиннее экрана и сохраняла свою полосу прокрутки: справа висела вторая
+  // прокрутка, которой в окне нечего прокручивать. Только у полноэкранных:
+  // у обычного окна страница видна по краям, и пропавшая полоса сдвинула бы
+  // её вбок на свою ширину. Прежнее значение возвращаем, а не стираем —
+  // окна вкладываются друг в друга.
+  useEffect(() => {
+    if (!fullscreen) return;
+    const html = document.documentElement;
+    const before = html.style.overflow;
+    html.style.overflow = 'hidden';
+    return () => {
+      html.style.overflow = before;
+    };
+  }, [fullscreen]);
+
   return (
     <div
       onClick={onClose}
