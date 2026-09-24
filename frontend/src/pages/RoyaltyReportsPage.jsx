@@ -266,7 +266,10 @@ export function RoyaltyReportsPage() {
   };
 
   return (
-    <div className="max-w-[1280px] mx-auto px-8 pt-12 pb-20">
+    // ШИРЕ ОСТАЛЬНЫХ ВКЛАДОК (просьба владельца 24.09.2026): в сводке по
+    // правообладателю восемь колонок сумм, и на 1280 они уезжали в
+    // горизонтальную прокрутку, а знак рубля переносился на новую строку.
+    <div className="max-w-[1680px] mx-auto px-8 pt-12 pb-20">
       <PageHeader
         title={
           <>
@@ -850,7 +853,7 @@ function SummaryTable({ summary }) {
                     {summary.columns.map((c) => (
                       <td
                         key={c.field}
-                        className={`${td} ${numeric(c) ? 'tabular-nums text-right' : ''} ${
+                        className={`${td} ${numeric(c) ? 'tabular-nums text-right whitespace-nowrap' : ''} ${
                           c.field === 'reward' ? 'font-semibold' : ''
                         }`}
                       >
@@ -863,7 +866,7 @@ function SummaryTable({ summary }) {
                   {summary.columns.map((c, i) => (
                     <td
                       key={c.field}
-                      className={`${td} font-semibold ${numeric(c) ? 'tabular-nums text-right' : ''}`}
+                      className={`${td} font-semibold ${numeric(c) ? 'tabular-nums text-right whitespace-nowrap' : ''}`}
                     >
                       {i === 0 ? 'Итого' : c.field in summary.totals ? show(c, summary.totals[c.field]) : ''}
                     </td>
@@ -887,7 +890,8 @@ function PreviewTable({ preview }) {
   const th =
     'text-left font-semibold text-[11px] uppercase tracking-[0.04em] text-text-muted px-3 py-2 whitespace-nowrap border-b border-border';
   const td = 'px-3 py-2 border-t border-border text-[13px]';
-  const num = `${td} tabular-nums text-right`;
+  // Числа не переносятся: знак рубля не должен уезжать на новую строку.
+  const num = `${td} tabular-nums text-right whitespace-nowrap`;
   const skipped = preview.skipped_reports ?? [];
   const unlinked = preview.unlinked_reports ?? [];
   return (
