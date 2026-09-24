@@ -289,9 +289,9 @@ export function ReportRowsModal({
                 {formatMoney(card.total_related)})
               </span>
             </span>
-            <Button variant="secondary" size="sm" onClick={closeModal}>
-              Закрыть
-            </Button>
+            {/* Кнопки «Закрыть» нет (просьба владельца 24.09.2026): её работу
+                делает крестик в шапке, а два способа одного действия
+                заставляют гадать, есть ли между ними разница. */}
           </>
         )
       }
