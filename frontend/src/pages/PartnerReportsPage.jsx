@@ -1038,8 +1038,8 @@ export function PartnerReportsPage() {
                           нечего. */}
                       {preview.totals.unmatched > 0 && (
                         <div>
-                          Нет в номенклатуре: {preview.totals.unmatched} строк — они загрузятся
-                          неразнесёнными.
+                          Нет в номенклатуре: {preview.totals.unmatched} строк — они
+                          загрузятся в «Вне каталога».
                         </div>
                       )}
                       {preview.totals.problem_rows > 0 && (
@@ -1113,7 +1113,12 @@ export function PartnerReportsPage() {
                     </th>
                   ))}
                   <th className={th}>Поступление</th>
-                  <th className={th}>Не разнесено, ₽</th>
+                  {/* «ВНЕ КАТАЛОГА», А НЕ «НЕ РАЗНЕСЕНО» (просьба владельца
+                      24.09.2026): столбец показывает деньги по строкам,
+                      которых нет в номенклатуре, и с тех пор, как у них
+                      появился общий адрес — служебная позиция «Вне
+                      каталога», — так и понятнее, и точнее. */}
+                  <th className={th}>Вне каталога, ₽</th>
                   <th className={th}>Авторские, ₽</th>
                   <th className={th}>Смежные, ₽</th>
                   <th className={th}></th>
