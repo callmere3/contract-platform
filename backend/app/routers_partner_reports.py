@@ -29,8 +29,11 @@
 количество, сумма авторских, сумма смежных) и складывается в базу; кому и
 сколько из этих сумм причитается — следующий шаг, он живёт в правах на треки.
 """
+import hashlib
 import json
 import re
+import threading
+import time
 import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
@@ -1060,6 +1063,7 @@ def delete_alias(
     partner = db.get(Partner, alias.partner_id)
     db.delete(alias)
     db.commit()
+    forget_all_parsed()
     log_action(
         db, current_user, "partner_report.alias.delete", entity_type="partner",
         entity_id=alias.partner_id,
@@ -1091,6 +1095,245 @@ def find_track_by_sku(sku: str = "", db: Session = Depends(get_session)) -> dict
     }
 
 
+def _head_info(
+    db: Session, partner_id: str, content: bytes, filename: str,
+    mapping: str, vat_rate: str, sheet: str,
+) -> dict:
+    """
+    Всё, что читается по ВЕРХУ файла: площадка, правило, лист, НДС, период и
+    параметры. Общее для быстрого `inspect` и полного `preview`.
+
+    Сюда не входит ни одной строки данных — поэтому это доли секунды даже на
+    полумиллионном отчёте (замер на проде 24.09.2026, «Зайцев.нет»: шапка
+    0,1 с, разбор строк 21 с, привязка к каталогу 12 с).
+    """
+    # ПАРТНЁРА МОЖНО НЕ ВЫБИРАТЬ: если файл узнан по колонкам, площадка
+    # определяется из самого правила (просьба владельца 18.09.2026 — «я могу
+    # перетянуть отчёт МТС, и он должен выбраться сам»). Не узнан — тогда да,
+    # выбирать: по чужому формату гадать не о чем.
+    partner = _partner_for(db, partner_id, content, filename)
+
+    rule = db.scalar(
+        select(PartnerReportRule).where(PartnerReportRule.partner_id == partner.id)
+    )
+    sheets = sheet_names(content, filename)
+    chosen_sheet = sheet.strip() or (rule.sheet if rule else None)
+
+    # ВЕРХ ФАЙЛА ЧИТАЕМ ОДИН РАЗ и переиспользуем: по нему определяются и
+    # колонки, и период из шапки. Раньше предпросмотр читал файл ЦЕЛИКОМ трижды
+    # (колонки, разбор, период), и на отчёте в полмиллиона строк каждый проход
+    # стоил полторы минуты и гигабайт памяти.
+    file_head = read_head(content, filename, chosen_sheet)
+    # Колонки читаем ДО применения правила: если правила нет, догадка
+    # строится как раз по ним.
+    columns, header_row = read_columns(content, filename, chosen_sheet, head=file_head)
+    chosen = _pick_rule(rule, mapping, columns)
+    active_mapping = chosen["mapping"]
+    rate = (
+        vat_rate.strip()
+        or (str(rule.vat_rate) if rule and rule.vat_rate else "")
+        or (str(chosen["vat_rate"]) if chosen["vat_rate"] else "")
+    )
+    # Заготовка параметров узнаётся ПО ФАЙЛУ, даже если колонки разбирает
+    # правило партнёра или настройка из формы (см. ниже, "attributes").
+    builtin_attrs = (match_builtin(columns) or {}).get("attributes") or {}
+
+    # ПЕРИОД, НАПИСАННЫЙ В САМОМ ФАЙЛЕ: у МТС это строка над шапкой («за
+    # период с 1 июля 2026 по 31 июля 2026»). Период — единственное, что
+    # человек вводит руками, и ошибиться в нём легче всего: файл за июнь
+    # грузят в июле. Это подсказка — форма подставит, а править можно.
+    found_period = find_period(file_head, header_row)
+    return {
+        "partner": partner,
+        "sheet": chosen_sheet,
+        "mapping": active_mapping,
+        "rate": rate,
+        "out": {
+            "partner": {"id": str(partner.id), "name": partner.name},
+            "file_name": filename,
+            "sheets": sheets,
+            "sheet": chosen_sheet,
+            "columns": columns,
+            "header_row": header_row + 1,     # человеку — как в Excel
+            "mapping": active_mapping,
+            "rule_saved": rule is not None,
+            # Откуда взялось правило: готовое правило площадки, сохранённое у
+            # партнёра, настроенное сейчас руками или догадка по названиям колонок.
+            "rule_source": chosen["source"],
+            "rule_name": chosen["name"],
+            "vat_rate": rate or None,
+            # Параметры отчёта: что запомнено у партнёра — то и подставим, а чего
+            # не запомнено, берём из заготовки готового правила площадки (у МТС
+            # это «RBT · <не участвует> · Mobile · RU»).
+            #
+            # ЗАГОТОВКУ ИЩЕМ ОТДЕЛЬНО от того, чьё правило разобрало колонки: у
+            # МТС правило партнёра сохранено (колонки настраивали руками), и
+            # раньше вместе с ним выигрывали его пустые параметры — поля
+            # оставались пустыми, хотя заготовка есть. Правило — про формат файла,
+            # заготовка — про площадку, и мешать их не надо.
+            "attributes": {
+                name: (getattr(rule, name) if rule else None) or builtin_attrs.get(name)
+                for name in REPORT_ATTRS
+            },
+            "attribute_labels": ATTR_LABELS,
+            # Какие из четырёх параметров правило берёт ИЗ КОЛОНКИ файла: у таких
+            # значение своё в каждой строке, и поле «одно на весь отчёт» для них
+            # не показывается — иначе человек правил бы то, что ни на что не
+            # влияет.
+            "attributes_from_columns": {
+                name: ((active_mapping or {}).get(name) or {}).get("column")
+                for name in REPORT_ATTRS
+                if ((active_mapping or {}).get(name) or {}).get("column")
+            },
+            "period": (
+                {
+                    "from": found_period[0].isoformat(),
+                    "to": found_period[1].isoformat(),
+                    "label": period_label(*found_period),
+                }
+                if found_period
+                else None
+            ),
+        },
+    }
+
+
+# ------------------------------------------------ общий разбор строк с памятью
+#
+# ЗАГРУЗКА НЕ ПОВТОРЯЕТ РАБОТУ ПРЕДПРОСМОТРА (просьба владельца 24.09.2026:
+# «хочу нажать „Загрузить“, не дожидаясь предпросмотра»). Разбор строк и
+# привязка к каталогу — это всё время обработки (у «Зайцев.нет» 21 + 12 с), и
+# раньше они делались дважды: в предпросмотре и ещё раз при загрузке. Теперь
+# результат запоминается по КЛЮЧУ ИЗ ВСЕГО, ОТ ЧЕГО ОН ЗАВИСИТ: содержимое
+# файла, итоговое правило, ставка НДС, лист, вписанные артикулы, площадка.
+# Нажали «Загрузить», пока предпросмотр того же файла ещё считается, — загрузка
+# ДОЖДЁТСЯ его расчёта, а не запустит второй.
+#
+# Прежнее правило «файл при загрузке разбирается заново» от этого не
+# нарушается по сути: оно было о том, что между предпросмотром и загрузкой
+# человек мог поменять правило. Поменял — ключ другой, и разбор честно
+# делается заново. Совпало всё — результат тот же самый, пересчитывать его
+# незачем.
+#
+# ПРИВЯЗКА ЗАВИСИТ И ОТ БАЗЫ, не только от файла: от номенклатуры и
+# запомненных артикулов площадки. Поэтому память СБРАСЫВАЕТСЯ ЦЕЛИКОМ, как
+# только они меняются (`forget_all_parsed`): после загрузки отчёта (она
+# запоминает вписанные артикулы), удаления сопоставления, импорта и правки
+# номенклатуры. Найдено прогоном: без сброса повторный предпросмотр того же
+# файла не видел только что запомненного артикула. Заливку каталога скриптом
+# (`ops/import_tracks.py`, отдельный процесс) отсюда не видно — её покрывает
+# срок жизни записи.
+#
+# Память на процесс (uvicorn у нас один), живёт `PARSED_TTL` и держит не больше
+# `PARSED_KEEP` файлов: разобранный Believe — это сотни мегабайт.
+PARSED_TTL = 600
+PARSED_KEEP = 2
+_parsed: dict = {}
+_parsed_lock = threading.Lock()
+
+
+def _parsed_key(content: bytes, filename: str, head: dict, manual: dict) -> str:
+    rate = head["rate"]
+    try:
+        rate = format(Decimal(rate).normalize(), "f") if rate else ""
+    except Exception:
+        pass
+    parts = (
+        hashlib.sha256(content).hexdigest(),
+        (filename or "").lower().rsplit(".", 1)[-1],
+        json.dumps(head["mapping"], sort_keys=True, ensure_ascii=False),
+        rate,
+        head["sheet"] or "",
+        json.dumps(sorted(manual.items())),
+        str(head["partner"].id),
+    )
+    return hashlib.sha256(repr(parts).encode("utf-8")).hexdigest()
+
+
+def _parse_and_resolve(db: Session, content: bytes, filename: str, head: dict, manual: dict):
+    """
+    Разобрать строки и привязать их к каталогу: (ParseResult, {строка: трек}).
+
+    Результат общий для предпросмотра и загрузки — см. комментарий выше.
+    Строки после этого НЕ МЕНЯТЬ: тот же объект может читать соседний запрос.
+    """
+    key = _parsed_key(content, filename, head, manual)
+    now = time.monotonic()
+    with _parsed_lock:
+        for k in [k for k, e in _parsed.items() if now - e["at"] > PARSED_TTL]:
+            _parsed.pop(k, None)
+        entry = _parsed.get(key)
+        owner = entry is None
+        if owner:
+            entry = {"event": threading.Event(), "at": now}
+            _parsed[key] = entry
+            # Лишнее выбрасываем, начиная со старых. Недосчитанные тоже можно:
+            # их владелец досчитает и отдаст своим, просто без памяти.
+            for k in sorted(_parsed, key=lambda k: _parsed[k]["at"])[:-PARSED_KEEP]:
+                _parsed.pop(k, None)
+    if owner:
+        try:
+            result = parse_report(
+                content, filename, head["mapping"],
+                vat_rate=head["rate"] or None, sheet=head["sheet"],
+            )
+            # Артикулы, вписанные руками в предпросмотре, — до привязки к каталогу.
+            _apply_manual(result.rows, manual)
+            # Привязка к каталогу: по артикулу, а строки без него — по названию
+            # и исполнителю (см. _resolve_tracks).
+            resolved = (
+                {} if result.problems
+                else _resolve_tracks(db, result.rows, head["partner"].id)
+            )
+            for row in result.rows:
+                if row.row_num in manual:
+                    row.matched_by = "manual"
+            entry["value"] = (result, resolved)
+        except BaseException as exc:
+            entry["error"] = exc
+            with _parsed_lock:
+                if _parsed.get(key) is entry:
+                    _parsed.pop(key, None)
+            raise
+        finally:
+            entry["event"].set()
+        return entry["value"]
+    # Чужой расчёт того же файла уже идёт — ждём его, а не начинаем свой.
+    entry["event"].wait(PARSED_TTL)
+    if "value" not in entry:
+        raise HTTPException(500, "Разбор файла не удался — попробуйте ещё раз")
+    return entry["value"]
+
+
+def forget_all_parsed() -> None:
+    """Номенклатура или запомненные артикулы поменялись — привязка устарела."""
+    with _parsed_lock:
+        _parsed.clear()
+
+
+@partner_reports_router.post(
+    "/inspect", dependencies=[Depends(require_role(*CAN_MANAGE_PARTNER_REPORTS))]
+)
+def inspect(
+    partner_id: str = Form(""),
+    file: UploadFile = File(...),
+    mapping: str = Form(""),
+    vat_rate: str = Form(""),
+    sheet: str = Form(""),
+    db: Session = Depends(get_session),
+) -> dict:
+    """
+    БЫСТРЫЙ ВЗГЛЯД НА ФАЙЛ — только шапка (просьба владельца 24.09.2026).
+
+    Площадка, правило, период, параметры и НДС — ровно то, что нужно форме,
+    чтобы сразу показать кнопку «Загрузить отчёт». Строк не читает, поэтому
+    отвечает за доли секунды даже на полумиллионном отчёте. Строки, итоги и
+    «нет в номенклатуре» считает следом `preview`.
+    """
+    content = _read_upload(file)
+    return _head_info(db, partner_id, content, file.filename, mapping, vat_rate, sheet)["out"]
+
+
 @partner_reports_router.post(
     "/preview", dependencies=[Depends(require_role(*CAN_MANAGE_PARTNER_REPORTS))]
 )
@@ -1112,119 +1355,33 @@ def preview(
     (в Dista его приходилось вбивать руками — «пропустить строк сверху»).
     """
     content = _read_upload(file)
-    # ПАРТНЁРА МОЖНО НЕ ВЫБИРАТЬ: если файл узнан по колонкам, площадка
-    # определяется из самого правила (просьба владельца 18.09.2026 — «я могу
-    # перетянуть отчёт МТС, и он должен выбраться сам»). Не узнан — тогда да,
-    # выбирать: по чужому формату гадать не о чем.
-    partner = _partner_for(db, partner_id, content, file.filename)
-
-    rule = db.scalar(
-        select(PartnerReportRule).where(PartnerReportRule.partner_id == partner.id)
-    )
-    sheets = sheet_names(content, file.filename)
-    chosen_sheet = sheet.strip() or (rule.sheet if rule else None)
-
-    # ВЕРХ ФАЙЛА ЧИТАЕМ ОДИН РАЗ и переиспользуем: по нему определяются и
-    # колонки, и период из шапки. Раньше предпросмотр читал файл ЦЕЛИКОМ трижды
-    # (колонки, разбор, период), и на отчёте в полмиллиона строк каждый проход
-    # стоил полторы минуты и гигабайт памяти.
-    file_head = read_head(content, file.filename, chosen_sheet)
-    # Колонки читаем ДО применения правила: если правила нет, догадка
-    # строится как раз по ним.
-    columns, _ = read_columns(content, file.filename, chosen_sheet, head=file_head)
-    chosen = _pick_rule(rule, mapping, columns)
-    active_mapping = chosen["mapping"]
-    rate = (
-        vat_rate.strip()
-        or (str(rule.vat_rate) if rule and rule.vat_rate else "")
-        or (str(chosen["vat_rate"]) if chosen["vat_rate"] else "")
-    )
-    # Заготовка параметров узнаётся ПО ФАЙЛУ, даже если колонки разбирает
-    # правило партнёра или настройка из формы (см. ниже, "attributes").
-    builtin_attrs = (match_builtin(columns) or {}).get("attributes") or {}
+    head = _head_info(db, partner_id, content, file.filename, mapping, vat_rate, sheet)
     manual = _manual_skus(manual_skus)
 
     # Разбираем ВЕСЬ файл, а не первые сто строк: итоги человек сверяет с
     # платежом площадки, а строки без артикула бывают и на пятисотой строке —
     # показать их иначе нечем.
-    result = parse_report(
-        content, file.filename, active_mapping,
-        vat_rate=rate or None, sheet=chosen_sheet,
-    )
-    _apply_manual(result.rows, manual)
-    # Привязку показываем уже в предпросмотре: человек должен видеть, что
-    # артикул подобран по названию, ДО того, как отчёт ляжет в базу.
-    resolved = {} if result.problems else _resolve_tracks(db, result.rows, partner.id)
-    for row in result.rows:
-        if row.row_num in manual:
-            row.matched_by = "manual"
+    result, resolved = _parse_and_resolve(db, content, file.filename, head, manual)
 
     # Начало файла и строки без трека — ДВА РАЗНЫХ СПИСКА, а не один
     # склеенный: первый показывают всегда, второй — по кнопке. Склеенные, они
     # дописывали в конец таблицы строки из середины файла, и выглядело это так,
     # будто отчёт ими заканчивается.
-    head = result.rows[:PREVIEW_ROWS]
+    first_rows = result.rows[:PREVIEW_ROWS]
     missing = [r for r in result.rows if r.row_num not in resolved][:UNMATCHED_PREVIEW]
 
     totals = result.totals
-    # ПЕРИОД, НАПИСАННЫЙ В САМОМ ФАЙЛЕ: у МТС это строка над шапкой («за
-    # период с 1 июля 2026 по 31 июля 2026»). Период — единственное, что
-    # человек вводит руками, и ошибиться в нём легче всего: файл за июнь
-    # грузят в июле. Это подсказка — форма подставит, а править можно.
-    found_period = find_period(file_head, result.header_row)
     return {
-        "partner": {"id": str(partner.id), "name": partner.name},
-        "file_name": file.filename,
-        "sheets": sheets,
-        "sheet": chosen_sheet,
+        **head["out"],
         "columns": result.columns,
-        "header_row": result.header_row + 1,     # человеку — как в Excel
-        "mapping": active_mapping,
-        "rule_saved": rule is not None,
-        # Откуда взялось правило: готовое правило площадки, сохранённое у
-        # партнёра, настроенное сейчас руками или догадка по названиям колонок.
-        "rule_source": chosen["source"],
-        "rule_name": chosen["name"],
-        "vat_rate": rate or None,
-        # Параметры отчёта: что запомнено у партнёра — то и подставим, а чего
-        # не запомнено, берём из заготовки готового правила площадки (у МТС
-        # это «RBT · <не участвует> · Mobile · RU»).
-        #
-        # ЗАГОТОВКУ ИЩЕМ ОТДЕЛЬНО от того, чьё правило разобрало колонки: у
-        # МТС правило партнёра сохранено (колонки настраивали руками), и
-        # раньше вместе с ним выигрывали его пустые параметры — поля
-        # оставались пустыми, хотя заготовка есть. Правило — про формат файла,
-        # заготовка — про площадку, и мешать их не надо.
-        "attributes": {
-            name: (getattr(rule, name) if rule else None) or builtin_attrs.get(name)
-            for name in REPORT_ATTRS
-        },
-        "attribute_labels": ATTR_LABELS,
-        # Какие из четырёх параметров правило берёт ИЗ КОЛОНКИ файла: у таких
-        # значение своё в каждой строке, и поле «одно на весь отчёт» для них
-        # не показывается — иначе человек правил бы то, что ни на что не
-        # влияет.
-        "attributes_from_columns": {
-            name: ((chosen["mapping"] or {}).get(name) or {}).get("column")
-            for name in REPORT_ATTRS
-            if ((chosen["mapping"] or {}).get(name) or {}).get("column")
-        },
-        "period": (
-            {
-                "from": found_period[0].isoformat(),
-                "to": found_period[1].isoformat(),
-                "label": period_label(*found_period),
-            }
-            if found_period
-            else None
-        ),
+        "header_row": result.header_row + 1,
         "problems": result.problems,
         # Предупреждения не мешают загрузке, но должны быть видны до неё:
         # сейчас это «файл потерял буквы» (см. _warn_if_lossy).
         "warnings": result.warnings,
-        "preview": [_preview_row(r, resolved) for r in head],
+        "preview": [_preview_row(r, resolved) for r in first_rows],
         "unmatched_rows": [_preview_row(r, resolved) for r in missing],
-        "preview_limited": totals["rows"] > len(head),
+        "preview_limited": totals["rows"] > len(first_rows),
         "totals": {
             "rows": totals["rows"],
             "ok_rows": totals["ok_rows"],
@@ -1364,20 +1521,20 @@ def create_report(
     rule = db.scalar(
         select(PartnerReportRule).where(PartnerReportRule.partner_id == partner_id)
     )
-    chosen_sheet = sheet.strip() or (rule.sheet if rule else None)
-    columns, _ = read_columns(content, file.filename, chosen_sheet)
-    chosen = _pick_rule(rule, mapping, columns)
-    active_mapping = chosen["mapping"]
-    rate = (
-        vat_rate.strip()
-        or (str(rule.vat_rate) if rule and rule.vat_rate else "")
-        or (str(chosen["vat_rate"]) if chosen["vat_rate"] else "")
-    )
+    # Шапка и правило — тем же кодом, что в предпросмотре: иначе ключ разбора
+    # разошёлся бы с предпросмотром, и загрузка считала бы всё заново.
+    head = _head_info(db, str(partner_id), content, file.filename, mapping, vat_rate, sheet)
+    chosen_sheet = head["sheet"]
+    active_mapping = head["mapping"]
+    rate = head["rate"]
+    manual = _manual_skus(manual_skus)
 
-    result = parse_report(
-        content, file.filename, active_mapping,
-        vat_rate=rate or None, sheet=chosen_sheet,
-    )
+    # Разбор и привязка — общие с предпросмотром (см. _parse_and_resolve): если
+    # предпросмотр этого файла ещё считается, ждём его, а не начинаем заново.
+    result, resolved = _parse_and_resolve(db, content, file.filename, head, manual)
+    # Загрузка запоминает вписанные артикулы — прежняя привязка устарела, а
+    # разобранное этого файла больше не нужно и занимает много памяти.
+    forget_all_parsed()
     if result.problems:
         raise HTTPException(400, "; ".join(result.problems))
     if not result.rows:
@@ -1388,15 +1545,9 @@ def create_report(
             f"В отчёте {len(result.rows)} строк — это больше {MAX_ROWS}. "
             "Похоже, в файл попал не один квартал.",
         )
-    # Артикулы, вписанные руками в предпросмотре, — до привязки к каталогу.
-    manual = _manual_skus(manual_skus)
-    _apply_manual(result.rows, manual)
-    # Привязка к каталогу: по артикулу, а строки без него — по названию и
-    # исполнителю (см. _resolve_tracks).
-    track_by_row = _resolve_tracks(db, result.rows, partner_id)
-    for row in result.rows:
-        if row.row_num in manual:
-            row.matched_by = "manual"
+    # Копия: ниже словарь дополняется приёмником «Вне каталога», а исходный
+    # мог достаться и соседнему запросу.
+    track_by_row = dict(resolved)
 
     totals = result.totals
     attrs = _attrs_from_form({

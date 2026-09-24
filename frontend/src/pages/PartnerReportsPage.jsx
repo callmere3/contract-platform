@@ -20,6 +20,7 @@ import { formatMoney } from '../api/finance';
 import {
   checkTrack,
   createReport,
+  inspectReport,
   deleteAlias,
   fetchAttributeOptions,
   listAliases,
@@ -268,6 +269,17 @@ export function PartnerReportsPage() {
 
   const [reports, setReports] = useState([]);
   const [busy, setBusy] = useState(false);
+  // СТРОКИ СЧИТАЮТСЯ В ФОНЕ (просьба владельца 24.09.2026): форма уже
+  // заполнена по шапке, и кнопка «Загрузить отчёт» доступна, не дожидаясь
+  // предпросмотра. Отдельно от `busy`, чтобы не блокировать загрузку.
+  const [rowsLoading, setRowsLoading] = useState(false);
+  // Идёт именно ЗАГРУЗКА отчёта, а не чтение шапки: подпись кнопки «Загружаем…»
+  // должна появляться только тогда.
+  const [saving, setSaving] = useState(false);
+  // Номер текущего разбора: ответ на устаревший запрос (сменили файл, нажали
+  // «Загрузить», пересобрали с другим правилом) должен быть выброшен, а не
+  // лечь поверх свежего.
+  const previewSeq = useRef(0);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const fileInput = useRef(null);
@@ -341,19 +353,28 @@ export function PartnerReportsPage() {
     nextPartner = partnerId,
   ) {
     if (!nextFile) return;
+    const seq = ++previewSeq.current;
     setBusy(true);
+    setRowsLoading(false);
     setError('');
     setNotice('');
+    const source = {
+      partnerId: nextPartner,
+      file: nextFile,
+      // Пустое правило = «возьми готовое правило площадки, сохранённое у
+      // партнёра или догадайся по названиям колонок».
+      mapping: Object.keys(nextMapping).length ? nextMapping : null,
+      vatRate: nextVat,
+      manualSkus,
+    };
+    // ДВА ШАГА (просьба владельца 24.09.2026): сначала шапка — за доли
+    // секунды, и форма с кнопкой «Загрузить отчёт» готова сразу; потом строки
+    // — в фоне. Раньше всё это был один запрос, и кнопка появлялась через
+    // полминуты: столько у «Зайцев.нет» занимают разбор и привязка к каталогу.
+    let data;
     try {
-      const data = await previewReport({
-        partnerId: nextPartner,
-        file: nextFile,
-        // Пустое правило = «возьми готовое правило площадки, сохранённое у
-        // партнёра или догадайся по названиям колонок».
-        mapping: Object.keys(nextMapping).length ? nextMapping : null,
-        vatRate: nextVat,
-        manualSkus,
-      });
+      data = await inspectReport(source);
+      if (seq !== previewSeq.current) return;
       setPreview(data);
       setMapping(data.mapping ?? {});
       setVatRate(data.vat_rate ?? '');
@@ -387,10 +408,28 @@ export function PartnerReportsPage() {
         setNotice(`Площадка определена по файлу: ${data.partner.name}.`);
       }
     } catch (e) {
+      if (seq !== previewSeq.current) return;
       setError(e.message);
       setPreview(null);
-    } finally {
       setBusy(false);
+      return;
+    }
+    setBusy(false);
+
+    // Строки. Сервер запоминает разбор, и если человек нажмёт «Загрузить»,
+    // не дождавшись, загрузка подхватит этот же расчёт, а не начнёт заново.
+    // Шлём ТЕ ЖЕ настройки, что и шапке, — иначе у разбора был бы другой ключ.
+    setRowsLoading(true);
+    try {
+      const full = await previewReport({ ...source, partnerId: data.partner?.id || nextPartner });
+      if (seq !== previewSeq.current) return;
+      // Из полного ответа берём СТРОКИ И ИТОГИ, а форму не трогаем: пока
+      // строки считались, человек мог поправить период или параметры.
+      setPreview(full);
+    } catch (e) {
+      if (seq === previewSeq.current) setError(e.message);
+    } finally {
+      if (seq === previewSeq.current) setRowsLoading(false);
     }
   }
 
@@ -432,7 +471,12 @@ export function PartnerReportsPage() {
   const shownAttrs = ATTRS.filter((a) => preview?.attributes_from_columns?.[a.name]);
 
   async function save() {
+    // Предпросмотр, если он ещё считается, больше не нужен на экране: сервер
+    // отдаст его расчёт загрузке, а ответ самого предпросмотра выбросим.
+    previewSeq.current += 1;
+    setRowsLoading(false);
     setBusy(true);
+    setSaving(true);
     setError('');
     try {
       const { report, remembered } = await createReport({
@@ -470,6 +514,7 @@ export function PartnerReportsPage() {
       setError(e.message);
     } finally {
       setBusy(false);
+      setSaving(false);
     }
   }
 
@@ -995,7 +1040,7 @@ export function PartnerReportsPage() {
                 </Button>
               )}
 
-              {preview.problems.length > 0 && (
+              {(preview.problems || []).length > 0 && (
                 <div className="mt-4 text-[13px] text-danger">
                   {preview.problems.map((p) => (
                     <div key={p}>{p}</div>
@@ -1021,7 +1066,7 @@ export function PartnerReportsPage() {
                 </div>
               )}
 
-              {preview.preview.length > 0 && (
+              {preview.preview?.length > 0 && (
                 <>
                   {/* СТРОКИ, КОТОРЫХ НЕТ В НОМЕНКЛАТУРЕ, — отдельным взглядом:
                       в файле их полтора десятка на семь сотен, и искать их
@@ -1157,26 +1202,40 @@ export function PartnerReportsPage() {
                     </div>
                   )}
 
-                  <div className="mt-4 flex flex-wrap items-center gap-4">
-                    <Button variant="accent" size="sm" onClick={save} disabled={busy}>
-                      {busy ? 'Загружаем…' : 'Загрузить отчёт'}
-                    </Button>
-                    <span className="text-[12.5px] text-text-muted">
-                      период: {ru(range.from)} — {ru(range.to)}
-                      {preview.period?.from === range.from && preview.period?.to === range.to
-                        ? ' (из шапки отчёта)'
-                        : ''}
-                    </span>
-                    <label className="flex items-center gap-2 text-[13px] text-text-secondary select-none">
-                      <input
-                        type="checkbox"
-                        checked={rememberRule}
-                        onChange={(e) => setRememberRule(e.target.checked)}
-                      />
-                      Запомнить правило для этого партнёра
-                    </label>
-                  </div>
                 </>
+              )}
+
+              {rowsLoading && (
+                <div className="mt-4 text-[13px] text-text-muted">
+                  Разбираем строки файла… «Загрузить отчёт» можно нажать, не дожидаясь.
+                </div>
+              )}
+
+              {/* КНОПКА — СРАЗУ ПОСЛЕ ШАПКИ, а не после предпросмотра (просьба
+                  владельца 24.09.2026): период, площадка и параметры известны
+                  по верху файла, и ждать разбора строк, чтобы нажать
+                  «Загрузить», незачем. Не показываем только при отказе
+                  разбора — грузить тогда нечего. */}
+              {!(preview.problems || []).length && (
+                <div className="mt-4 flex flex-wrap items-center gap-4">
+                  <Button variant="accent" size="sm" onClick={save} disabled={busy}>
+                    {saving ? 'Загружаем…' : 'Загрузить отчёт'}
+                  </Button>
+                  <span className="text-[12.5px] text-text-muted">
+                    период: {ru(range.from)} — {ru(range.to)}
+                    {preview.period?.from === range.from && preview.period?.to === range.to
+                      ? ' (из шапки отчёта)'
+                      : ''}
+                  </span>
+                  <label className="flex items-center gap-2 text-[13px] text-text-secondary select-none">
+                    <input
+                      type="checkbox"
+                      checked={rememberRule}
+                      onChange={(e) => setRememberRule(e.target.checked)}
+                    />
+                    Запомнить правило для этого партнёра
+                  </label>
+                </div>
               )}
             </div>
           )}

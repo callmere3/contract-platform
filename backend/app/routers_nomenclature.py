@@ -81,6 +81,7 @@ from app.roles import (
     CAN_IMPORT_NOMENCLATURE,
     CAN_VIEW_NOMENCLATURE,
 )
+from app.routers_partner_reports import forget_all_parsed
 
 nomenclature_router = APIRouter(
     prefix="/nomenclature",
@@ -962,6 +963,8 @@ def import_apply(
         },
     )
     db.commit()
+    # Привязка отчётов площадок к каталогу устарела — см. forget_all_parsed.
+    forget_all_parsed()
 
     return {
         "created": created,
@@ -1360,6 +1363,8 @@ def update_track(
         },
     )
     db.commit()
+    # Привязка отчётов площадок к каталогу устарела — см. forget_all_parsed.
+    forget_all_parsed()
 
     fresh = db.get(Track, track_id)
     return _card(db, fresh)

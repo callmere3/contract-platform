@@ -135,6 +135,18 @@ function uploadBody({ partnerId, file, mapping, vatRate, sheet, manualSkus, attr
   return body;
 }
 
+/**
+ * БЫСТРЫЙ ВЗГЛЯД — только шапка файла: площадка, правило, период, параметры,
+ * НДС. Доли секунды даже на полумиллионном отчёте; по нему форма сразу
+ * показывает кнопку «Загрузить отчёт», а строки считает `previewReport` следом.
+ */
+export function inspectReport(source) {
+  return apiJson(`${API}/partner-reports/inspect`, {
+    method: 'POST',
+    body: uploadBody(source),
+  });
+}
+
 /** Разбор БЕЗ записи: колонки, правило, первые строки и итоги по всему файлу. */
 export function previewReport(source) {
   return apiJson(`${API}/partner-reports/preview`, {
