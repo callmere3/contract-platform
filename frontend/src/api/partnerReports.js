@@ -163,15 +163,12 @@ export function inspectReport(source) {
 }
 
 /**
- * Строки ВНЕ КАТАЛОГА файлом — все, а не первые 300 предпросмотра. Тот же файл
- * и те же настройки, что у предпросмотра: сервер возьмёт уже готовый разбор.
+ * Строки ВНЕ КАТАЛОГА загруженного отчёта — файлом, все. Живёт у отчёта, а не
+ * в импорте: разбираться с недостающими позициями — отдельная работа.
  * Имя файла («Вне каталога <площадка>.xlsx») придумывает сервер.
  */
-export async function exportUnmatched(source) {
-  const r = await apiFetch(`${API}/partner-reports/preview/unmatched`, {
-    method: 'POST',
-    body: uploadBody(source),
-  });
+export async function exportUnmatched(reportId) {
+  const r = await apiFetch(`${API}/partner-reports/${reportId}/unmatched`);
   if (!r.ok) {
     let message = `Не удалось выгрузить файл (${r.status})`;
     try {

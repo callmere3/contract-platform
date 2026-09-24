@@ -1081,6 +1081,11 @@ def unlink_payment(
         raise HTTPException(404, "Отчёт не найден")
     payment = db.get(PartnerPayment, report.payment_id) if report.payment_id else None
     report.payment_id = None
+    # ВАЛЮТНЫЙ ОТЧЁТ ВОЗВРАЩАЕТСЯ В ВАЛЮТУ (просьба владельца 24.09.2026):
+    # курс брался из того самого поступления, от которого отвязали, и рубли
+    # без него объяснить нечем. Привяжут снова — курс поставится заново.
+    if report.currency and report.currency != "RUB" and report.currency_rate is not None:
+        _apply_rate(db, report, None)
     db.flush()
     _sync_payment_actual(db, payment)
     db.commit()
@@ -1559,70 +1564,6 @@ def preview(
     }
 
 
-@partner_reports_router.post(
-    "/preview/unmatched", dependencies=[Depends(require_role(*CAN_MANAGE_PARTNER_REPORTS))]
-)
-def export_unmatched(
-    partner_id: str = Form(""),
-    file: UploadFile = File(...),
-    mapping: str = Form(""),
-    vat_rate: str = Form(""),
-    sheet: str = Form(""),
-    currency_rate: str = Form(""),
-    manual_skus: str = Form(""),
-    db: Session = Depends(get_session),
-) -> StreamingResponse:
-    """
-    Строки ВНЕ КАТАЛОГА — файлом, ВСЕ, а не первые 300 предпросмотра (просьба
-    владельца 24.09.2026). У «Зайцев.нет» их сотня с лишним, и работа с ними —
-    завести недостающие позиции в номенклатуру — идёт уже в Excel.
-
-    Файл тот же, что у предпросмотра, и разбор тот же (`_parse_and_resolve`):
-    после предпросмотра он уже в памяти, и выгрузка почти мгновенна.
-    Имя файла — «Вне каталога <площадка>.xlsx».
-    """
-    content = _read_upload(file)
-    head = _head_info(db, partner_id, content, file.filename, mapping, vat_rate, sheet, currency_rate)
-    manual = _manual_skus(manual_skus)
-    result, resolved = _parse_and_resolve(db, content, file.filename, head, manual)
-    missing = [r for r in result.rows if r.row_num not in resolved]
-
-    # Параметры — столбцами, только если правило берёт их из колонок файла: у
-    # площадки с общим значением они повторяли бы одно и то же в каждой строке.
-    attrs = [name for name in REPORT_ATTRS if name in head["out"]["attributes_from_columns"]]
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "Вне каталога"
-    ws.append([
-        "Строка в файле", "Артикул в отчёте", "Код площадки (ISRC/UPC)",
-        "Название", "Исполнитель", "Количество",
-        "Авторские, ₽", "Смежные, ₽", "Итого, ₽",
-        *(ATTR_LABELS[name] for name in attrs),
-    ])
-    for r in missing:
-        # Суммы — ЧИСЛАМИ, а не строками: в Excel их будут складывать.
-        ws.append([
-            r.row_num, r.sku or "", r.code or "",
-            r.title or "", r.artist or "",
-            r.quantity,
-            r.amount_author, r.amount_related, r.amount_author + r.amount_related,
-            *((getattr(r, name) or "") for name in attrs),
-        ])
-    ws.freeze_panes = "A2"
-    for letter, width in zip("ABCDEFGHI", (10, 16, 22, 40, 30, 12, 14, 14, 14)):
-        ws.column_dimensions[letter].width = width
-
-    buffer = io.BytesIO()
-    wb.save(buffer)
-    buffer.seek(0)
-    name = " ".join((head["partner"].name or "").split())
-    return StreamingResponse(
-        buffer,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": _content_disposition(f"Вне каталога {name}.xlsx")},
-    )
-
-
 ROW_COLUMNS = (
     "id", "report_id", "row_num", "sku", "title", "artist",
     "quantity", "amount_author", "amount_related", "track_id",
@@ -1927,6 +1868,64 @@ def create_report(
     }
 
 
+@partner_reports_router.get("/{report_id}/unmatched")
+def export_unmatched(report_id: uuid.UUID, db: Session = Depends(get_session)) -> StreamingResponse:
+    """
+    Строки ВНЕ КАТАЛОГА загруженного отчёта — файлом (просьба владельца
+    24.09.2026). Живёт у загруженного отчёта, рядом с суммой «Вне каталога», а
+    не в импорте: разбираться с недостающими позициями — отдельная работа,
+    к загрузке файла она не относится. Выгружаются ВСЕ такие строки.
+    Имя файла — «Вне каталога <площадка>.xlsx».
+    """
+    report = db.get(PartnerReport, report_id)
+    if report is None:
+        raise HTTPException(404, "Отчёт не найден")
+    partner = db.get(Partner, report.partner_id)
+    outside = db.scalar(select(Track.id).where(Track.sku == OUTSIDE_SKU))
+    missing = PartnerReportRow.track_id.is_(None)
+    if outside is not None:
+        missing = or_(missing, PartnerReportRow.track_id == outside)
+    rows = db.scalars(
+        select(PartnerReportRow)
+        .where(PartnerReportRow.report_id == report_id, missing)
+        .order_by(PartnerReportRow.row_num)
+    ).all()
+
+    # Пока у валютного отчёта нет курса, суммы в нём — валюта, а не рубли.
+    unit = report.currency if _rate_pending(report) else "₽"
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Вне каталога"
+    ws.append([
+        "Строка в файле", "Артикул в отчёте", "Название", "Исполнитель", "Количество",
+        f"Авторские, {unit}", f"Смежные, {unit}", f"Итого, {unit}",
+        *(ATTR_LABELS[name] for name in REPORT_ATTRS),
+    ])
+    for r in rows:
+        author = r.amount_author or Decimal(0)
+        related = r.amount_related or Decimal(0)
+        # Суммы — ЧИСЛАМИ, а не строками: в Excel их будут складывать.
+        ws.append([
+            r.row_num, r.sku or "", r.title or "", r.artist or "", r.quantity,
+            author, related, author + related,
+            # Параметр строки, а если его нет — параметр отчёта, как на экране.
+            *((getattr(r, name) or getattr(report, name) or "") for name in REPORT_ATTRS),
+        ])
+    ws.freeze_panes = "A2"
+    for letter, width in zip("ABCDEFGH", (10, 16, 40, 30, 12, 14, 14, 14)):
+        ws.column_dimensions[letter].width = width
+
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    name = " ".join(((partner.name if partner else "") or "").split())
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": _content_disposition(f"Вне каталога {name}.xlsx")},
+    )
+
+
 @partner_reports_router.get("/{report_id}/rows")
 def report_rows(
     report_id: uuid.UUID,
@@ -1971,7 +1970,11 @@ def report_rows(
     # трека нет: иначе у неразнесённой строки не осталось бы ничего, кроме
     # артикула.
     tracks = {}
-    ids = {r.track_id for r in rows if r.track_id}
+    # ПРИЁМНИК «ВНЕ КАТАЛОГА» — НЕ ТРЕК (замечание владельца 24.09.2026): его
+    # название «Вне каталога» подменяло у строки то, что прислала площадка, и
+    # понять, что это за позиция, становилось нечем. Такие строки показываем
+    # как в отчёте.
+    ids = {r.track_id for r in rows if r.track_id and r.track_id != outside}
     if ids:
         tracks = {
             t.id: t

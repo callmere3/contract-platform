@@ -21,7 +21,6 @@ import {
   checkTrack,
   createReport,
   currencySign,
-  exportUnmatched,
   inspectReport,
   deleteAlias,
   fetchAttributeOptions,
@@ -287,7 +286,6 @@ export function PartnerReportsPage() {
   // Идёт именно ЗАГРУЗКА отчёта, а не чтение шапки: подпись кнопки «Загружаем…»
   // должна появляться только тогда.
   const [saving, setSaving] = useState(false);
-  const [exporting, setExporting] = useState(false);
   // КУРС К РУБЛЮ для отчёта в валюте. Спрашивается, только когда сервер
   // увидел в файле не рубли (`needs_rate`); без него такой отчёт не грузится.
   const [currencyRate, setCurrencyRate] = useState('');
@@ -488,37 +486,6 @@ export function PartnerReportsPage() {
   // разобран, а не по текущему в форме: пока не нажали «Применить и
   // пересобрать», в строках лежат старые значения.
   const shownAttrs = ATTRS.filter((a) => preview?.attributes_from_columns?.[a.name]);
-
-  /**
-   * Строки вне каталога — в Excel, ВСЕ (в предпросмотре первые 300). Шлём те
-   * же настройки, что и предпросмотру: сервер отдаст уже готовый разбор.
-   */
-  async function exportMissing() {
-    setExporting(true);
-    setError('');
-    try {
-      const { blob, filename } = await exportUnmatched({
-        partnerId,
-        file,
-        mapping,
-        vatRate,
-        currencyRate,
-        manualSkus,
-      });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setExporting(false);
-    }
-  }
 
   async function save() {
     // Предпросмотр, если он ещё считается, больше не нужен на экране: сервер
@@ -1133,17 +1100,6 @@ export function PartnerReportsPage() {
                         {onlyUnmatched
                           ? 'Показать все строки'
                           : `Показать строки, которых нет в номенклатуре (${preview.totals.unmatched})`}
-                      </button>
-                      {/* ВЫГРУЗКА — ВСЕХ строк вне каталога, а не показанных
-                          (просьба владельца 24.09.2026): заводить недостающие
-                          позиции в номенклатуру удобнее по списку в Excel. */}
-                      <button
-                        type="button"
-                        className={tab(false)}
-                        onClick={exportMissing}
-                        disabled={exporting}
-                      >
-                        {exporting ? 'Выгружаем…' : 'Выгрузить в Excel'}
                       </button>
                       <span className="text-[12.5px] text-text-muted">
                         Артикул не указан в отчёте или его нет в нашем каталоге. Можно вписать

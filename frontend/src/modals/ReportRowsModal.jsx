@@ -4,7 +4,13 @@ import { Button } from '../components/ui/Button';
 import { ComboCell } from '../components/ui/ComboCell';
 import { PencilIcon, TrashIcon } from '../components/ui/icons';
 import { useModal } from './ModalProvider';
-import { currencySign, rateText, reportRows, updateReport } from '../api/partnerReports';
+import {
+  currencySign,
+  exportUnmatched,
+  rateText,
+  reportRows,
+  updateReport,
+} from '../api/partnerReports';
 import { formatMoney } from '../api/finance';
 
 /**
@@ -105,6 +111,27 @@ export function ReportRowsModal({
   const [viewH, setViewH] = useState(800);
 
   const [editing, setEditing] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
+  async function downloadUnmatched() {
+    setExporting(true);
+    setError('');
+    try {
+      const { blob, filename } = await exportUnmatched(card.id);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setExporting(false);
+    }
+  }
   const [draft, setDraft] = useState(null);
   const [saving, setSaving] = useState(false);
 
@@ -380,7 +407,14 @@ export function ReportRowsModal({
             onClick={() =>
               // Свежая карточка приходит обратно: иначе в шапке так и висело
               // бы прежнее поступление, пока окно не откроют заново.
-              onLink?.(card, (fresh) => fresh && setCard(fresh))
+              onLink?.(card, (fresh) => {
+                if (!fresh) return;
+                setCard(fresh);
+                // Привязка ставит курс и пересчитывает СТРОКИ в рубли, а
+                // отвязка возвращает их в валюту — перечитываем и строки, не
+                // только шапку (замечание владельца 24.09.2026).
+                setGen((g) => g + 1);
+              })
             }
             className="text-accent bg-transparent border-0 p-0 cursor-pointer font-sans text-[12.5px]"
           >
@@ -392,6 +426,23 @@ export function ReportRowsModal({
           {Number(card.unmatched_amount) > 0
             ? `${money(card.unmatched_amount)} · строк ${card.unmatched_count}`
             : 'нет'}
+          {/* ВЫГРУЗКА ЭТИХ СТРОК — ЗДЕСЬ, у загруженного отчёта, а не в импорте
+              (просьба владельца 24.09.2026): заводить недостающие позиции в
+              номенклатуру — отдельная работа, к загрузке файла она не
+              относится. Выгружаются все такие строки. */}
+          {card.unmatched_count > 0 && (
+            <>
+              {' '}
+              <button
+                type="button"
+                onClick={downloadUnmatched}
+                disabled={exporting}
+                className="text-accent bg-transparent border-0 p-0 cursor-pointer font-sans text-[12.5px]"
+              >
+                {exporting ? 'выгружаем…' : 'выгрузить в Excel'}
+              </button>
+            </>
+          )}
         </span>
 
         {/* ЧЕТЫРЕ ПАРАМЕТРА — В ШАПКЕ, а не только столбцами таблицы: у
@@ -452,10 +503,13 @@ export function ReportRowsModal({
                 <th className={th}>Тип использования</th>
                 <th className={th}>Вид использования</th>
                 <th className={th}>Территория</th>
-                <th className={th}>Кол-во</th>
-                <th className={th}>Сумма</th>
-                <th className={th}>Сумма авт.</th>
-                <th className={th}>Сумма смж.</th>
+                {/* Заголовки чисел — ПО ПРАВОМУ КРАЮ, как сами числа: иначе
+                    заголовок стоит над началом колонки, а число у её конца,
+                    и столбцы кажутся сдвинутыми (замечание владельца). */}
+                <th className={`${th} text-right`}>Кол-во</th>
+                <th className={`${th} text-right`}>Сумма</th>
+                <th className={`${th} text-right`}>Сумма авт.</th>
+                <th className={`${th} text-right`}>Сумма смж.</th>
               </tr>
             </thead>
             <tbody>
