@@ -12,6 +12,12 @@ import { CloseIcon } from './icons';
  * поступление»), и читались как продолжение сценария. Но править и удалять —
  * это про сам объект, а не следующий шаг, и место им там же, где закрытие
  * окна. Внизу остаётся только то, ради чего окно открывают дальше.
+ *
+ * `fullscreen` — ОКНО ВО ВЕСЬ ЭКРАН, без полей вокруг (просьба владельца
+ * 24.09.2026, окно привязки отчёта к поступлению). Для окон, где главное —
+ * длинный список: поле затемнения вокруг ничего не даёт, а список в окне
+ * фиксированной высоты приходилось прокручивать внутри ещё одной прокрутки.
+ * `width` при этом не действует.
  */
 export function Modal({
   title,
@@ -22,6 +28,7 @@ export function Modal({
   width = 480,
   level = 0,
   isTop = true,
+  fullscreen = false,
 }) {
   // Escape закрывает только ВЕРХНЮЮ модалку стека. Все модалки стека
   // отрисованы одновременно, и каждая повесила бы свой обработчик на
@@ -55,7 +62,9 @@ export function Modal({
     <div
       onClick={onClose}
       style={{ zIndex: 100 + level * 10 }}
-      className="fixed inset-0 bg-black/50 flex items-center justify-center px-4"
+      className={`fixed inset-0 bg-black/50 flex items-center justify-center ${
+        fullscreen ? '' : 'px-4'
+      }`}
     >
       <div
         ref={card}
@@ -63,8 +72,12 @@ export function Modal({
         // добавляет её в обход по Tab: это не элемент управления.
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
-        style={{ width, maxWidth: '100%' }}
-        className="bg-surface border border-border rounded-card shadow-card max-h-[85vh] flex flex-col outline-none"
+        style={fullscreen ? undefined : { width, maxWidth: '100%' }}
+        className={`bg-surface flex flex-col outline-none ${
+          fullscreen
+            ? 'w-full h-full'
+            : 'border border-border rounded-card shadow-card max-h-[85vh]'
+        }`}
       >
         <div className="flex items-center justify-between gap-4 px-6 py-5 border-b border-border">
           <span className="text-[15px] font-semibold text-text min-w-0 truncate">{title}</span>
@@ -85,7 +98,9 @@ export function Modal({
           </div>
         </div>
 
-        <div className="px-6 py-6 overflow-y-auto">{children}</div>
+        <div className={`px-6 py-6 overflow-y-auto ${fullscreen ? 'flex-1 min-h-0' : ''}`}>
+          {children}
+        </div>
 
         {footer && (
           <div className="flex items-center justify-end gap-3 px-6 py-5 border-t border-border">
