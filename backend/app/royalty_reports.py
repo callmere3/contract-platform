@@ -326,11 +326,26 @@ def period_slug(s: Settings) -> str:
     return f"{f:%d.%m.%Y}-{t:%d.%m.%Y}"
 
 
+def title_slug(title: str) -> str:
+    """«Ибара М.Ж. (СГ)» → «ИбараМЖ(СГ)»: без пробелов и точек, как в Dista."""
+    return re.sub(r'[\s.\\/:*?"<>|]', "", title or "")
+
+
 def file_name(kind: str, s: Settings, title: str) -> str:
     """«Сводный отчет 2_квартал_2026_ИбараМЖ(СГ).xlsx» — как называет Dista."""
-    who = re.sub(r'[\s.\\/:*?"<>|]', "", title or "")
     word = "Сводный" if kind == "summary" else "Детализированный"
-    return f"{word} отчет {period_slug(s)}_{who}.xlsx"
+    return f"{word} отчет {period_slug(s)}_{title_slug(title)}.xlsx"
+
+
+def zip_name(s: Settings, results: list) -> str:
+    """
+    Имя архива. Правообладатель ОДИН (сводный и детализированный вместе) —
+    подписываем его титлом, как и файлы внутри (просьба владельца
+    24.09.2026): архивы разных людей иначе неотличимы в папке загрузок.
+    """
+    if len(results) == 1:
+        return f"Отчеты {period_slug(s)}_{title_slug(results[0].title)}.zip"
+    return f"Отчеты правообладателям {period_slug(s)}.zip"
 
 
 _BOLD = Font(bold=True)

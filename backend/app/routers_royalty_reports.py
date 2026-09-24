@@ -29,12 +29,12 @@ from app.royalty_reports import (
     compute,
     pending_reports,
     unlinked_reports,
-    period_slug,
     summary,
     summary_file_name,
     summary_totals,
     summary_table_xlsx,
     zip_files,
+    zip_name,
 )
 from app.routers_templates import _content_disposition
 
@@ -156,7 +156,7 @@ def generate(
         name, content = files[0]
         media = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     else:
-        name = f"Отчеты правообладателям {period_slug(s)}.zip"
+        name = zip_name(s, results)
         content, media = zip_files(files), "application/zip"
     return Response(
         content, media_type=media,
