@@ -1293,11 +1293,21 @@ export function PartnerReportsPage() {
                   <tr
                     key={r.id}
                     onClick={() => {
-                      // В режиме выбора строка не открывает привязку: сейчас
+                      // В режиме выбора строка не открывает отчёт: сейчас
                       // нажатие значит «взять это значение», и делать его
                       // двусмысленным нельзя.
                       if (pickMode) return;
-                      openModal('linkReportPayment', { report: r, onChanged: loadReports });
+                      // НАЖАТИЕ ОТКРЫВАЕТ САМ ОТЧЁТ (просьба владельца
+                      // 24.09.2026, вид «как в Dista»), а не привязку к
+                      // поступлению: посмотреть, что залили, — главное
+                      // действие над загруженным отчётом. Привязка уехала
+                      // в шапку этого же окна, и путь до неё стал длиннее
+                      // на одно нажатие — зато перестал быть единственным.
+                      openModal('reportRows', {
+                        report: r,
+                        onLink: (report) =>
+                          openModal('linkReportPayment', { report, onChanged: loadReports }),
+                      });
                     }}
                     className={pickMode ? 'hover:bg-hover' : 'cursor-pointer hover:bg-hover'}
                   >

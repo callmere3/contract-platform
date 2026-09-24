@@ -1543,16 +1543,46 @@ def report_rows(
         .offset((page - 1) * page_size)
         .limit(page_size)
     ).all()
+
+    # КОД И НАЗВАНИЕ БЕРЁМ ИЗ КАТАЛОГА, а не из файла площадки (просьба
+    # владельца 24.09.2026, вид «как в Dista»): в детализации правообладателю
+    # трек называется так, как он называется у нас, — площадки пишут его
+    # каждая по-своему. Из строки отчёта название берётся только там, где
+    # трека нет: иначе у неразнесённой строки не осталось бы ничего, кроме
+    # артикула.
+    tracks = {}
+    ids = {r.track_id for r in rows if r.track_id}
+    if ids:
+        tracks = {
+            t.id: t
+            for t in db.scalars(select(Track).where(Track.id.in_(ids)))
+        }
     return {
         "rows": [
             {
                 "row": r.row_num,
                 "sku": r.sku,
-                "title": r.title,
-                "artist": r.artist,
+                "code": (tracks.get(r.track_id).code if tracks.get(r.track_id) else None),
+                "title": (
+                    (tracks.get(r.track_id).title if tracks.get(r.track_id) else None)
+                    or r.title
+                ),
+                "artist": (
+                    (tracks.get(r.track_id).artist if tracks.get(r.track_id) else None)
+                    or r.artist
+                ),
                 "quantity": _money(r.quantity),
                 "amount_author": _money(r.amount_author),
                 "amount_related": _money(r.amount_related),
+                "total": _money((r.amount_author or 0) + (r.amount_related or 0)),
+                # ПАРАМЕТР СТРОКИ, А ЕСЛИ ЕГО НЕТ — ПАРАМЕТР ОТЧЁТА. У
+                # площадок с общим значением в строках пусто (дублировать
+                # снимок в полмиллиона строк незачем), но человеку в
+                # детализации нужно видеть его у каждой позиции.
+                **{
+                    name: getattr(r, name) or getattr(report, name)
+                    for name in REPORT_ATTRS
+                },
                 # Приёмник настоящим треком не считается — иначе строка
                 # выглядела бы разнесённой, хотя деньги по-прежнему ничьи.
                 "matched": r.track_id is not None and r.track_id != outside,
