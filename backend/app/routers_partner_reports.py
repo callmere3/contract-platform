@@ -1764,8 +1764,14 @@ def create_report(
         ),
         # Итог в ИСХОДНОЙ валюте: суммы строк уже умножены на курс (если его
         # дали), поэтому делим обратно — с ним сверяется платёж.
+        #
+        # ТОЧНЫЙ, А НЕ ОКРУГЛЁННЫЙ ДО ЦЕНТА (баг, найден на Believe KZ
+        # 24.09.2026): курс при привязке считается как «завод / итог в
+        # валюте», а применяется к точным строкам. От округлённого итога
+        # (10 456,59 при точных 10 456,5949) полцента евро на курсе 83 дали
+        # 41 копейку расхождения с заводом.
         currency_total=(
-            (totals["amount_author"] + totals["amount_related"])
+            sum((r.amount_author + r.amount_related for r in result.rows), Decimal(0))
             / currency_factor(head["currency_rate"] or None)
             if foreign else None
         ),
