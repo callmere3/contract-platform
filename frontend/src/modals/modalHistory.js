@@ -42,11 +42,17 @@ export function createModalHistory(historyApi) {
      * жмёт «назад», а браузер отматывает на запись с тем же адресом, и
      * визуально не происходит ничего.
      */
-    close() {
-      if (pushed === 0) return;
-      pushed -= 1;
+    close(count = 1) {
+      // Несколько модалок сразу — ОДНИМ переходом по истории: два back()
+      // подряд браузер вправе склеить в один, и тогда один из учтённых
+      // selfBack так и не дождался бы своего popstate — следующее настоящее
+      // «назад» пропало бы молча.
+      const n = Math.min(count, pushed);
+      if (n <= 0) return;
+      pushed -= n;
       selfBack += 1;
-      api?.back();
+      if (n === 1) api?.back();
+      else api?.go(-n);
     },
 
     /**

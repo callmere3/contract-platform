@@ -80,7 +80,12 @@ const closeMoney = (a, b) => {
   return one !== null && other !== null && Math.abs(one - other) <= 1;
 };
 
-export function LinkReportPaymentModal({ report, level, isTop, onChanged }) {
+export function LinkReportPaymentModal({ report, level, isTop, onChanged, relink = false }) {
+  // ПЕРЕПРИВЯЗКА ПОКАЗЫВАЕТ ВЕСЬ СПИСОК (просьба владельца 24.09.2026).
+  // Обычно у привязанного отчёта выбирать нечего — видна одна его строка; но
+  // если пришли из правки отчёта, то как раз затем, чтобы поменять её, и
+  // прятать остальные значило бы заставить сперва отвязать.
+  const linked = Boolean(report.payment_id) && !relink;
   const { closeModal } = useModal();
   // УЖЕ ПРИВЯЗАННЫЙ ОТЧЁТ ОТКРЫВАЕТСЯ НА СВОЁМ МЕСЯЦЕ (просьба владельца
   // 24.09.2026). Раньше окно всегда показывало текущий квартал и весь список
@@ -131,8 +136,8 @@ export function LinkReportPaymentModal({ report, level, isTop, onChanged }) {
     setBusy(true);
     setError('');
     try {
-      await linkReportPayment(report.id, payment.id);
-      onChanged?.();
+      const res = await linkReportPayment(report.id, payment.id);
+      onChanged?.(res?.report);
       closeModal();
     } catch (e) {
       setError(e.message);
@@ -144,8 +149,8 @@ export function LinkReportPaymentModal({ report, level, isTop, onChanged }) {
     setBusy(true);
     setError('');
     try {
-      await unlinkReportPayment(report.id);
-      onChanged?.();
+      const res = await unlinkReportPayment(report.id);
+      onChanged?.(res?.report);
       closeModal();
     } catch (e) {
       setError(e.message);
@@ -170,11 +175,11 @@ export function LinkReportPaymentModal({ report, level, isTop, onChanged }) {
     p.partner_id === report.partner_id &&
     closeMoney(p.transfer_amount, report.total);
   const ordered = [...rows.filter(advised), ...rows.filter((p) => !advised(p))];
-  const adviceCount = report.payment_id ? 0 : rows.filter(advised).length;
+  const adviceCount = linked ? 0 : rows.filter(advised).length;
   // Привязан — показываем ровно ту строку, к которой привязан, и ничего
   // больше: список «куда можно привязать» отвечает на вопрос, который уже
   // решён.
-  const shown = report.payment_id
+  const shown = linked
     ? ordered.filter((p) => p.id === report.payment_id)
     : ordered;
 
@@ -228,7 +233,7 @@ export function LinkReportPaymentModal({ report, level, isTop, onChanged }) {
           строка. Раньше окно предлагало выбрать заново то, что уже выбрано,
           и найти среди тридцати строк ту самую было отдельной задачей.
           Перепривязать по-прежнему можно: «Отвязать» внизу вернёт выбор. */}
-      {report.payment_id ? (
+      {linked ? (
         <div className="text-[13px] text-text mb-4">
           <span className="text-text-secondary">Поступление за </span>
           {ROMAN[quarter - 1]} квартал {year}
@@ -283,7 +288,7 @@ export function LinkReportPaymentModal({ report, level, isTop, onChanged }) {
 
       {!loading && shown.length === 0 && (
         <div className="text-[13px] text-text-muted">
-          {report.payment_id
+          {linked
             ? 'Строка поступления, к которой привязан отчёт, не найдена — возможно, её убрали.'
             : 'За этот квартал поступлений нет — заведите строку во вкладке «Поступления».'}
         </div>

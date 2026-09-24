@@ -40,9 +40,12 @@ export function ModalProvider({ children }) {
     setStack((s) => [...s, { name, props }]);
   }, []);
 
-  const closeModal = useCallback(() => {
-    setStack((s) => s.slice(0, -1));
-    historyRef.current.close();
+  // `count` > 1 — закрыть окно вместе с тем, из которого его открыли
+  // (удалили отчёт из его же карточки — карточке больше нечего показывать).
+  const closeModal = useCallback((count = 1) => {
+    const n = typeof count === 'number' && count > 0 ? count : 1;
+    setStack((s) => s.slice(0, -n));
+    historyRef.current.close(n);
   }, []);
 
   const closeAllModals = useCallback(() => {

@@ -33,6 +33,18 @@ export function reportRows(reportId, { page = 1, pageSize = 100, unmatchedOnly =
   return apiJson(`${API}/partner-reports/${reportId}/rows?${params}`);
 }
 
+/**
+ * Поправить ШАПКУ отчёта: период и четыре параметра. Данные не трогает —
+ * строки и суммы остаются как были, см. update_report на сервере.
+ */
+export function updateReport(reportId, { periodFrom, periodTo, attributes = {} }) {
+  const body = new FormData();
+  body.append('period_from', periodFrom);
+  body.append('period_to', periodTo);
+  for (const [name, value] of Object.entries(attributes)) body.append(name, value ?? '');
+  return apiJson(`${API}/partner-reports/${reportId}`, { method: 'PATCH', body });
+}
+
 export function deleteReport(reportId) {
   return apiJson(`${API}/partner-reports/${reportId}`, { method: 'DELETE' });
 }

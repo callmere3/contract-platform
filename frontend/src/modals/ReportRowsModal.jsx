@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Modal } from '../components/ui/Modal';
+import { Modal, ModalAction } from '../components/ui/Modal';
 import { Button } from '../components/ui/Button';
+import { ComboCell } from '../components/ui/ComboCell';
+import { PencilIcon, TrashIcon } from '../components/ui/icons';
 import { useModal } from './ModalProvider';
-import { reportRows } from '../api/partnerReports';
+import { reportRows, updateReport } from '../api/partnerReports';
 import { formatMoney } from '../api/finance';
 
 /**
@@ -23,113 +25,263 @@ import { formatMoney } from '../api/finance';
  * НАЗВАНИЕ И КОД — ИЗ НОМЕНКЛАТУРЫ, а не из файла площадки: в детализации
  * правообладателю трек называется так, как он называется у нас. Из строки
  * отчёта название берётся только там, где трека нет.
+ *
+ * ПРАВКА — КАРАНДАШОМ В ШАПКЕ, рядом с мусоркой (просьба владельца
+ * 24.09.2026): это действия над самим документом, и место им там же, где
+ * во всех остальных карточках проекта. Правится ШАПКА, а не данные: период,
+ * четыре параметра и привязка к поступлению. Строки, суммы и привязка к
+ * каталогу не меняются — «исправленный» отчёт, у которого файл говорит
+ * одно, а база другое, объяснить потом нечем.
  */
 const PAGE = 200;
 
-export function ReportRowsModal({ report, level, isTop, onLink }) {
+const ATTRS = [
+  { name: 'content_type', label: 'Тип контента' },
+  { name: 'usage_type', label: 'Тип использования' },
+  { name: 'usage_kind', label: 'Вид использования' },
+  { name: 'territory', label: 'Территория' },
+];
+
+export function ReportRowsModal({
+  report,
+  level,
+  isTop,
+  onLink,
+  onDelete,
+  onChanged,
+  attrOptions = {},
+}) {
   const { closeModal } = useModal();
+  // Карточка живёт в состоянии: после правки сервер возвращает её целиком, и
+  // окно должно показать новое, не дожидаясь, пока перечитается список.
+  const [card, setCard] = useState(report);
   const [rows, setRows] = useState([]);
+  const [perRow, setPerRow] = useState({});
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(null);
+  const [saving, setSaving] = useState(false);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const data = await reportRows(report.id, { page, pageSize: PAGE });
+      const data = await reportRows(card.id, { page, pageSize: PAGE });
       setRows(data.rows ?? []);
       setTotal(data.total ?? 0);
+      setPerRow(data.per_row_attributes ?? {});
     } catch (e) {
       setError(e.message);
     } finally {
       setLoading(false);
     }
-  }, [report.id, page]);
+  }, [card.id, page]);
 
   useEffect(() => {
     load();
   }, [load]);
 
+  function startEdit() {
+    setDraft({
+      from: card.period?.from ?? '',
+      to: card.period?.to ?? '',
+      ...Object.fromEntries(ATTRS.map((a) => [a.name, card[a.name] ?? ''])),
+    });
+    setEditing(true);
+  }
+
+  async function save() {
+    setSaving(true);
+    setError('');
+    try {
+      const { report: fresh } = await updateReport(card.id, {
+        periodFrom: draft.from,
+        periodTo: draft.to,
+        attributes: Object.fromEntries(ATTRS.map((a) => [a.name, draft[a.name]])),
+      });
+      setCard(fresh);
+      setEditing(false);
+      onChanged?.();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const th =
     'text-left font-semibold text-[11px] uppercase tracking-[0.04em] text-text-muted px-2 py-1.5 whitespace-nowrap border-b border-border bg-surface sticky top-0';
   const td = 'px-2 py-1 border-t border-border-soft text-[12.5px] whitespace-nowrap';
+  const field =
+    'bg-input-bg border border-border rounded-input px-2 py-1 text-[12.5px] text-text outline-none font-sans';
   const pages = Math.max(1, Math.ceil(total / PAGE));
   const count = (v) => Number(v ?? 0).toLocaleString('ru-RU', { maximumFractionDigits: 2 });
 
   return (
     <Modal
-      title={`Отчёт: ${report.partner} · ${report.period_label}`}
+      title={`Отчёт: ${card.partner} · ${card.period_label}`}
       onClose={closeModal}
       level={level}
       isTop={isTop}
       width={1320}
+      actions={
+        !editing && (
+          <>
+            <ModalAction icon={<PencilIcon />} title="Изменить" onClick={startEdit} />
+            <ModalAction
+              icon={<TrashIcon />}
+              title="Удалить отчёт"
+              danger
+              onClick={() => onDelete?.(card)}
+            />
+          </>
+        )
+      }
       footer={
-        <>
-          {/* ИТОГ КАК В DISTA: позиций, количество, сумма. Числа берём из
-              самого отчёта, а не складываем показанную страницу: страница
-              одна из многих, а итог — по всему файлу. */}
-          <span className="text-[12.5px] text-text mr-auto tabular-nums">
-            Позиций: <b>{report.rows_count}</b> · Кол-во:{' '}
-            <b>{count(report.total_quantity)}</b> · Сумма: <b>{formatMoney(report.total)}</b>
-            <span className="text-text-muted">
-              {' '}
-              (авторские {formatMoney(report.total_author)}, смежные{' '}
-              {formatMoney(report.total_related)})
+        editing ? (
+          <>
+            <span className="text-[12.5px] text-text-muted mr-auto">
+              Правится только шапка: строки и суммы останутся как есть.
             </span>
-          </span>
-          <Button variant="secondary" size="sm" onClick={closeModal}>
-            Закрыть
-          </Button>
-        </>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setEditing(false)}
+              disabled={saving}
+            >
+              Отмена
+            </Button>
+            <Button size="sm" onClick={save} disabled={saving}>
+              {saving ? 'Сохраняем…' : 'Сохранить'}
+            </Button>
+          </>
+        ) : (
+          <>
+            {/* ИТОГ КАК В DISTA: позиций, количество, сумма. Числа берём из
+                самого отчёта, а не складываем показанную страницу: страница
+                одна из многих, а итог — по всему файлу. */}
+            <span className="text-[12.5px] text-text mr-auto tabular-nums">
+              Позиций: <b>{card.rows_count}</b> · Кол-во:{' '}
+              <b>{count(card.total_quantity)}</b> · Сумма: <b>{formatMoney(card.total)}</b>
+              <span className="text-text-muted">
+                {' '}
+                (авторские {formatMoney(card.total_author)}, смежные{' '}
+                {formatMoney(card.total_related)})
+              </span>
+            </span>
+            <Button variant="secondary" size="sm" onClick={closeModal}>
+              Закрыть
+            </Button>
+          </>
+        )
       }
     >
       {/* ШАПКА ДОКУМЕНТА — только наши поля. Роль «Основания» из Dista здесь
           играет имя файла: по нему отчёт и находят среди присланного. */}
-      <div className="grid grid-cols-[auto_1fr_auto_1fr] gap-x-4 gap-y-1.5 text-[12.5px] mb-4">
+      <div className="grid grid-cols-[auto_1fr_auto_1fr] gap-x-4 gap-y-2 items-center text-[12.5px] mb-4">
         <span className="text-text-secondary">Площадка</span>
-        <span className="text-text font-semibold">{report.partner}</span>
+        <span className="text-text font-semibold">{card.partner}</span>
         <span className="text-text-secondary">Период</span>
-        <span className="text-text">{report.period_label}</span>
+        <span className="text-text">
+          {editing ? (
+            <span className="flex items-center gap-2">
+              <input
+                type="date"
+                value={draft.from}
+                onChange={(e) => setDraft((d) => ({ ...d, from: e.target.value }))}
+                className={`${field} tabular-nums`}
+              />
+              <span className="text-text-muted">—</span>
+              <input
+                type="date"
+                value={draft.to}
+                onChange={(e) => setDraft((d) => ({ ...d, to: e.target.value }))}
+                className={`${field} tabular-nums`}
+              />
+            </span>
+          ) : (
+            card.period_label
+          )}
+        </span>
 
         <span className="text-text-secondary">Файл</span>
-        <span className="text-text truncate" data-hint={report.file_name}>
-          {report.file_name}
-          {report.sheet ? ` · лист «${report.sheet}»` : ''}
+        <span className="text-text truncate" data-hint={card.file_name}>
+          {card.file_name}
+          {card.sheet ? ` · лист «${card.sheet}»` : ''}
         </span>
         <span className="text-text-secondary">НДС в суммах</span>
         <span className="text-text">
-          {report.vat_rate ? `${String(report.vat_rate).replace('.', ',')}%` : 'нет'}
+          {card.vat_rate ? `${String(card.vat_rate).replace('.', ',')}%` : 'нет'}
         </span>
 
         <span className="text-text-secondary">Поступление</span>
         <span className="text-text">
-          {report.payment_label ?? <span className="text-text-muted">не привязано</span>}{' '}
-          {/* ПРИВЯЗКА ЖИВЁТ ЗДЕСЬ, раз нажатие на строку теперь открывает
-              сам отчёт: это действие над документом, и место ему в его же
-              шапке, а не в окне, которое ещё надо найти. */}
+          {card.payment_label ?? <span className="text-text-muted">не привязано</span>}{' '}
+          {/* В ПРАВКЕ ПОКАЗЫВАЕМ ВЕСЬ СПИСОК: сюда и пришли затем, чтобы
+              поменять строку, и прятать остальные значило бы заставить
+              сперва отвязать. Вне правки привязка открывается обычным
+              окном — с одной уже выбранной строкой. */}
           <button
             type="button"
-            onClick={() => onLink?.(report)}
+            onClick={() =>
+              // Свежая карточка приходит обратно: иначе в шапке так и висело
+              // бы прежнее поступление, пока окно не откроют заново.
+              onLink?.(card, editing, (fresh) => fresh && setCard(fresh))
+            }
             className="text-accent bg-transparent border-0 p-0 cursor-pointer font-sans text-[12.5px]"
           >
-            {report.payment_id ? 'изменить' : 'привязать'}
+            {card.payment_id ? 'изменить' : 'привязать'}
           </button>
         </span>
         <span className="text-text-secondary">Вне каталога</span>
-        <span className={Number(report.unmatched_amount) > 0 ? 'text-danger' : 'text-text-muted'}>
-          {Number(report.unmatched_amount) > 0
-            ? `${formatMoney(report.unmatched_amount)} · строк ${report.unmatched_count}`
+        <span className={Number(card.unmatched_amount) > 0 ? 'text-danger' : 'text-text-muted'}>
+          {Number(card.unmatched_amount) > 0
+            ? `${formatMoney(card.unmatched_amount)} · строк ${card.unmatched_count}`
             : 'нет'}
         </span>
+
+        {/* ЧЕТЫРЕ ПАРАМЕТРА — В ШАПКЕ, а не только столбцами таблицы: у
+            большинства площадок они одни на весь отчёт, и повторять их в
+            каждой из полумиллиона строк незачем. */}
+        {ATTRS.map((a) => (
+          <Wrap key={a.name} label={a.label}>
+            {editing && !perRow[a.name] ? (
+              <ComboCell
+                value={draft[a.name] ?? ''}
+                options={attrOptions[a.name] ?? []}
+                onChange={(v) => setDraft((d) => ({ ...d, [a.name]: v }))}
+                placeholder="—"
+                arrowLabel={`Показать значения: ${a.label}`}
+                inputClassName={`${field} w-full pr-6`}
+              />
+            ) : perRow[a.name] ? (
+              /* ПАРАМЕТР ИЗ КОЛОНКИ ФАЙЛА НЕ ПРАВИТСЯ (просьба владельца
+                 24.09.2026): у него своё значение в каждой строке, и одно
+                 поле на весь отчёт их не заменит — а заменило бы, так
+                 затёрло бы данные площадки. Значения видны в таблице ниже,
+                 своим столбцом. */
+              <span
+                className="text-text-secondary"
+                data-hint="Берётся из колонки файла — у каждой строки своё значение, смотрите столбец в таблице"
+              >
+                из колонки файла
+              </span>
+            ) : (
+              <span className="text-text">{card[a.name] || '—'}</span>
+            )}
+          </Wrap>
+        ))}
       </div>
 
+      {error && <div className="text-[13px] text-danger mb-3">{error}</div>}
       {loading && <div className="text-[13px] text-text-muted">Загрузка…</div>}
-      {error && <div className="text-[13px] text-danger">{error}</div>}
 
-      {!loading && !error && (
-        <div className="border border-border rounded-card overflow-auto max-h-[56vh]">
+      {!loading && (
+        <div className="border border-border rounded-card overflow-auto max-h-[46vh]">
           <table className="w-full border-collapse">
             <thead>
               <tr>
@@ -205,5 +357,15 @@ export function ReportRowsModal({ report, level, isTop, onLink }) {
         </div>
       )}
     </Modal>
+  );
+}
+
+/** Подпись и значение одной строкой сетки — чтобы не повторять разметку. */
+function Wrap({ label, children }) {
+  return (
+    <>
+      <span className="text-text-secondary">{label}</span>
+      <span>{children}</span>
+    </>
   );
 }

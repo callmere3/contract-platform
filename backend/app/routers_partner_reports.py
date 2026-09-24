@@ -351,6 +351,33 @@ def _resolve_tracks(db: Session, rows: list, partner_id=None) -> dict:
     return resolved
 
 
+def _period_from_form(period_from: str, period_to: str) -> tuple:
+    """Пара дат периода из формы — с теми же проверками при загрузке и правке."""
+    start = _date(period_from, "Начало периода")
+    end = _date(period_to, "Конец периода")
+    if end < start:
+        raise HTTPException(400, "Конец периода раньше начала")
+    if (end - start).days > 400:
+        raise HTTPException(400, "Период длиннее года — похоже, ошибка в датах")
+    return start, end
+
+
+def _attrs_from_rows(db: Session, report_id) -> dict:
+    """
+    Какие параметры отчёта взяты из колонки файла: {имя: True/False}.
+
+    Признака в правиле мы не храним: правило живёт у партнёра и с тех пор
+    могло смениться, а сами строки — свидетельство того, как отчёт разобрали
+    ТОГДА. COUNT по колонке считает только непустые значения — ровно то, что
+    нужно, и работает в любой базе (bool_or есть только в PostgreSQL).
+    """
+    counts = db.execute(
+        select(*[func.count(getattr(PartnerReportRow, name)) for name in REPORT_ATTRS])
+        .where(PartnerReportRow.report_id == report_id)
+    ).one()
+    return {name: bool(n) for name, n in zip(REPORT_ATTRS, counts)}
+
+
 def _attrs_from_form(values: dict) -> dict:
     """
     Параметры отчёта из формы: лишние пробелы прочь, пусто — это None.
@@ -1327,12 +1354,7 @@ def create_report(
     Все три числа человек видит в предпросмотре ДО загрузки. Отказ остаётся
     только там, где грузить нечего: нет нужных колонок или ни одной строки.
     """
-    start = _date(period_from, "Начало периода")
-    end = _date(period_to, "Конец периода")
-    if end < start:
-        raise HTTPException(400, "Конец периода раньше начала")
-    if (end - start).days > 400:
-        raise HTTPException(400, "Период длиннее года — похоже, ошибка в датах")
+    start, end = _period_from_form(period_from, period_to)
 
     partner = db.get(Partner, partner_id)
     if partner is None:
@@ -1557,7 +1579,13 @@ def report_rows(
             t.id: t
             for t in db.scalars(select(Track).where(Track.id.in_(ids)))
         }
+    # ОТКУДА ПАРАМЕТР: из колонки файла или один на весь отчёт. Правку
+    # руками пускаем только во втором случае — у первого значение своё в
+    # каждой строке, и «поправить» его одним полем нельзя (просьба владельца
+    # 24.09.2026).
+    per_row = _attrs_from_rows(db, report_id)
     return {
+        "per_row_attributes": per_row,
         "rows": [
             {
                 "row": r.row_num,
@@ -1592,6 +1620,87 @@ def report_rows(
         "total": total,
         "page": page,
         "page_size": page_size,
+    }
+
+
+@partner_reports_router.patch(
+    "/{report_id}", dependencies=[Depends(require_role(*CAN_MANAGE_PARTNER_REPORTS))]
+)
+def update_report(
+    report_id: uuid.UUID,
+    period_from: str = Form(...),
+    period_to: str = Form(...),
+    content_type: str = Form(""),
+    usage_type: str = Form(""),
+    usage_kind: str = Form(""),
+    territory: str = Form(""),
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """
+    Поправить ШАПКУ отчёта: период и четыре параметра.
+
+    ЭТО НЕ ПРАВКА ДАННЫХ. Строки, суммы и привязка к каталогу остаются
+    нетронутыми — «исправленный» отчёт, у которого файл говорит одно, а база
+    другое, объяснить потом нечем, и это правило в силе. А период и параметры
+    в файле НЕ НАПИСАНЫ вовсе (период — подсказка из шапки, параметры —
+    настройка площадки), их набирает человек при загрузке, и ошибиться в них
+    легче всего. Заставлять из-за опечатки в территории перезаливать
+    полумиллионный отчёт незачем (просьба владельца 24.09.2026).
+
+    ПАРАМЕТР, ВЗЯТЫЙ ИЗ КОЛОНКИ ФАЙЛА, ПРАВИТЬ НЕЛЬЗЯ: у него своё значение в
+    каждой строке, и одно поле на весь отчёт их не заменит — а если бы
+    заменило, мы бы затёрли данные площадки своим значением.
+    """
+    report = db.get(PartnerReport, report_id)
+    if report is None:
+        raise HTTPException(404, "Отчёт не найден")
+
+    start, end = _period_from_form(period_from, period_to)
+    attrs = _attrs_from_form({
+        "content_type": content_type,
+        "usage_type": usage_type,
+        "usage_kind": usage_kind,
+        "territory": territory,
+    })
+    per_row = _attrs_from_rows(db, report_id)
+    for name, from_rows in per_row.items():
+        if from_rows and attrs[name] != getattr(report, name):
+            raise HTTPException(
+                400,
+                "«%s» берётся из колонки файла — у каждой строки своё значение, "
+                "и поправить его одним полем нельзя" % ATTR_LABELS[name],
+            )
+
+    report.period_from, report.period_to = start, end
+    for name, value in attrs.items():
+        if not per_row[name]:
+            setattr(report, name, value)
+    db.commit()
+
+    partner = db.get(Partner, report.partner_id)
+    log_action(
+        db, current_user, "partner_report.update", entity_type="partner_report",
+        entity_id=report.id,
+        meta={
+            "partner": partner.name if partner else None,
+            "period": period_label(report.period_from, report.period_to),
+            **{name: getattr(report, name) for name in REPORT_ATTRS},
+        },
+    )
+    db.commit()
+    payment = db.get(PartnerPayment, report.payment_id) if report.payment_id else None
+    return {
+        "report": _report_out(
+            report,
+            partner.name if partner else "",
+            payment.occurred_on if payment else None,
+            _payment_label(
+                payment.occurred_on if payment else None,
+                partner.name if partner else None,
+                payment_numbers(db).get(payment.id) if payment else None,
+            ),
+        )
     }
 
 

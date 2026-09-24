@@ -16,11 +16,14 @@ import { formatMoney } from '../api/finance';
  * Иначе состояние «удаляем…» и текст ошибки пришлось бы держать на странице,
  * то есть в двух местах сразу.
  *
- * Правки отчёта нет вовсе — только удалить и загрузить заново, — поэтому
- * удаление здесь обычное дело, а не крайняя мера: об этом прямо сказано в
- * окне, чтобы человек не искал кнопку «исправить».
+ * Правится у отчёта только шапка (период и параметры), а строки и суммы —
+ * нет: их исправляют удалением и загрузкой заново, поэтому удаление здесь
+ * обычное дело, а не крайняя мера.
+ *
+ * `closeParent` — окно открыто из карточки самого отчёта: после удаления
+ * закрываем и её, показывать там больше нечего.
  */
-export function ConfirmDeleteReportModal({ report, level, isTop, onDeleted }) {
+export function ConfirmDeleteReportModal({ report, level, isTop, onDeleted, closeParent = false }) {
   const { closeModal } = useModal();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -30,7 +33,7 @@ export function ConfirmDeleteReportModal({ report, level, isTop, onDeleted }) {
     setError('');
     try {
       await deleteReport(report.id);
-      closeModal();
+      closeModal(closeParent ? 2 : 1);
       onDeleted?.();
     } catch (e) {
       setError(e.message);
@@ -67,7 +70,7 @@ export function ConfirmDeleteReportModal({ report, level, isTop, onDeleted }) {
         </div>
         <div className="mt-3 text-text-muted">
           Отчёт удалится вместе со всеми строками. Загрузить его заново можно тем же файлом —
-          правки у отчётов нет по замыслу.
+          строки и суммы у отчёта не правятся по замыслу.
         </div>
         {error && <div className="text-danger mt-3">{error}</div>}
       </div>

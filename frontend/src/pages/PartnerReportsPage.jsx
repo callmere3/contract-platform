@@ -1305,8 +1305,26 @@ export function PartnerReportsPage() {
                       // на одно нажатие — зато перестал быть единственным.
                       openModal('reportRows', {
                         report: r,
-                        onLink: (report) =>
-                          openModal('linkReportPayment', { report, onChanged: loadReports }),
+                        attrOptions,
+                        onChanged: loadReports,
+                        onDelete: (report) =>
+                          openModal('confirmDeleteReport', {
+                            report,
+                            onDeleted: loadReports,
+                            closeParent: true,
+                          }),
+                        // `relink` приходит из окна отчёта: в режиме правки
+                        // список поступлений показывается весь, вне её — одна
+                        // уже привязанная строка.
+                        onLink: (report, relink, onFresh) =>
+                          openModal('linkReportPayment', {
+                            report,
+                            relink,
+                            onChanged: (fresh) => {
+                              loadReports();
+                              onFresh?.(fresh);
+                            },
+                          }),
                       });
                     }}
                     className={pickMode ? 'hover:bg-hover' : 'cursor-pointer hover:bg-hover'}
