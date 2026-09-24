@@ -79,6 +79,35 @@ const FIELDS = [
 // остались — встроенные правила их заполняют, и оттуда же работает подбор
 // артикула по названию, когда площадка код не проставила.
 
+/**
+ * Ставка НДС так, как её называет человек: «22%», а не «22.00».
+ *
+ * Сервер хранит и отдаёт её числом с двумя знаками — это машинный вид, и
+ * показывать его незачем (то же решение, что у сумм и курса в «Поступлениях»).
+ * Знак процента и запятая дорисовываются в покое; как только в поле встали,
+ * показываем то, что в нём лежит, — иначе курсор спотыкается о лишний символ.
+ */
+function RateField({ value, onChange, className }) {
+  const [editing, setEditing] = useState(false);
+  const pretty = (raw) => {
+    const text = String(raw ?? '').trim();
+    if (!text) return '';
+    const number = Number(text.replace(',', '.'));
+    if (!Number.isFinite(number)) return text;
+    return `${String(number).replace('.', ',')}%`;
+  };
+  return (
+    <input
+      value={editing ? value ?? '' : pretty(value)}
+      onChange={(e) => onChange(e.target.value)}
+      onFocus={() => setEditing(true)}
+      onBlur={() => setEditing(false)}
+      placeholder="нет"
+      className={className}
+    />
+  );
+}
+
 /** Сумма для ячейки таблицы: те же тысячи, но без «₽» — он в шапке колонки. */
 function amount(value) {
   return formatMoney(value).replace(' ₽', '');
@@ -120,6 +149,13 @@ export function PartnerReportsPage() {
   const [preview, setPreview] = useState(null);
   const [mapping, setMapping] = useState({});
   const [vatRate, setVatRate] = useState('');
+  // КТО ПОСТАВИЛ ПЛОЩАДКУ: человек выбрал её в поле или её определил файл
+  // (баг, найден владельцем 24.09.2026). Перетащили отчёт одной площадки, не
+  // загрузили, перетащили другой — и второй разбирался по правилу первой:
+  // площадка оставалась в поле, а правило партнёра сильнее встроенного.
+  // Определившееся само при новом файле сбрасываем, выбранное человеком —
+  // нет: его выбор всегда главнее.
+  const [partnerPicked, setPartnerPicked] = useState(false);
   const [rememberRule, setRememberRule] = useState(true);
   // Артикулы, вписанные руками: {номер строки: артикул}. Живут до загрузки и
   // уезжают вместе с файлом — сервер применяет их до привязки к каталогу.
@@ -251,8 +287,13 @@ export function PartnerReportsPage() {
       }
       // Площадку мог определить сам файл — тогда ставим её в поле: человек
       // должен видеть, за кого будет засчитан отчёт, и вправе это поменять.
-      if (data.partner?.id && data.partner.id !== partnerId) {
+      // Сравниваем с тем, что РЕАЛЬНО отправили, а не с состоянием: при новом
+      // файле площадку сбрасывают и разбирают заново, а состояние к этому
+      // моменту ещё держит прежнее значение — и определившаяся площадка не
+      // вернулась бы в поле, если совпала с прошлой.
+      if (data.partner?.id && data.partner.id !== nextPartner) {
         setPartnerId(data.partner.id);
+        setPartnerPicked(false);
         setNotice(`Площадка определена по файлу: ${data.partner.name}.`);
       }
     } catch (e) {
@@ -265,9 +306,17 @@ export function PartnerReportsPage() {
 
   function takeFile(next) {
     // Партнёра спрашивать не обязательно: знакомый отчёт называет площадку сам.
+    // А определившуюся по ПРЕДЫДУЩЕМУ файлу забываем: иначе второй отчёт
+    // разбирался бы по правилу чужой площадки.
+    const keepPartner = partnerPicked ? partnerId : '';
+    setPartnerId(keepPartner);
     setFile(next);
     setPreview(null);
     setMapping({});
+    // Ставка НДС — свойство ОТЧЁТА, как и параметры: у нового файла она
+    // приедет из его правила. Оставь мы прежнюю — файл площадки «без НДС»
+    // молча поделился бы на 1.22.
+    setVatRate('');
     // Новый файл — новые номера строк: вписанные артикулы к нему отношения не
     // имеют, и оставить их значит проставить код чужой строке.
     setManualSkus({});
@@ -277,7 +326,7 @@ export function PartnerReportsPage() {
     // Параметры — свойство ОТЧЁТА, а не сеанса: у нового файла они приедут из
     // правила партнёра заново.
     setAttributes({});
-    if (next) runPreview(next, {}, vatRate);
+    if (next) runPreview(next, {}, '', keepPartner);
   }
 
   // ПАРАМЕТРЫ, ВЗЯТЫЕ ИЗ КОЛОНОК ФАЙЛА: {имя параметра: имя колонки}.
@@ -383,6 +432,7 @@ export function PartnerReportsPage() {
                 inputClassName={`${inputClass} min-w-[240px]`}
                 onChange={(id) => {
                   setPartnerId(id);
+                  setPartnerPicked(Boolean(id));
                   setMapping({});
                   // Файл уже перетащили, а партнёра выбрали после — разбираем
                   // заново: у нового партнёра может быть своё правило.
@@ -502,29 +552,11 @@ export function PartnerReportsPage() {
             )}
           </div>
 
-          {/* ПАРАМЕТРЫ ОТЧЁТА ПЕРЕЕХАЛИ В «настроить колонки» (просьба
-              владельца 24.09.2026): это такая же настройка разбора, как
-              артикул и суммы, и держать её отдельно сверху значило бы
-              спрашивать одно и то же в двух местах. Здесь остаётся НДС —
-              без него файл не прочитать правильно, и правка ставки
-              пересобирает предпросмотр. */}
-          <div className="px-5 pb-5 flex flex-wrap gap-4 items-end">
-            {/* НДС — ЗДЕСЬ ЖЕ (просьба владельца 18.09.2026): наверху остаётся
-                то, без чего файл не прочитать (площадка и период), а ставка —
-                такое же свойство разобранного отчёта, как и остальные поля.
-                Правка ставки пересобирает предпросмотр: суммы от неё зависят. */}
-            <label className="block">
-              <span className="block text-[12px] text-text-secondary mb-1">НДС в суммах, %</span>
-              <input
-                value={vatRate ?? ''}
-                onChange={(e) => setVatRate(e.target.value)}
-                onBlur={() => preview && runPreview()}
-                placeholder="нет"
-                title="Если суммы в отчёте С НДС — укажите ставку (сейчас 22), и она будет вычтена. В отчётах «без НДС» поле оставляют пустым."
-                className={`${inputClass} w-[110px] tabular-nums`}
-              />
-            </label>
-          </div>
+          {/* НАД ПРЕДПРОСМОТРОМ НЕ ОСТАЛОСЬ НИЧЕГО (просьба владельца
+              24.09.2026): и параметры отчёта, и ставка НДС переехали в
+              «настроить колонки» — это настройки разбора, и спрашивать их в
+              двух местах незачем. Здесь только файл, площадка и период: без
+              них отчёт не прочитать и не подписать. */}
 
           {/* ЗАПОМНЕННЫЕ АРТИКУЛЫ площадки. Список нужен не для красоты:
               сопоставление, сделанное по ошибке, иначе повторялось бы в каждом
@@ -790,6 +822,28 @@ export function PartnerReportsPage() {
                     </div>
                   );
                 })}
+
+                {/* СТАВКА НДС — ЗДЕСЬ ЖЕ (просьба владельца 24.09.2026): это
+                    такая же настройка разбора, как колонки, и применяется той
+                    же кнопкой ниже. Отдельного «пересобрать по уходу из поля»
+                    у неё больше нет — иначе одно и то же действие делалось бы
+                    двумя способами. */}
+                <label className="flex items-end gap-2 flex-wrap">
+                  <span className="block flex-1 min-w-[320px]">
+                    <span className="block text-[12px] text-text-secondary mb-1">
+                      НДС в суммах
+                    </span>
+                    <RateField
+                      value={vatRate}
+                      onChange={setVatRate}
+                      className={`${inputClass} w-full tabular-nums`}
+                    />
+                  </span>
+                  <span className="text-[12px] text-text-muted pb-2 max-w-[320px]">
+                    Если суммы в отчёте с НДС — укажите ставку, она будет вычтена.
+                    В отчётах «без НДС» поле пустое.
+                  </span>
+                </label>
               </div>
 
               {/* Кнопка живёт ВНУТРИ настройки: файл разбирается заново с
