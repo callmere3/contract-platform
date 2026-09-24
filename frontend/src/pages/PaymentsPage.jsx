@@ -680,12 +680,18 @@ export function PaymentsPage() {
                           </span>
                         </Tooltip>
                       ) : (
-                        <span
-                          className="inline-block px-2 py-0.5 text-[12.5px] tabular-nums text-danger"
-                          title="Сумма завода минус сумма фактического завода"
+                        /* И ЗДЕСЬ ПОДСКАЗКА НАША, а не браузерная: ветка
+                           «сошлось» получила её раньше, а эта осталась с
+                           `title` — и именно её видно там, где расхождение
+                           настоящее, то есть где подсказку и читают. */
+                        <Tooltip
+                          text={'Сумма завода минус сумма фактического завода'}
+                          className="inline-block"
                         >
-                          {amount(r.difference)}
-                        </span>
+                          <span className="inline-block px-2 py-0.5 text-[12.5px] tabular-nums text-danger cursor-help">
+                            {amount(r.difference)}
+                          </span>
+                        </Tooltip>
                       )}
                     </td>
                     <td className={`${td} w-[40px] text-right`}>
