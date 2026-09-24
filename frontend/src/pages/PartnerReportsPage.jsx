@@ -68,14 +68,16 @@ const ATTRS = [
 // Поля единого формата: к ним сводится любой отчёт площадки.
 const FIELDS = [
   { name: 'sku', label: 'Артикул', required: true },
-  { name: 'title', label: 'Наименование' },
-  // Исполнитель нужен не для расчёта, а для ПОДБОРА артикула, когда площадка
-  // код не проставила: одного названия мало — в каталоге пять «Азимутов».
-  { name: 'artist', label: 'Исполнитель' },
   { name: 'quantity', label: 'Количество' },
   { name: 'amount_author', label: 'Сумма авторских' },
   { name: 'amount_related', label: 'Сумма смежных' },
 ];
+
+// НАЗВАНИЕ И ИСПОЛНИТЕЛЬ ЗДЕСЬ НЕ НАСТРАИВАЮТСЯ (просьба владельца
+// 24.09.2026): в детализации правообладателю они берутся ИЗ НОМЕНКЛАТУРЫ по
+// артикулу, а не из отчёта площадки, и настраивать нечего. В правиле поля
+// остались — встроенные правила их заполняют, и оттуда же работает подбор
+// артикула по названию, когда площадка код не проставила.
 
 /** Сумма для ячейки таблицы: те же тысячи, но без «₽» — он в шапке колонки. */
 function amount(value) {
@@ -500,48 +502,13 @@ export function PartnerReportsPage() {
             )}
           </div>
 
-          {/* ПАРАМЕТРЫ ОТЧЁТА — ПОД ЗАГРУЗКОЙ ФАЙЛА (просьба владельца
-              18.09.2026): сверху остаётся то, без чего файл не прочитать
-              (партнёр, период, НДС), а это — свойства уже прочитанного
-              отчёта, и заполняют их один раз на площадку: галочка «запомнить
-              правило» сохраняет их вместе с колонками. У знакомого формата
-              они приезжают заполненными (у МТС — «RBT · <не участвует> ·
-              Mobile · RU»). */}
+          {/* ПАРАМЕТРЫ ОТЧЁТА ПЕРЕЕХАЛИ В «настроить колонки» (просьба
+              владельца 24.09.2026): это такая же настройка разбора, как
+              артикул и суммы, и держать её отдельно сверху значило бы
+              спрашивать одно и то же в двух местах. Здесь остаётся НДС —
+              без него файл не прочитать правильно, и правка ставки
+              пересобирает предпросмотр. */}
           <div className="px-5 pb-5 flex flex-wrap gap-4 items-end">
-            {/* Подсказки — НАШИМ комбобоксом, а не браузерным `datalist`:
-                тот выглядит системным окном, открывается через раз и не
-                показывает, что подсказки вообще есть. Компонент тот же, что у
-                колонки «Исполнитель» в форме генерации. */}
-            {/* ПАРАМЕТР, ВЗЯТЫЙ ИЗ КОЛОНКИ, ЗДЕСЬ НЕ ПРАВИТСЯ (24.09.2026):
-                у него своё значение в каждой строке, и поле «одно на весь
-                отчёт» правило бы то, что ни на что не влияет. Вместо поля —
-                имя колонки, чтобы было видно, откуда взялось. */}
-            {ATTRS.map((a) => {
-              const column = fromColumns[a.name];
-              return (
-                <label className="block w-[190px]" key={a.name}>
-                  <span className="block text-[12px] text-text-secondary mb-1">{a.label}</span>
-                  {column ? (
-                    <div
-                      className={`${inputClass} w-full truncate text-text-secondary`}
-                      title={`Берётся из колонки «${column}» — своё значение у каждой строки`}
-                    >
-                      из колонки «{column}»
-                    </div>
-                  ) : (
-                    <ComboCell
-                      value={attributes[a.name] ?? ''}
-                      options={attrOptions[a.name] ?? []}
-                      onChange={(v) => setAttributes((prev) => ({ ...prev, [a.name]: v }))}
-                      placeholder="—"
-                      arrowLabel={`Показать значения: ${a.label}`}
-                      inputClassName={`${inputClass} w-full pr-6`}
-                    />
-                  )}
-                </label>
-              );
-            })}
-
             {/* НДС — ЗДЕСЬ ЖЕ (просьба владельца 18.09.2026): наверху остаётся
                 то, без чего файл не прочитать (площадка и период), а ставка —
                 такое же свойство разобранного отчёта, как и остальные поля.
@@ -758,42 +725,71 @@ export function PartnerReportsPage() {
                 })}
               </div>
 
-              {/* ЧЕТЫРЕ ПАРАМЕТРА — ТОЖЕ КОЛОНКАМИ, если площадка их даёт
-                  (24.09.2026). У МТС и «101 и К» они одни на весь файл и
-                  задаются полем выше; у Believe в одном отчёте 308 разных
-                  сочетаний, а территория идёт по странам, — и там их надо
-                  брать из строки. Формулы у них не бывает: формулы считают
-                  числа, а это слова. */}
+              {/* ЧЕТЫРЕ ПАРАМЕТРА — ЗДЕСЬ ЖЕ, а не отдельным блоком сверху
+                  (просьба владельца 24.09.2026): это такая же настройка
+                  разбора, как артикул и суммы.
+
+                  У большинства площадок параметр ОДИН НА ВЕСЬ ФАЙЛ — тогда
+                  его вписывают значением, с подсказками из того, что уже
+                  вводили. У Believe в одном отчёте 308 сочетаний, а
+                  территория идёт по странам — тогда «выбрать колонкой», как
+                  у сумм МТС «задать формулой». Формулы у параметров не
+                  бывает: формулы считают числа, а это слова. */}
               <div className={`flex-col gap-3 mb-4 ${mappingOpen ? 'flex' : 'hidden'}`}>
-                <div className="text-[12.5px] text-text-muted">
-                  Параметры отчёта: оставьте «одно значение», если оно общее для
-                  всего файла, или укажите колонку — тогда значение возьмётся из
-                  каждой строки.
-                </div>
-                {ATTRS.map((a) => (
-                  <label key={a.name} className="flex items-center gap-3 flex-wrap">
-                    <span className="text-[12px] text-text-secondary w-[150px]">{a.label}</span>
-                    <select
-                      value={mapping[a.name]?.column ?? ''}
-                      onChange={(e) =>
-                        setMapping((m) => {
-                          const next = { ...m };
-                          if (e.target.value) next[a.name] = { column: e.target.value };
-                          else delete next[a.name];
-                          return next;
-                        })
-                      }
-                      className={`${inputClass} flex-1 min-w-[320px]`}
-                    >
-                      <option value="">— одно значение на весь отчёт —</option>
-                      {preview.columns.filter(Boolean).map((c) => (
-                        <option key={c} value={c}>
-                          {c}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                ))}
+                {ATTRS.map((a) => {
+                  const byColumn = Object.prototype.hasOwnProperty.call(
+                    mapping[a.name] ?? {}, 'column',
+                  );
+                  return (
+                    <div key={a.name} className="flex items-end gap-2 flex-wrap">
+                      <label className="block flex-1 min-w-[320px]">
+                        <span className="block text-[12px] text-text-secondary mb-1">
+                          {a.label}
+                        </span>
+                        {byColumn ? (
+                          <select
+                            value={mapping[a.name]?.column ?? ''}
+                            onChange={(e) =>
+                              setMapping((m) => ({ ...m, [a.name]: { column: e.target.value } }))
+                            }
+                            className={`${inputClass} w-full`}
+                          >
+                            <option value="">— нет —</option>
+                            {preview.columns.filter(Boolean).map((c) => (
+                              <option key={c} value={c}>
+                                {c}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <ComboCell
+                            value={attributes[a.name] ?? ''}
+                            options={attrOptions[a.name] ?? []}
+                            onChange={(v) => setAttributes((prev) => ({ ...prev, [a.name]: v }))}
+                            placeholder="—"
+                            arrowLabel={`Показать значения: ${a.label}`}
+                            inputClassName={`${inputClass} w-full pr-6`}
+                          />
+                        )}
+                      </label>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setMapping((m) => {
+                            const next = { ...m };
+                            if (byColumn) delete next[a.name];
+                            else next[a.name] = { column: '' };
+                            return next;
+                          })
+                        }
+                        className="text-[12px] text-accent bg-transparent border-0 p-0 pb-2 cursor-pointer font-sans whitespace-nowrap"
+                      >
+                        {byColumn ? 'задать значением' : 'выбрать колонкой'}
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
 
               {/* Кнопка живёт ВНУТРИ настройки: файл разбирается заново с
