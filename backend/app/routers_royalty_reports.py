@@ -6,6 +6,8 @@
 насчитано (и какие отчёты площадок пропущены), `generate` отдаёт файлы. Один
 правообладатель и один вид отчёта — это один .xlsx, иначе .zip.
 """
+import threading
+import time
 import uuid
 from datetime import date
 from decimal import Decimal
@@ -63,6 +65,8 @@ class RoyaltyRequest(BaseModel):
     kinds: list[str] = ["summary", "detailed"]
     # Для сводных отчётов: по чему сводка — holder, track или partner.
     by: str = "holder"
+    # Построенная сводка, которую выгружаем (см. _snapshots).
+    snapshot: str | None = None
 
 
 def _settings(body: RoyaltyRequest) -> Settings:
@@ -175,20 +179,67 @@ def _cell(value):
     return f"{cents(value):.2f}" if isinstance(value, Decimal) else value
 
 
+# ПОСТРОЕННАЯ СВОДКА ЗАПОМИНАЕТСЯ, И ВЫГРУЗКА БЕРЁТ ЕЁ, А НЕ СЧИТАЕТ ЗАНОВО
+# (вопрос владельца 24.09.2026). Расчёт по всем правообладателям квартала —
+# около 25 секунд, и платить их дважды за «посмотреть» и «выгрузить» незачем.
+# К тому же выгружается ровно то, что было на экране: если между кнопками
+# кто-то загрузит отчёт, файл не разойдётся с увиденным.
+#
+# Снимок привязан к НАСТРОЙКАМ: выгрузка с другими настройками снимок не
+# возьмёт и посчитает заново. Живёт полчаса, держим несколько последних.
+SNAPSHOT_TTL = 1800
+SNAPSHOT_KEEP = 5
+SUMMARY_SHOWN = 10
+_snapshots: dict = {}
+_snapshots_lock = threading.Lock()
+
+
+def _settings_key(body: RoyaltyRequest) -> str:
+    data = body.model_dump(exclude={"snapshot", "kinds", "group_detail"}, mode="json")
+    for k in ("contragent_ids", "partner_ids", "track_ids"):
+        data[k] = sorted(data[k])
+    return repr(sorted(data.items()))
+
+
+def _remember(body: RoyaltyRequest, rows: list) -> str:
+    token = uuid.uuid4().hex
+    now = time.monotonic()
+    with _snapshots_lock:
+        for k in [k for k, v in _snapshots.items() if now - v[0] > SNAPSHOT_TTL]:
+            _snapshots.pop(k, None)
+        _snapshots[token] = (now, _settings_key(body), rows)
+        for k in sorted(_snapshots, key=lambda k: _snapshots[k][0])[:-SNAPSHOT_KEEP]:
+            _snapshots.pop(k, None)
+    return token
+
+
+def _recall(body: RoyaltyRequest) -> list | None:
+    if not body.snapshot:
+        return None
+    with _snapshots_lock:
+        found = _snapshots.get(body.snapshot)
+    if found is None or time.monotonic() - found[0] > SNAPSHOT_TTL:
+        return None
+    return found[2] if found[1] == _settings_key(body) else None
+
+
 @royalty_reports_router.post("/summary")
 def summary_view(body: RoyaltyRequest, db: Session = Depends(get_session)) -> dict:
     """
     Сводный отчёт на экран: по правообладателю, объекту или площадке
-    (24.09.2026). Строк бывает много — по объектам это тысячи треков, — и
-    отдаём их все: экран показывает начало, файл — всё.
+    (24.09.2026). На экран — ТОП-10 по вознаграждению и итог по всем
+    строкам (просьба владельца): остальное — в файле. Вся сводка
+    запоминается, и выгрузка берёт её по `snapshot`.
     """
     s = _settings(body)
     by = _summary_by(body)
     rows = summary(db, s, by)
     return {
         "by": by,
+        "snapshot": _remember(body, rows),
         "columns": [{"field": f, "title": t, "money": m} for f, t, m in SUMMARY_COLUMNS[by]],
-        "rows": [{k: _cell(v) for k, v in r.items()} for r in rows],
+        "rows": [{k: _cell(v) for k, v in r.items()} for r in rows[:SUMMARY_SHOWN]],
+        "total_rows": len(rows),
         "totals": {k: _cell(v) for k, v in summary_totals(rows, by).items()},
         "skipped_reports": pending_reports(db, s),
         "unlinked_reports": unlinked_reports(db, s),
@@ -201,16 +252,19 @@ def summary_export(
     db: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> Response:
-    """Та же сводка — файлом .xlsx."""
+    """Сводка файлом .xlsx — построенная, если она есть, иначе считается заново."""
     s = _settings(body)
     by = _summary_by(body)
-    rows = summary(db, s, by)
+    rows = _recall(body)
+    from_snapshot = rows is not None
+    if rows is None:
+        rows = summary(db, s, by)
     if not rows:
         raise HTTPException(404, "За этот период строк нет — выгружать нечего")
     log_action(
         db, current_user, "royalty_report.summary", entity_type="royalty_report",
         meta={"by": by, "period": [s.period_from.isoformat(), s.period_to.isoformat()],
-              "rows": len(rows)},
+              "rows": len(rows), "from_snapshot": from_snapshot},
     )
     db.commit()
     return Response(

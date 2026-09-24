@@ -19,6 +19,7 @@ function body(settings) {
     group_detail: settings.groupDetail,
     kinds: settings.kinds,
     by: settings.by,
+    snapshot: settings.snapshot ?? null,
   });
 }
 

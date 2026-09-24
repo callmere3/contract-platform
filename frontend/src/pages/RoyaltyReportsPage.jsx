@@ -223,7 +223,9 @@ export function RoyaltyReportsPage() {
     setBusy('export');
     setError('');
     try {
-      const { blob, filename } = await exportSummary(settings);
+      // Построенную сводку выгружаем как есть, без пересчёта: сервер её
+      // запомнил. Настройки поменялись — снимок сброшен, и сервер посчитает.
+      const { blob, filename } = await exportSummary({ ...settings, snapshot: summary?.snapshot });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -308,8 +310,11 @@ export function RoyaltyReportsPage() {
           </>
         }
       >
-        Квартальные ведомости правообладателям по загруженным отчётам площадок: сколько
-        причитается каждому по его долям и ставкам роялти.
+        {/* Описание — своё у каждого режима (просьба владельца 24.09.2026):
+            ведомости и сводки отвечают на разные вопросы. */}
+        {mode === 'summary'
+          ? 'Сколько Лицензиарам причитается за период — сводкой по правообладателю, объекту или площадке: количество, сумма реализации, вознаграждение и комиссия Лицензиата.'
+          : 'Квартальные ведомости правообладателям по загруженным отчётам площадок: сколько причитается каждому по его долям и ставкам роялти.'}
       </PageHeader>
 
       {
@@ -813,10 +818,6 @@ function Warnings({ skipped = [], unlinked = [] }) {
   );
 }
 
-// Сколько строк сводки показывать на экране: по объектам их тысячи, и
-// полный список — в файле.
-const SUMMARY_SHOWN = 500;
-
 function SummaryTable({ summary }) {
   const th =
     'text-left font-semibold text-[11px] uppercase tracking-[0.04em] text-text-muted px-3 py-2 border-b border-border';
@@ -829,7 +830,9 @@ function SummaryTable({ summary }) {
     if (c.field === 'quantity') return Number(v).toLocaleString('ru-RU', { maximumFractionDigits: 2 });
     return v;
   };
-  const rows = summary.rows.slice(0, SUMMARY_SHOWN);
+  // На экране — топ-10 по вознаграждению (их и присылает сервер), итог — по
+  // всем строкам, полный список — в Excel.
+  const rows = summary.rows;
   return (
     <div className="flex flex-col gap-3">
       <Warnings skipped={summary.skipped_reports} unlinked={summary.unlinked_reports} />
@@ -877,9 +880,9 @@ function SummaryTable({ summary }) {
             </table>
           </div>
           <div className="text-[12.5px] text-text-muted">
-            Строк: {summary.rows.length}
-            {summary.rows.length > SUMMARY_SHOWN &&
-              ` — на экране первые ${SUMMARY_SHOWN} по сумме, все — в файле Excel.`}
+            {summary.total_rows > rows.length
+              ? `Показаны первые ${rows.length} из ${summary.total_rows} по вознаграждению; итог — по всем строкам, полный список — в Excel.`
+              : `Строк: ${summary.total_rows}.`}
           </div>
         </>
       )}
