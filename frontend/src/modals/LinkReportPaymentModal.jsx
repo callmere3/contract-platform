@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Modal } from '../components/ui/Modal';
 import { Button } from '../components/ui/Button';
+import { Spinner } from '../components/ui/Spinner';
 import { useModal } from './ModalProvider';
 import { listPayments } from '../api/payments';
 import {
@@ -112,6 +113,10 @@ export function LinkReportPaymentModal({ report, level, isTop, onChanged }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  // ЧТО ИМЕННО ДЕЛАЕМ — для индикатора (просьба владельца 24.09.2026):
+  // привязка большого валютного отчёта пересчитывает сотни тысяч строк и идёт
+  // десятки секунд, и без движения на экране кажется, что сервис завис.
+  const [action, setAction] = useState(null);
   const [error, setError] = useState('');
 
   const range =
@@ -138,6 +143,7 @@ export function LinkReportPaymentModal({ report, level, isTop, onChanged }) {
 
   async function link(payment) {
     setBusy(true);
+    setAction('link');
     setError('');
     try {
       const res = await linkReportPayment(report.id, payment.id);
@@ -153,17 +159,20 @@ export function LinkReportPaymentModal({ report, level, isTop, onChanged }) {
             'Курс не поставлен — задайте его в окне отчёта.',
         );
         setBusy(false);
+        setAction(null);
         return;
       }
       closeModal();
     } catch (e) {
       setError(e.message);
       setBusy(false);
+      setAction(null);
     }
   }
 
   async function unlink() {
     setBusy(true);
+    setAction('unlink');
     setError('');
     try {
       const res = await unlinkReportPayment(report.id);
@@ -172,6 +181,7 @@ export function LinkReportPaymentModal({ report, level, isTop, onChanged }) {
     } catch (e) {
       setError(e.message);
       setBusy(false);
+      setAction(null);
     }
   }
 
@@ -231,11 +241,26 @@ export function LinkReportPaymentModal({ report, level, isTop, onChanged }) {
       footer={
         report.payment_id ? (
           <Button variant="secondary" size="sm" onClick={unlink} disabled={busy}>
-            Отвязать
+            {action === 'unlink' ? 'Отвязываем…' : 'Отвязать'}
           </Button>
         ) : null
       }
     >
+      {/* ПОКА ИДЁТ ЗАПРОС — ТОЛЬКО ИНДИКАТОР: список прячем, чтобы не нажать
+          вторую строку, пока пересчитывается первая. */}
+      {action ? (
+        <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
+          <Spinner size={36} className="text-accent" />
+          <div className="text-[14px] text-text">
+            {action === 'link' ? 'Привязываем отчёт к поступлению…' : 'Отвязываем от поступления…'}
+          </div>
+          <div className="text-[12.5px] text-text-muted max-w-[420px]">
+            У большого отчёта это может занять до минуты: суммы всех строк
+            пересчитываются заново.
+          </div>
+        </div>
+      ) : (
+        <>
       <div className="text-[13px] text-text mb-4">
         <b>{report.partner}</b> · {report.period_label} · итог{' '}
         <b className="tabular-nums">
@@ -410,6 +435,8 @@ export function LinkReportPaymentModal({ report, level, isTop, onChanged }) {
             );
           })}
         </div>
+      )}
+        </>
       )}
     </Modal>
   );
