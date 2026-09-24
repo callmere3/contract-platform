@@ -26,6 +26,7 @@ import {
   PartnersImportExportModal,
 } from './PartnerModals';
 import { ConfirmDeleteReportModal } from './ConfirmDeleteReportModal';
+import { ReportFilterModal } from './ReportFilterModal';
 import { ConfirmModal } from './ConfirmModal';
 import { LinkReportPaymentModal } from './LinkReportPaymentModal';
 import { AlertModal } from './AlertModal';
@@ -58,6 +59,7 @@ const REGISTRY = {
   newPartner: NewPartnerModal,
   partnersImportExport: PartnersImportExportModal,
   confirmDeleteReport: ConfirmDeleteReportModal,
+  reportFilter: ReportFilterModal,
   confirm: ConfirmModal,
   linkReportPayment: LinkReportPaymentModal,
 };

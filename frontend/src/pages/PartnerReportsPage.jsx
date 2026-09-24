@@ -5,7 +5,12 @@ import { PageHeader } from '../components/ui/PageHeader';
 import { ComboCell } from '../components/ui/ComboCell';
 import { PartnerPicker } from '../components/ui/PartnerPicker';
 import { Tooltip } from '../components/ui/Tooltip';
-import { TrashIcon } from '../components/ui/icons';
+import {
+  FilterIcon,
+  FilterPickIcon,
+  FilterSetupIcon,
+  TrashIcon,
+} from '../components/ui/icons';
 import { useAuth } from '../auth/AuthContext';
 import { canManagePartnerReports } from '../auth/permissions';
 import { listPartners } from '../api/partners';
@@ -64,6 +69,31 @@ const ATTRS = [
   { name: 'usage_type', label: 'Тип использования' },
   { name: 'usage_kind', label: 'Вид использования' },
   { name: 'territory', label: 'Территория' },
+];
+
+/**
+ * КОЛОНКИ СПИСКА ЗАГРУЖЕННЫХ ОТЧЁТОВ — одним описанием (24.09.2026).
+ *
+ * По нему рисуется и таблица, и окно настройки фильтра, и берётся значение
+ * из выбранной ячейки. Разойдись они — в фильтре появилась бы колонка,
+ * которой нет на экране, или наоборот.
+ *
+ * `text` — то, ПО ЧЕМУ ищем: именно показанная строка, а не сырое число.
+ * Человек видит «40 916,36» и ждёт, что «916» найдётся.
+ */
+const REPORT_COLUMNS = [
+  { key: 'partner', label: 'Партнёр', text: (r) => r.partner },
+  { key: 'period', label: 'Период', text: (r) => r.period_label },
+  ...['content_type', 'usage_type', 'usage_kind', 'territory'].map((name) => ({
+    key: name,
+    label: { content_type: 'Тип контента', usage_type: 'Тип использования',
+             usage_kind: 'Вид использования', territory: 'Территория' }[name],
+    text: (r) => r[name] || '',
+  })),
+  { key: 'payment', label: 'Поступление', text: (r) => r.payment_label || '' },
+  { key: 'unmatched', label: 'Вне каталога', text: (r) => amount(r.unmatched_amount) },
+  { key: 'author', label: 'Авторские', text: (r) => amount(r.total_author) },
+  { key: 'related', label: 'Смежные', text: (r) => amount(r.total_related) },
 ];
 
 // Поля единого формата: к ним сводится любой отчёт площадки.
@@ -134,6 +164,32 @@ function count(value) {
   return number.toLocaleString('ru-RU', { maximumFractionDigits: 2 });
 }
 
+/**
+ * Кнопка-значок в шапке списка отчётов.
+ *
+ * Значок без подписи — загадка, поэтому `title` обязателен (он же уходит в
+ * `aria-label`). Включённое состояние красится акцентом: у фильтра «включён»
+ * и «выключен» выглядят одинаково, если не показать этого прямо, — и человек
+ * гадает, почему список короче обычного.
+ */
+function FilterButton({ icon, title, onClick, active = false, disabled = false }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      aria-label={title}
+      aria-pressed={active}
+      disabled={disabled}
+      className={`w-8 h-8 rounded-input border flex items-center justify-center cursor-pointer bg-transparent disabled:opacity-40 disabled:cursor-default ${
+        active ? 'border-accent text-accent' : 'border-border text-text-secondary hover:text-text'
+      }`}
+    >
+      {icon}
+    </button>
+  );
+}
+
 /** Сумма для ячейки таблицы: те же тысячи, но без «₽» — он в шапке колонки. */
 function amount(value) {
   return formatMoney(value).replace(' ₽', '');
@@ -195,13 +251,22 @@ export function PartnerReportsPage() {
   // руками и уходят вместе с отчётом.
   const [attributes, setAttributes] = useState({});
   const [attrOptions, setAttrOptions] = useState({});
+  // ФИЛЬТР СПИСКА ОТЧЁТОВ — как в Dista (просьба владельца 24.09.2026): три
+  // кнопки в шапке вместо общей суммы. Условия живут отдельно от того,
+  // включены ли они: «Выключить» не должно стирать набранное — иначе
+  // сравнить «всё» и «только МТС» значило бы набрать условие заново.
+  const [filters, setFilters] = useState({});
+  const [filterOn, setFilterOn] = useState(false);
+  // Режим «взять значение из ячейки». Отдельный режим, а не скрытый жест:
+  // нажатие на строку и так открывает привязку к поступлению, и вешать на
+  // него второй смысл значило бы гадать, что случится.
+  const [pickMode, setPickMode] = useState(false);
   // Запомненные сопоставления выбранной площадки: «название — исполнитель →
   // артикул». Их заводит сервис, когда артикул вписывают руками.
   const [aliases, setAliases] = useState([]);
   const [showAliases, setShowAliases] = useState(false);
 
   const [reports, setReports] = useState([]);
-  const [totals, setTotals] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -244,7 +309,6 @@ export function PartnerReportsPage() {
     try {
       const data = await listReports({});
       setReports(data.reports ?? []);
-      setTotals(data.totals ?? null);
     } catch (e) {
       setError(e.message);
     }
@@ -425,6 +489,43 @@ export function PartnerReportsPage() {
   // Настройку колонок показываем, когда правила нет (его надо проверить) или
   // когда её открыли вручную.
   const mappingOpen = showMapping || preview?.rule_source === 'guess';
+
+  // ОТБОР ИДЁТ ПО ТОМУ, ЧТО ВИДНО НА ЭКРАНЕ, а не запросом к серверу: список
+  // и так приходит целиком (до 200 отчётов), а фильтр в Dista — это взгляд
+  // на уже загруженное. Понадобится больше — тогда и переносить на сервер,
+  // вместе с постраничностью.
+  const activeFilters = Object.entries(filters).filter(([, text]) => text.trim());
+  const shownReports =
+    filterOn && activeFilters.length
+      ? reports.filter((r) =>
+          activeFilters.every(([key, text]) => {
+            const column = REPORT_COLUMNS.find((c) => c.key === key);
+            return String(column?.text(r) ?? '')
+              .toLowerCase()
+              .includes(text.trim().toLowerCase());
+          }),
+        )
+      : reports;
+
+  // Значение ячейки — в условие. Включаем фильтр сразу: человек нажал
+  // «взять», глядя на строку, и ждёт результата, а не ещё одного нажатия.
+  // Ячейка в режиме выбора: прицел вместо курсора и подсветка под мышью,
+  // чтобы было видно, что берётся именно она, а не строка целиком.
+  const cellClass = (extra = '') =>
+    `${td} ${extra} ${pickMode ? 'cursor-crosshair hover:bg-accent-soft' : ''}`;
+  const cellPick = (key, report) =>
+    pickMode
+      ? (e) => {
+          e.stopPropagation();
+          pickValue(REPORT_COLUMNS.find((c) => c.key === key), report);
+        }
+      : undefined;
+
+  function pickValue(column, report) {
+    setFilters((prev) => ({ ...prev, [column.key]: String(column.text(report) ?? '') }));
+    setFilterOn(true);
+    setPickMode(false);
+  }
 
   const inputClass =
     'bg-input-bg border border-border rounded-input px-3 py-2 text-[13px] text-text outline-none font-sans';
@@ -1083,20 +1184,74 @@ export function PartnerReportsPage() {
       )}
 
       <Card>
+        {/* ТРИ КНОПКИ ФИЛЬТРА ВМЕСТО ОБЩЕЙ СУММЫ (просьба владельца
+            24.09.2026, по образцу Dista): включить-выключить, взять значение
+            из ячейки, тонкая настройка. Суммы отсюда убраны — место одно, а
+            отбор нужнее: по площадке, территории и виду использования
+            отчёты ищут глазами по всему списку. */}
         <div className="flex items-center justify-between gap-4 px-5 py-4 border-b border-border">
-          <div className="text-sm font-semibold text-text">Загруженные отчёты</div>
-          {totals && reports.length > 0 && (
-            <div className="text-[12.5px] text-text-muted tabular-nums">
-              авторские {formatMoney(totals.author)} · смежные {formatMoney(totals.related)}
-            </div>
-          )}
+          <div className="text-sm font-semibold text-text">
+            Загруженные отчёты
+            {filterOn && activeFilters.length > 0 && (
+              <span className="text-text-muted font-normal">
+                {' '}— отобрано {shownReports.length} из {reports.length}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-1">
+            <FilterButton
+              icon={<FilterIcon />}
+              title={
+                activeFilters.length === 0
+                  ? 'Условий пока нет — задайте их в настройке фильтра'
+                  : filterOn
+                    ? 'Выключить фильтр (условия сохранятся)'
+                    : 'Включить фильтр'
+              }
+              active={filterOn && activeFilters.length > 0}
+              disabled={activeFilters.length === 0}
+              onClick={() => setFilterOn((v) => !v)}
+            />
+            <FilterButton
+              icon={<FilterPickIcon />}
+              title="Взять значение из ячейки в фильтр"
+              active={pickMode}
+              onClick={() => setPickMode((v) => !v)}
+            />
+            <FilterButton
+              icon={<FilterSetupIcon />}
+              title="Настроить условия по колонкам"
+              onClick={() =>
+                openModal('reportFilter', {
+                  columns: REPORT_COLUMNS,
+                  value: filters,
+                  onApply: (next, on) => {
+                    setFilters(next);
+                    setFilterOn(on && Object.values(next).some((t) => t.trim()));
+                  },
+                })
+              }
+            />
+          </div>
         </div>
 
-        {reports.length === 0 && (
-          <div className="px-5 py-4 text-[13px] text-text-muted">Отчётов пока нет.</div>
+        {pickMode && (
+          <div className="px-5 py-2 text-[12.5px] text-accent border-b border-border">
+            Нажмите на ячейку — её значение станет условием фильтра.
+          </div>
         )}
 
-        {reports.length > 0 && (
+        {/* «Ничего не нашлось» и «отчётов нет» — разные ответы: во втором
+            случае человек ждёт, что список пуст, а в первом ищет, почему. */}
+        {shownReports.length === 0 && (
+          <div className="px-5 py-4 text-[13px] text-text-muted">
+            {reports.length === 0
+              ? 'Отчётов пока нет.'
+              : 'Под условия фильтра не подошёл ни один отчёт.'}
+          </div>
+        )}
+
+        {shownReports.length > 0 && (
           <div>
             <table className="w-full border-collapse">
               <thead>
@@ -1125,26 +1280,41 @@ export function PartnerReportsPage() {
                 </tr>
               </thead>
               <tbody>
-                {reports.map((r) => (
+                {shownReports.map((r) => (
                   /* СТРОКА КЛИКАБЕЛЬНА (19.09.2026): нажатие открывает
                      «к какому поступлению относится этот отчёт». Это
                      единственное действие над загруженным отчётом, кроме
                      удаления, — отдельной кнопки ради него заводить незачем. */
                   <tr
                     key={r.id}
-                    onClick={() =>
-                      openModal('linkReportPayment', { report: r, onChanged: loadReports })
-                    }
-                    className="cursor-pointer hover:bg-hover"
+                    onClick={() => {
+                      // В режиме выбора строка не открывает привязку: сейчас
+                      // нажатие значит «взять это значение», и делать его
+                      // двусмысленным нельзя.
+                      if (pickMode) return;
+                      openModal('linkReportPayment', { report: r, onChanged: loadReports });
+                    }}
+                    className={pickMode ? 'hover:bg-hover' : 'cursor-pointer hover:bg-hover'}
                   >
-                    <td className={`${td} font-semibold text-text`}>{r.partner}</td>
+                    <td
+                      className={cellClass('font-semibold text-text')}
+                      onClick={cellPick('partner', r)}
+                    >
+                      {r.partner}
+                    </td>
                     {/* Имя файла и число строк убраны из списка (просьба
                         владельца 18.09.2026): имя площадки и период отвечают,
                         что это за отчёт, а строки — служебное число. Имя файла
                         осталось в журнале действий и в сообщении о загрузке. */}
-                    <td className={td}>{r.period_label}</td>
+                    <td className={cellClass()} onClick={cellPick('period', r)}>
+                      {r.period_label}
+                    </td>
                     {ATTRS.map((a) => (
-                      <td key={a.name} className={`${td} text-text-secondary whitespace-nowrap`}>
+                      <td
+                        key={a.name}
+                        className={cellClass('text-text-secondary whitespace-nowrap')}
+                        onClick={cellPick(a.name, r)}
+                      >
                         {r[a.name] || '—'}
                       </td>
                     ))}
@@ -1158,7 +1328,7 @@ export function PartnerReportsPage() {
                         человек называет строку, глядя в таблицу поступлений.
                         Подпись собирает сервер, чтобы номер и здесь, и там
                         считались одним кодом. */}
-                    <td className={`${td} whitespace-nowrap`}>
+                    <td className={cellClass('whitespace-nowrap')} onClick={cellPick('payment', r)}>
                       {r.payment_label ? (
                         /* Подсказка наша, а не браузерная (просьба владельца
                            24.09.2026): та появляется через секунду, сама
@@ -1182,9 +1352,12 @@ export function PartnerReportsPage() {
                         здесь она часть работы, по ней решают, лезть ли в
                         отчёт. То же решение, что в «Поступлениях». */}
                     <td
-                      className={`${td} tabular-nums ${
-                        Number(r.unmatched_amount) > 0 ? 'text-danger' : 'text-text-muted'
-                      }`}
+                      className={cellClass(
+                        `tabular-nums ${
+                          Number(r.unmatched_amount) > 0 ? 'text-danger' : 'text-text-muted'
+                        }`,
+                      )}
+                      onClick={cellPick('unmatched', r)}
                     >
                       {Number(r.unmatched_amount) > 0 ? (
                         <Tooltip
@@ -1201,8 +1374,12 @@ export function PartnerReportsPage() {
                         '—'
                       )}
                     </td>
-                    <td className={`${td} tabular-nums`}>{amount(r.total_author)}</td>
-                    <td className={`${td} tabular-nums`}>{amount(r.total_related)}</td>
+                    <td className={cellClass('tabular-nums')} onClick={cellPick('author', r)}>
+                      {amount(r.total_author)}
+                    </td>
+                    <td className={cellClass('tabular-nums')} onClick={cellPick('related', r)}>
+                      {amount(r.total_related)}
+                    </td>
                     <td className={`${td} text-right`}>
                       {manage && (
                         <button

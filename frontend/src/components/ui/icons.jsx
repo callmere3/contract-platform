@@ -65,3 +65,45 @@ export function CloseIcon({ size }) {
     </Svg>
   );
 }
+
+/*
+ * ТРИ ВОРОНКИ — фильтр списка отчётов, как в Dista (просьба владельца
+ * 24.09.2026). Различаются они значком-приставкой, а сама воронка у всех
+ * одна: три кнопки стоят рядом, и глаз должен читать их как один набор, а
+ * разбираться — по мелкой детали, а не по форме.
+ */
+function Funnel() {
+  return <path d="M4 5h16l-6.2 7.3v5.4L10.2 20v-7.7L4 5z" />;
+}
+
+/** Воронка: включить или выключить фильтр. */
+export function FilterIcon({ size }) {
+  return (
+    <Svg size={size}>
+      <Funnel />
+    </Svg>
+  );
+}
+
+/** Воронка со стрелкой внутрь: взять выделенное значение в фильтр. */
+export function FilterPickIcon({ size }) {
+  return (
+    <Svg size={size}>
+      <Funnel />
+      <path d="M19 15v5" />
+      <path d="M16.5 17.5L19 20l2.5-2.5" />
+    </Svg>
+  );
+}
+
+/** Воронка с гайкой: тонкая настройка условий. */
+export function FilterSetupIcon({ size }) {
+  return (
+    <Svg size={size}>
+      <Funnel />
+      <circle cx="18.5" cy="17.5" r="2.2" />
+      <path d="M18.5 13.6v1.1" />
+      <path d="M18.5 20.3v1.1" />
+    </Svg>
+  );
+}
