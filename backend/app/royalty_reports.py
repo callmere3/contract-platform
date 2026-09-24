@@ -496,3 +496,185 @@ def zip_files(files: list) -> bytes:
         for name, content in files:
             z.writestr(name, content)
     return buf.getvalue()
+
+
+# ---------------------------------------------------------------- сводные отчёты
+
+# Сводка «по чему» — правообладателю, объекту (треку) или площадке
+# (24.09.2026, просьба владельца: вместо трёх отдельных вкладок Dista — одна
+# «Сводные отчёты» с выбором). Смысл у всех один: количество и суммы за
+# период, разложенные по выбранному признаку.
+SUMMARY_BY = {
+    "holder": "правообладателям",
+    "track": "объектам",
+    "partner": "площадкам",
+}
+
+
+def _gross(db: Session, s: Settings, by: str) -> dict:
+    """
+    Валовые суммы отчётов площадок по треку или площадке — ДО дележа.
+
+    Берутся все строки попавших в период отчётов, в том числе «вне каталога»:
+    это тоже пришедшие деньги, и сводка по площадке без них не сошлась бы с
+    её отчётом. Выбор правообладателей и товарный фильтр сужают строки до
+    треков, на которые у выбранных есть права.
+    """
+    R, Rep = PartnerReportRow, PartnerReport
+    key = R.track_id if by == "track" else Rep.partner_id
+    q = (
+        select(
+            key,
+            func.coalesce(func.sum(R.quantity), 0),
+            func.coalesce(func.sum(R.amount_author), 0),
+            func.coalesce(func.sum(R.amount_related), 0),
+            func.count(func.distinct(Rep.id)),
+        )
+        .select_from(R)
+        .join(Rep, Rep.id == R.report_id)
+        .where(_report_filter(s), _not_pending())
+        .group_by(key)
+    )
+    if s.contragent_ids:
+        q = q.where(R.track_id.in_(
+            select(TrackRight.track_id).where(TrackRight.contragent_id.in_(s.contragent_ids))
+        ))
+    if s.track_ids:
+        q = q.where(R.track_id.in_(s.track_ids))
+    return {
+        k: {"quantity": Decimal(str(qty)), "author": Decimal(str(a)),
+            "related": Decimal(str(r)), "reports": int(n)}
+        for k, qty, a, r, n in db.execute(q).all()
+    }
+
+
+def summary(db: Session, s: Settings, by: str) -> list:
+    """
+    Строки сводки: словари с Decimal-суммами, отсортированные по убыванию
+    вознаграждения (для правообладателей) или суммы по отчётам.
+
+    Вознаграждения — из того же `compute`, что и ведомости: сводка и
+    ведомости обязаны сходиться, и считать их двумя путями значило бы однажды
+    получить два разных числа.
+    """
+    results = compute(db, s)
+    if by == "holder":
+        rows = [{
+            "key": r.contragent_id, "title": r.title, "tracks": r.tracks,
+            "quantity": r.quantity, "gross": r.realization,
+            "reward_author": r.reward_author, "reward_related": r.reward_related,
+            "reward": r.reward, "left": r.realization - r.reward,
+        } for r in results]
+        return sorted(rows, key=lambda x: -x["reward"])
+
+    reward: dict = {}
+    for r in results:
+        for ln in r.lines:
+            k = ln.sku if by == "track" else ln.partner
+            acc = reward.setdefault(k, [ZERO, ZERO])
+            acc[0] += ln.reward_author
+            acc[1] += ln.reward_related
+    gross = _gross(db, s, by)
+    rows = []
+    if by == "track":
+        ids = [k for k in gross if k is not None]
+        tracks = {t.id: t for t in db.scalars(select(Track).where(Track.id.in_(ids)))} if ids else {}
+        for tid, g in gross.items():
+            t = tracks.get(tid)
+            sku = t.sku if t else ""
+            ra, rr = reward.get(sku, [ZERO, ZERO]) if t else (ZERO, ZERO)
+            total = g["author"] + g["related"]
+            rows.append({
+                "key": str(tid) if tid else "", "sku": sku,
+                "title": (t.title if t else "без привязки к треку") or "",
+                "artist": (t.artist or "") if t else "",
+                "quantity": g["quantity"], "gross_author": g["author"], "gross_related": g["related"],
+                "gross": total, "reward_author": ra, "reward_related": rr,
+                "reward": ra + rr, "left": total - ra - rr,
+            })
+    else:
+        names = dict(db.execute(select(Partner.id, Partner.name)).all())
+        for pid, g in gross.items():
+            name = names.get(pid, "")
+            ra, rr = reward.get(name, [ZERO, ZERO])
+            total = g["author"] + g["related"]
+            rows.append({
+                "key": str(pid), "title": name, "reports": g["reports"],
+                "quantity": g["quantity"], "gross_author": g["author"], "gross_related": g["related"],
+                "gross": total, "reward_author": ra, "reward_related": rr,
+                "reward": ra + rr, "left": total - ra - rr,
+            })
+    return sorted(rows, key=lambda x: -x["gross"])
+
+
+# Колонки сводки для экрана и Excel: (поле, заголовок, это деньги?).
+SUMMARY_COLUMNS = {
+    "holder": [
+        ("title", "Правообладатель", False), ("tracks", "Треков", False),
+        ("quantity", "Количество", False), ("gross", "Сумма реализации Лицензиара", True),
+        ("reward_author", "Вознаграждение авторские", True),
+        ("reward_related", "Вознаграждение смежные", True),
+        ("reward", "Вознаграждение итого", True), ("left", "Комиссия Лицензиата", True),
+    ],
+    "track": [
+        ("sku", "Код", False), ("title", "Название", False), ("artist", "Исполнитель", False),
+        ("quantity", "Количество", False), ("gross_author", "По отчётам: авторские", True),
+        ("gross_related", "По отчётам: смежные", True), ("gross", "По отчётам: итого", True),
+        ("reward", "Вознаграждение правообладателям", True), ("left", "Остаётся Медиа Лэнд", True),
+    ],
+    "partner": [
+        ("title", "Площадка", False), ("reports", "Отчётов", False),
+        ("quantity", "Количество", False), ("gross_author", "По отчётам: авторские", True),
+        ("gross_related", "По отчётам: смежные", True), ("gross", "По отчётам: итого", True),
+        ("reward", "Вознаграждение правообладателям", True), ("left", "Остаётся Медиа Лэнд", True),
+    ],
+}
+
+
+def summary_totals(rows: list, by: str) -> dict:
+    """Итог по всем строкам сводки: суммируются числа, кроме «треков» и «отчётов»."""
+    out = {}
+    for field_name, _, _ in SUMMARY_COLUMNS[by]:
+        if field_name in ("quantity", "gross", "gross_author", "gross_related",
+                          "reward_author", "reward_related", "reward", "left"):
+            out[field_name] = sum((r.get(field_name, ZERO) for r in rows), ZERO)
+    return out
+
+
+def summary_file_name(s: Settings, by: str) -> str:
+    return f"Сводка по {SUMMARY_BY[by]} {period_slug(s)}.xlsx"
+
+
+def summary_table_xlsx(rows: list, s: Settings, by: str) -> bytes:
+    """Сводка одним листом: шапка, строки, итог."""
+    cols = SUMMARY_COLUMNS[by]
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Сводка"
+    ws["A1"] = f"Сводный отчёт по {SUMMARY_BY[by]} за период {period_text(s)}"
+    ws["A1"].font = _TITLE
+    ws.append([])
+    ws.append([c[1] for c in cols])
+    for c in ws[3]:
+        c.font, c.fill, c.border, c.alignment = _BOLD, _HEAD_FILL, _BOX, _WRAP
+    for r in rows:
+        ws.append([
+            float(cents(r[f])) if money else (float(r[f]) if isinstance(r.get(f), Decimal) else r.get(f, ""))
+            for f, _, money in cols
+        ])
+    totals = summary_totals(rows, by)
+    ws.append([
+        "Итого" if i == 0 else (float(cents(totals[f])) if f in totals and money
+                                else (float(totals[f]) if f in totals else ""))
+        for i, (f, _, money) in enumerate(cols)
+    ])
+    for c in ws[ws.max_row]:
+        c.font = _BOLD
+    for i, (f, title, money) in enumerate(cols, 1):
+        letter = openpyxl.utils.get_column_letter(i)
+        ws.column_dimensions[letter].width = 36 if f in ("title", "artist") else (12 if not money else 18)
+        if money:
+            for c in ws[letter][3:]:
+                c.number_format = "#,##0.00"
+    ws.freeze_panes = "A4"
+    return _save(wb)

@@ -6,7 +6,12 @@ import { Spinner } from '../components/ui/Spinner';
 import { searchContragents } from '../api/contragents';
 import { listPartners } from '../api/partners';
 import { listTracks } from '../api/nomenclature';
-import { generateRoyalty, previewRoyalty } from '../api/royaltyReports';
+import {
+  exportSummary,
+  generateRoyalty,
+  previewRoyalty,
+  summaryRoyalty,
+} from '../api/royaltyReports';
 import { formatMoney } from '../api/finance';
 
 /**
@@ -19,16 +24,23 @@ import { formatMoney } from '../api/finance';
  * у нас их нет (валюта одна, рубль).
  *
  * РЕЖИМЫ — В ЗАГОЛОВКЕ, как списки в «Номенклатуре»: «Правообладателям»
- * (ведомости каждому выбранному), «По правообладателю» и «По объекту». Пока
- * работает первый; два других — следующим шагом.
+ * (ведомости каждому выбранному) и «Сводные отчёты». Вместо трёх отдельных
+ * режимов Dista («по правообладателю», «по объекту», «по площадке») — один,
+ * а по чему сводка, выбирается на вкладке «Основные» (просьба владельца
+ * 24.09.2026): смысл у них один — количество и суммы, разложенные по
+ * выбранному признаку.
  *
  * Считает СЕРВЕР (`royalty_reports.py`): суммы приходят строками, и
  * складывать их на экране нельзя.
  */
 const MODES = [
   { key: 'holders', label: 'Правообладателям' },
-  { key: 'holder', label: 'По правообладателю' },
-  { key: 'object', label: 'По объекту' },
+  { key: 'summary', label: 'Сводные отчёты' },
+];
+const SUMMARY_BY = [
+  { key: 'holder', label: 'Правообладателю' },
+  { key: 'track', label: 'Объекту' },
+  { key: 'partner', label: 'Площадке' },
 ];
 const TABS = [
   { key: 'main', label: 'Основные' },
@@ -84,7 +96,9 @@ export function RoyaltyReportsPage() {
   const [tracksAll, setTracksAll] = useState(true);
   const [tracks, setTracks] = useState([]);
 
+  const [by, setBy] = useState('holder');
   const [preview, setPreview] = useState(null);
+  const [summary, setSummary] = useState(null);
   const [busy, setBusy] = useState(null); // 'preview' | 'generate'
   const [error, setError] = useState('');
 
@@ -97,18 +111,21 @@ export function RoyaltyReportsPage() {
     trackIds: tracksAll ? [] : tracks.map((t) => t.id),
     groupDetail,
     kinds: Object.keys(kinds).filter((k) => kinds[k]),
+    by,
   };
   // Любая правка настроек делает прежний расчёт недействительным: показывать
   // числа, посчитанные для другого выбора, значит вводить в заблуждение.
   const settingsKey = JSON.stringify(settings);
   useEffect(() => {
     setPreview(null);
-  }, [settingsKey]);
+    setSummary(null);
+  }, [settingsKey, mode]);
 
+  const isSummary = mode === 'summary';
   const ready = holdersAll || holders.length > 0;
   const whyNot = !ready
     ? 'Выберите правообладателей во вкладке «Правообладатели»'
-    : !settings.kinds.length
+    : !isSummary && !settings.kinds.length
       ? 'Отметьте вид ведомости во вкладке «Основные»'
       : (!partnersAll && !partners.length)
         ? 'Выберите площадки или поставьте «Все»'
@@ -121,6 +138,38 @@ export function RoyaltyReportsPage() {
     setError('');
     try {
       setPreview(await previewRoyalty(settings));
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function buildSummary() {
+    setBusy('summary');
+    setError('');
+    try {
+      setSummary(await summaryRoyalty(settings));
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function downloadSummary() {
+    setBusy('export');
+    setError('');
+    try {
+      const { blob, filename } = await exportSummary(settings);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -177,6 +226,9 @@ export function RoyaltyReportsPage() {
                     onClick={() => {
                       setMode(m.key);
                       setModeOpen(false);
+                      // В сводке по умолчанию смотрят всех: ведомости делают
+                      // адресно, а сводку — чтобы увидеть картину целиком.
+                      if (m.key === 'summary' && !holders.length) setHoldersAll(true);
                     }}
                     className={`text-left px-4 py-2 text-[14px] font-normal tracking-normal bg-transparent border-0 cursor-pointer font-sans hover:bg-hover ${
                       m.key === mode ? 'text-accent font-semibold' : 'text-text'
@@ -195,14 +247,7 @@ export function RoyaltyReportsPage() {
         причитается каждому по его долям и ставкам роялти.
       </PageHeader>
 
-      {mode !== 'holders' ? (
-        <Card>
-          <div className="p-10 text-center text-[14px] text-text-secondary">
-            Режим «{MODES.find((m) => m.key === mode).label}» — следующий шаг. Пока работает
-            «Правообладателям».
-          </div>
-        </Card>
-      ) : (
+      {
         <div className="grid grid-cols-[220px_1fr] gap-6 items-start">
           {/* ВКЛАДКИ НАСТРОЙКИ — СЛЕВА, как в Dista: их четыре, и каждая
               отвечает на свой вопрос — за какой период, кому, по каким
@@ -234,8 +279,30 @@ export function RoyaltyReportsPage() {
           <div className="flex flex-col gap-6 min-w-0">
             <Card>
               <div className="p-6">
+                {tab === 'main' && isSummary && (
+                  <div className="mb-6">
+                    <div className="text-[12px] text-text-secondary mb-1.5">Сводка по</div>
+                    <div className="flex flex-wrap gap-2">
+                      {SUMMARY_BY.map((b) => (
+                        <button
+                          key={b.key}
+                          type="button"
+                          onClick={() => setBy(b.key)}
+                          className={`px-3 py-1.5 text-[13px] rounded-input border cursor-pointer bg-transparent font-sans ${
+                            by === b.key
+                              ? 'border-accent text-accent font-semibold'
+                              : 'border-border text-text-secondary'
+                          }`}
+                        >
+                          {b.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {tab === 'main' && (
                   <MainTab
+                    isSummary={isSummary}
                     year={year}
                     setYear={setYear}
                     period={period}
@@ -320,6 +387,30 @@ export function RoyaltyReportsPage() {
                 «Рассчитать» — увидеть, кому и сколько, — потом «Сформировать». */}
             <Card>
               <div className="p-6 flex flex-col gap-4">
+                {isSummary ? (
+                  <div className="flex flex-wrap items-center gap-3">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={buildSummary}
+                      disabled={Boolean(busy) || Boolean(whyNot)}
+                    >
+                      Построить сводку
+                    </Button>
+                    <Button
+                      variant="accent"
+                      size="sm"
+                      onClick={downloadSummary}
+                      disabled={Boolean(busy) || Boolean(whyNot)}
+                    >
+                      Выгрузить в Excel
+                    </Button>
+                    <span className="text-[12.5px] text-text-muted">
+                      {whyNot ||
+                        `Сводка по ${SUMMARY_BY.find((b) => b.key === by).label.toLowerCase()} за ${ru(period.from)} — ${ru(period.to)}.`}
+                    </span>
+                  </div>
+                ) : (
                 <div className="flex flex-wrap items-center gap-3">
                   <Button
                     variant="secondary"
@@ -348,27 +439,30 @@ export function RoyaltyReportsPage() {
                         '; несколько файлов придут одним архивом.'}
                   </span>
                 </div>
+                )}
 
                 {busy && (
                   <div className="flex items-center gap-3 text-[13px] text-text-secondary">
                     <Spinner size={20} className="text-accent" />
-                    {busy === 'preview' ? 'Считаем…' : 'Собираем файлы…'} У крупного
-                    правообладателя это может занять до минуты.
+                    {busy === 'generate' || busy === 'export' ? 'Собираем файл…' : 'Считаем…'}{' '}
+                    По всем правообладателям это может занять до минуты.
                   </div>
                 )}
                 {error && <div className="text-[13px] text-danger">{error}</div>}
 
-                {preview && !busy && <PreviewTable preview={preview} />}
+                {preview && !busy && !isSummary && <PreviewTable preview={preview} />}
+                {summary && !busy && isSummary && <SummaryTable summary={summary} />}
               </div>
             </Card>
           </div>
         </div>
-      )}
+      }
     </div>
   );
 }
 
 function MainTab({
+  isSummary,
   year,
   setYear,
   period,
@@ -462,6 +556,7 @@ function MainTab({
         </div>
       </div>
 
+      {!isSummary && (
       <div>
         <div className={label}>Ведомости</div>
         <div className="flex flex-col gap-2 text-[13.5px] text-text">
@@ -495,6 +590,7 @@ function MainTab({
           </label>
         </div>
       </div>
+      )}
 
       <div className="text-[12.5px] text-text-muted">
         Валюта отчёта — российский рубль. Валютные отчёты площадок, у которых ещё нет курса, в
@@ -622,6 +718,103 @@ function Picker({ title, all, setAll, allLabel, items, setItems, placeholder, se
               ))}
             </div>
           )}
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Плашки «не вошли в расчёт» — общие для ведомостей и сводок. */
+function Warnings({ skipped = [], unlinked = [] }) {
+  return (
+    <>
+      {skipped.length > 0 && (
+        <div className="rounded-md border border-danger/40 bg-danger-soft px-3 py-2 text-[13px] text-text">
+          Не вошли в расчёт — валютные отчёты без курса:{' '}
+          {skipped
+            .map((r) => `${r.partner} (${ru(r.period_from)} — ${ru(r.period_to)}, ${r.currency})`)
+            .join('; ')}
+          . Привяжите их к поступлению или задайте курс в окне отчёта.
+        </div>
+      )}
+      {unlinked.length > 0 && (
+        <div className="rounded-md border border-border bg-accent-soft px-3 py-2 text-[13px] text-text">
+          Не привязаны к поступлению и потому не вошли:{' '}
+          {unlinked.map((r) => `${r.partner} (${ru(r.period_from)} — ${ru(r.period_to)})`).join('; ')}
+          . Привязать можно во вкладке «Отчёты».
+        </div>
+      )}
+    </>
+  );
+}
+
+// Сколько строк сводки показывать на экране: по объектам их тысячи, и
+// полный список — в файле.
+const SUMMARY_SHOWN = 500;
+
+function SummaryTable({ summary }) {
+  const th =
+    'text-left font-semibold text-[11px] uppercase tracking-[0.04em] text-text-muted px-3 py-2 border-b border-border';
+  const td = 'px-3 py-2 border-t border-border text-[13px]';
+  const numeric = (c) => c.money || c.field === 'quantity' || c.field === 'tracks' || c.field === 'reports';
+  const show = (c, v) => {
+    if (v === null || v === undefined || v === '') return '—';
+    if (c.money) return formatMoney(v);
+    if (c.field === 'quantity') return Number(v).toLocaleString('ru-RU', { maximumFractionDigits: 2 });
+    return v;
+  };
+  const rows = summary.rows.slice(0, SUMMARY_SHOWN);
+  return (
+    <div className="flex flex-col gap-3">
+      <Warnings skipped={summary.skipped_reports} unlinked={summary.unlinked_reports} />
+      {!summary.rows.length ? (
+        <div className="text-[13px] text-text-muted">За этот период строк нет.</div>
+      ) : (
+        <>
+          <div className="border border-border rounded-card overflow-auto max-h-[560px]">
+            <table className="w-full border-collapse">
+              <thead className="sticky top-0 bg-surface">
+                <tr>
+                  {summary.columns.map((c) => (
+                    <th key={c.field} className={`${th} ${numeric(c) ? 'text-right' : ''}`}>
+                      {c.title}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r, i) => (
+                  <tr key={r.key || i}>
+                    {summary.columns.map((c) => (
+                      <td
+                        key={c.field}
+                        className={`${td} ${numeric(c) ? 'tabular-nums text-right' : ''} ${
+                          c.field === 'reward' ? 'font-semibold' : ''
+                        }`}
+                      >
+                        {show(c, r[c.field])}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+                <tr className="bg-surface-hover">
+                  {summary.columns.map((c, i) => (
+                    <td
+                      key={c.field}
+                      className={`${td} font-semibold ${numeric(c) ? 'tabular-nums text-right' : ''}`}
+                    >
+                      {i === 0 ? 'Итого' : c.field in summary.totals ? show(c, summary.totals[c.field]) : ''}
+                    </td>
+                  ))}
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div className="text-[12.5px] text-text-muted">
+            Строк: {summary.rows.length}
+            {summary.rows.length > SUMMARY_SHOWN &&
+              ` — на экране первые ${SUMMARY_SHOWN} по сумме, все — в файле Excel.`}
+          </div>
         </>
       )}
     </div>

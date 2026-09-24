@@ -8,6 +8,7 @@
 """
 import uuid
 from datetime import date
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
@@ -20,6 +21,8 @@ from app.db import get_session
 from app.models import User
 from app.roles import CAN_GENERATE_ROYALTY_REPORTS
 from app.royalty_reports import (
+    SUMMARY_BY,
+    SUMMARY_COLUMNS,
     Settings,
     build_files,
     cents,
@@ -27,6 +30,10 @@ from app.royalty_reports import (
     pending_reports,
     unlinked_reports,
     period_slug,
+    summary,
+    summary_file_name,
+    summary_totals,
+    summary_table_xlsx,
     zip_files,
 )
 from app.routers_templates import _content_disposition
@@ -54,6 +61,8 @@ class RoyaltyRequest(BaseModel):
     track_ids: list[uuid.UUID] = []
     group_detail: bool = True
     kinds: list[str] = ["summary", "detailed"]
+    # Для сводных отчётов: по чему сводка — holder, track или partner.
+    by: str = "holder"
 
 
 def _settings(body: RoyaltyRequest) -> Settings:
@@ -152,4 +161,60 @@ def generate(
     return Response(
         content, media_type=media,
         headers={"Content-Disposition": _content_disposition(name)},
+    )
+
+
+def _summary_by(body: RoyaltyRequest) -> str:
+    if body.by not in SUMMARY_BY:
+        raise HTTPException(400, "by: holder, track или partner")
+    return body.by
+
+
+def _cell(value):
+    """Число наружу — строкой (как деньги во всём ML Finance), остальное как есть."""
+    return f"{cents(value):.2f}" if isinstance(value, Decimal) else value
+
+
+@royalty_reports_router.post("/summary")
+def summary_view(body: RoyaltyRequest, db: Session = Depends(get_session)) -> dict:
+    """
+    Сводный отчёт на экран: по правообладателю, объекту или площадке
+    (24.09.2026). Строк бывает много — по объектам это тысячи треков, — и
+    отдаём их все: экран показывает начало, файл — всё.
+    """
+    s = _settings(body)
+    by = _summary_by(body)
+    rows = summary(db, s, by)
+    return {
+        "by": by,
+        "columns": [{"field": f, "title": t, "money": m} for f, t, m in SUMMARY_COLUMNS[by]],
+        "rows": [{k: _cell(v) for k, v in r.items()} for r in rows],
+        "totals": {k: _cell(v) for k, v in summary_totals(rows, by).items()},
+        "skipped_reports": pending_reports(db, s),
+        "unlinked_reports": unlinked_reports(db, s),
+    }
+
+
+@royalty_reports_router.post("/summary/export")
+def summary_export(
+    body: RoyaltyRequest,
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    """Та же сводка — файлом .xlsx."""
+    s = _settings(body)
+    by = _summary_by(body)
+    rows = summary(db, s, by)
+    if not rows:
+        raise HTTPException(404, "За этот период строк нет — выгружать нечего")
+    log_action(
+        db, current_user, "royalty_report.summary", entity_type="royalty_report",
+        meta={"by": by, "period": [s.period_from.isoformat(), s.period_to.isoformat()],
+              "rows": len(rows)},
+    )
+    db.commit()
+    return Response(
+        summary_table_xlsx(rows, s, by),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": _content_disposition(summary_file_name(s, by))},
     )
