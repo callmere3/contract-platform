@@ -86,18 +86,11 @@ const closeMoney = (a, b) => {
   return one !== null && other !== null && Math.abs(one - other) <= ADVICE_TOLERANCE;
 };
 
-export function LinkReportPaymentModal({ report, level, isTop, onChanged, relink = false }) {
-  // ПЕРЕПРИВЯЗКА ПОКАЗЫВАЕТ ВЕСЬ СПИСОК (просьба владельца 24.09.2026).
-  // Обычно у привязанного отчёта выбирать нечего — видна одна его строка; но
-  // если пришли из правки отчёта, то как раз затем, чтобы поменять её, и
-  // прятать остальные значило бы заставить сперва отвязать.
-  const linked = Boolean(report.payment_id) && !relink;
+export function LinkReportPaymentModal({ report, level, isTop, onChanged }) {
   const { closeModal } = useModal();
   // УЖЕ ПРИВЯЗАННЫЙ ОТЧЁТ ОТКРЫВАЕТСЯ НА СВОЁМ МЕСЯЦЕ (просьба владельца
-  // 24.09.2026). Раньше окно всегда показывало текущий квартал и весь список
-  // поступлений — то есть предлагало выбрать заново то, что уже выбрано.
-  // Вопрос к открытому окну теперь один: «с чем это связано», и ответ на
-  // него виден сразу.
+  // 24.09.2026): там его строка и соседи, среди которых выбирают замену.
+  // Раньше окно всегда открывалось на текущем квартале.
   const linkedOn = report.payment_date ? new Date(`${report.payment_date}T00:00:00Z`) : null;
   const today = linkedOn ?? new Date();
   const [year, setYear] = useState(today.getUTCFullYear?.() ?? today.getFullYear());
@@ -180,14 +173,16 @@ export function LinkReportPaymentModal({ report, level, isTop, onChanged, relink
     !!p.partner_id &&
     p.partner_id === report.partner_id &&
     closeMoney(p.transfer_amount, report.total);
-  const ordered = [...rows.filter(advised), ...rows.filter((p) => !advised(p))];
-  const adviceCount = linked ? 0 : rows.filter(advised).length;
-  // Привязан — показываем ровно ту строку, к которой привязан, и ничего
-  // больше: список «куда можно привязать» отвечает на вопрос, который уже
-  // решён.
-  const shown = linked
-    ? ordered.filter((p) => p.id === report.payment_id)
-    : ordered;
+  // ТЕКУЩАЯ ПРИВЯЗКА — ПЕРВОЙ, ЗА НЕЙ ВЕСЬ СПИСОК (просьба владельца
+  // 24.09.2026). Окно открывают «изменить», то есть затем, чтобы выбрать
+  // другую строку, — и выбрать её можно сразу: нажатие перепривязывает, а
+  // прежний платёж сервер пересчитает сам. Прежде у привязанного отчёта
+  // была видна одна его строка, и до списка вели ещё «Отвязать» и повторное
+  // открытие — два лишних действия.
+  const current = rows.filter((p) => p.id === report.payment_id);
+  const rest = rows.filter((p) => p.id !== report.payment_id);
+  const shown = [...current, ...rest.filter(advised), ...rest.filter((p) => !advised(p))];
+  const adviceCount = rest.filter(advised).length;
 
   const tab = (active) =>
     `px-3 py-1.5 text-[12.5px] rounded-input border cursor-pointer bg-transparent font-sans ${
@@ -201,17 +196,13 @@ export function LinkReportPaymentModal({ report, level, isTop, onChanged, relink
       level={level}
       isTop={isTop}
       width={760}
+      // Внизу только «Отвязать»: с чем связан отчёт, видно первой строкой
+      // списка, и повторять это подписью незачем (просьба владельца).
       footer={
         report.payment_id ? (
-          <>
-            <span className="text-[12.5px] text-text-muted mr-auto">
-              Отчёт привязан к поступлению{' '}
-              {report.payment_label || `от ${ru(report.payment_date)}`}
-            </span>
-            <Button variant="secondary" size="sm" onClick={unlink} disabled={busy}>
-              Отвязать
-            </Button>
-          </>
+          <Button variant="secondary" size="sm" onClick={unlink} disabled={busy}>
+            Отвязать
+          </Button>
         ) : null
       }
     >
@@ -233,78 +224,60 @@ export function LinkReportPaymentModal({ report, level, isTop, onChanged, relink
         )}
       </div>
 
-      {/* У ПРИВЯЗАННОГО ОТЧЁТА ВЫБИРАТЬ НЕЧЕГО (просьба владельца
-          24.09.2026): квартал и месяц показываем текстом, а список
-          поступлений не рисуем вовсе — ниже останется одна привязанная
-          строка. Раньше окно предлагало выбрать заново то, что уже выбрано,
-          и найти среди тридцати строк ту самую было отдельной задачей.
-          Перепривязать по-прежнему можно: «Отвязать» внизу вернёт выбор. */}
-      {linked ? (
-        <div className="text-[13px] text-text mb-4">
-          <span className="text-text-secondary">Поступление за </span>
-          {ROMAN[quarter - 1]} квартал {year}
-          {monthOffset !== null && `, ${MONTHS[(quarter - 1) * 3 + monthOffset]}`}
-        </div>
-      ) : (
-        <>
-          <div className="text-[12px] text-text-secondary mb-1.5">Квартал поступления</div>
-          <div className="flex flex-wrap items-center gap-2 mb-4">
-            {[1, 2, 3, 4].map((q) => (
-              <button
-                key={q}
-                type="button"
-                className={tab(q === quarter)}
-                onClick={() => setQuarter(q)}
-              >
-                {ROMAN[q - 1]} квартал
-              </button>
-            ))}
-            <input
-              value={year}
-              onChange={(e) => setYear(Number(e.target.value.replace(/\D/g, '')) || '')}
-              className="bg-input-bg border border-border rounded-input px-3 py-2 text-[13px] text-text outline-none font-sans w-[86px] tabular-nums"
-            />
-          </div>
+      <div className="text-[12px] text-text-secondary mb-1.5">Квартал поступления</div>
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        {[1, 2, 3, 4].map((q) => (
+          <button
+            key={q}
+            type="button"
+            className={tab(q === quarter)}
+            onClick={() => setQuarter(q)}
+          >
+            {ROMAN[q - 1]} квартал
+          </button>
+        ))}
+        <input
+          value={year}
+          onChange={(e) => setYear(Number(e.target.value.replace(/\D/g, '')) || '')}
+          className="bg-input-bg border border-border rounded-input px-3 py-2 text-[13px] text-text outline-none font-sans w-[86px] tabular-nums"
+        />
+      </div>
 
-          <div className="text-[12px] text-text-secondary mb-1.5">Месяц</div>
-          <div className="flex flex-wrap items-center gap-2 mb-4">
-            <button
-              type="button"
-              className={tab(monthOffset === null)}
-              onClick={() => setMonthOffset(null)}
-            >
-              Весь квартал
-            </button>
-            {[0, 1, 2].map((offset) => (
-              <button
-                key={offset}
-                type="button"
-                className={tab(offset === monthOffset)}
-                onClick={() => setMonthOffset(offset)}
-              >
-                {MONTHS[(quarter - 1) * 3 + offset]}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
+      <div className="text-[12px] text-text-secondary mb-1.5">Месяц</div>
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <button
+          type="button"
+          className={tab(monthOffset === null)}
+          onClick={() => setMonthOffset(null)}
+        >
+          Весь квартал
+        </button>
+        {[0, 1, 2].map((offset) => (
+          <button
+            key={offset}
+            type="button"
+            className={tab(offset === monthOffset)}
+            onClick={() => setMonthOffset(offset)}
+          >
+            {MONTHS[(quarter - 1) * 3 + offset]}
+          </button>
+        ))}
+      </div>
 
       {loading && <div className="text-[13px] text-text-muted">Загрузка…</div>}
       {error && <div className="text-[13px] text-danger mb-3">{error}</div>}
 
       {!loading && shown.length === 0 && (
         <div className="text-[13px] text-text-muted">
-          {linked
-            ? 'Строка поступления, к которой привязан отчёт, не найдена — возможно, её убрали.'
-            : 'За этот квартал поступлений нет — заведите строку во вкладке «Поступления».'}
+          За этот период поступлений нет — заведите строку во вкладке «Поступления».
         </div>
       )}
 
       {!loading && adviceCount > 0 && (
         <div className="text-[12px] text-accent mb-1.5">
           {adviceCount === 1
-            ? 'Похоже, это первая строка — площадка и сумма завода совпали.'
-            : `Наверху ${adviceCount} строки, где совпали площадка и сумма завода.`}
+            ? 'Подсвечена строка, где совпали площадка и сумма завода.'
+            : `Подсвечены ${adviceCount} строки, где совпали площадка и сумма завода.`}
         </div>
       )}
 

@@ -1313,13 +1313,9 @@ export function PartnerReportsPage() {
                             onDeleted: loadReports,
                             closeParent: true,
                           }),
-                        // `relink` приходит из окна отчёта: в режиме правки
-                        // список поступлений показывается весь, вне её — одна
-                        // уже привязанная строка.
-                        onLink: (report, relink, onFresh) =>
+                        onLink: (report, onFresh) =>
                           openModal('linkReportPayment', {
                             report,
-                            relink,
                             onChanged: (fresh) => {
                               loadReports();
                               onFresh?.(fresh);

@@ -337,16 +337,12 @@ export function ReportRowsModal({
         <span className="text-text-secondary">Поступление</span>
         <span className="text-text">
           {card.payment_label ?? <span className="text-text-muted">не привязано</span>}{' '}
-          {/* В ПРАВКЕ ПОКАЗЫВАЕМ ВЕСЬ СПИСОК: сюда и пришли затем, чтобы
-              поменять строку, и прятать остальные значило бы заставить
-              сперва отвязать. Вне правки привязка открывается обычным
-              окном — с одной уже выбранной строкой. */}
           <button
             type="button"
             onClick={() =>
               // Свежая карточка приходит обратно: иначе в шапке так и висело
               // бы прежнее поступление, пока окно не откроют заново.
-              onLink?.(card, editing, (fresh) => fresh && setCard(fresh))
+              onLink?.(card, (fresh) => fresh && setCard(fresh))
             }
             className="text-accent bg-transparent border-0 p-0 cursor-pointer font-sans text-[12.5px]"
           >
