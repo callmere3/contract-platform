@@ -53,6 +53,20 @@ import openpyxl
 # предпросмотре было видно, что за трек, если артикул не опознан.
 MONEY_FIELDS = ("amount_author", "amount_related")
 FIELDS = ("sku", "title", "artist", "quantity", *MONEY_FIELDS)
+
+# ЧЕТЫРЕ ПАРАМЕТРА ОТЧЁТА, КОТОРЫЕ БЫВАЮТ И ПОСТРОЧНЫМИ (24.09.2026, разбор
+# настоящего отчёта контрагенту). У МТС и «101 и К» они одни на весь файл и
+# задаются значением в правиле. А у Believe в одном отчёте 308 разных
+# сочетаний — «Stream / YouTube UGC / streaming / NO», «Creation / TikTok /
+# streaming / BY», — и территория идёт по странам. Один снимок на отчёт
+# склеил бы их в одну подпись, и в отчёте правообладателю «NO» стало бы
+# неотличимо от «MX».
+#
+# Поэтому те же четыре имени можно указать В ПРАВИЛЕ КАК КОЛОНКУ, и тогда
+# значение берётся из строки файла. Не задано колонкой — берётся снимок
+# отчёта, как раньше.
+ATTR_FIELDS = ("content_type", "usage_type", "usage_kind", "territory")
+MAPPABLE_FIELDS = (*FIELDS, *ATTR_FIELDS)
 FIELD_LABELS = {
     "sku": "Артикул",
     "title": "Наименование",
@@ -60,6 +74,10 @@ FIELD_LABELS = {
     "quantity": "Количество",
     "amount_author": "Сумма авторских",
     "amount_related": "Сумма смежных",
+    "content_type": "Тип контента",
+    "usage_type": "Тип использования",
+    "usage_kind": "Вид использования",
+    "territory": "Территория",
 }
 # Без артикула строку не к чему привязать, без сумм она бессмысленна. Остальное
 # необязательно: количество есть не во всех отчётах, название — тем более.
@@ -108,6 +126,12 @@ class ReportRow:
     quantity: Decimal | None = None
     amount_author: Decimal = Decimal(0)
     amount_related: Decimal = Decimal(0)
+    # Параметры, взятые ИЗ КОЛОНОК файла (см. ATTR_FIELDS). Пусто — значит, у
+    # этой площадки они одни на весь отчёт и лежат в его шапке.
+    content_type: str | None = None
+    usage_type: str | None = None
+    usage_kind: str | None = None
+    territory: str | None = None
     problems: list = field(default_factory=list)
 
     @property
@@ -553,10 +577,20 @@ def parse_report(
     text_plan = [
         (field, normalize_header(spec["column"]))
         for field, spec in (
-            (f, (mapping or {}).get(f) or {}) for f in ("title", "artist")
+            (f, (mapping or {}).get(f) or {}) for f in ("title", "artist", *ATTR_FIELDS)
         )
         if spec.get("column")
     ]
+    # Колонки ПАРАМЕТРОВ читаются как текст и в `numbers` не попадают: числами
+    # они не бывают, а parse_number на каждой строке стоит времени — на отчёте
+    # в полмиллиона строк это заметно. Название и исполнителя отсюда
+    # исключаем: их колонку теоретически могут упомянуть в денежной формуле,
+    # и тогда число понадобится.
+    text_only = {
+        normalize_header(spec["column"])
+        for spec in ((mapping or {}).get(f) or {} for f in ATTR_FIELDS)
+        if spec.get("column")
+    }
     # Колонки, по которым решается «в строке есть хоть одно число».
     presence_keys = [
         normalize_header(c)
@@ -590,7 +624,11 @@ def parse_report(
         for text_field, column in text_plan:
             setattr(row, text_field, _clean(values.get(column)) or None)
 
-        numbers = {key: parse_number(value) for key, value in values.items()}
+        numbers = {
+            key: parse_number(value)
+            for key, value in values.items()
+            if key not in text_only
+        }
 
         # СТРОКА БЕЗ ЕДИНОГО ЧИСЛА — НЕ ДАННЫЕ. В конце отчёта МТС идёт блок
         # подписи: «ОТ ЛИЦЕНЗИАРА», «_______ /_______/», «М.П.» — они попадают

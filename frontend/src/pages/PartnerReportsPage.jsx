@@ -278,6 +278,18 @@ export function PartnerReportsPage() {
     if (next) runPreview(next, {}, vatRate);
   }
 
+  // ПАРАМЕТРЫ, ВЗЯТЫЕ ИЗ КОЛОНОК ФАЙЛА: {имя параметра: имя колонки}.
+  // Считаем по ТЕКУЩЕМУ правилу, а не по ответу предпросмотра: человек
+  // меняет это в настройке колонок, и поле «одно значение на весь отчёт»
+  // должно исчезать сразу, а не после пересборки.
+  const fromColumns = Object.fromEntries(
+    ATTRS.map(({ name }) => [name, mapping[name]?.column || '']).filter(([, c]) => c),
+  );
+  // Столбцы параметров в предпросмотре — по ТОМУ правилу, которым файл
+  // разобран, а не по текущему в форме: пока не нажали «Применить и
+  // пересобрать», в строках лежат старые значения.
+  const shownAttrs = ATTRS.filter((a) => preview?.attributes_from_columns?.[a.name]);
+
   async function save() {
     setBusy(true);
     setError('');
@@ -288,7 +300,11 @@ export function PartnerReportsPage() {
         mapping,
         vatRate,
         manualSkus,
-        attributes,
+        // Параметр, взятый из колонки, значением НЕ шлём: у него своё в
+        // каждой строке, а снимок в шапке отчёта означал бы обратное.
+        attributes: Object.fromEntries(
+          ATTRS.map(({ name }) => [name, fromColumns[name] ? '' : attributes[name] ?? '']),
+        ),
         periodFrom: range.from,
         periodTo: range.to,
         saveRuleToo: rememberRule,
@@ -496,19 +512,35 @@ export function PartnerReportsPage() {
                 тот выглядит системным окном, открывается через раз и не
                 показывает, что подсказки вообще есть. Компонент тот же, что у
                 колонки «Исполнитель» в форме генерации. */}
-            {ATTRS.map((a) => (
-              <label className="block w-[190px]" key={a.name}>
-                <span className="block text-[12px] text-text-secondary mb-1">{a.label}</span>
-                <ComboCell
-                  value={attributes[a.name] ?? ''}
-                  options={attrOptions[a.name] ?? []}
-                  onChange={(v) => setAttributes((prev) => ({ ...prev, [a.name]: v }))}
-                  placeholder="—"
-                  arrowLabel={`Показать значения: ${a.label}`}
-                  inputClassName={`${inputClass} w-full pr-6`}
-                />
-              </label>
-            ))}
+            {/* ПАРАМЕТР, ВЗЯТЫЙ ИЗ КОЛОНКИ, ЗДЕСЬ НЕ ПРАВИТСЯ (24.09.2026):
+                у него своё значение в каждой строке, и поле «одно на весь
+                отчёт» правило бы то, что ни на что не влияет. Вместо поля —
+                имя колонки, чтобы было видно, откуда взялось. */}
+            {ATTRS.map((a) => {
+              const column = fromColumns[a.name];
+              return (
+                <label className="block w-[190px]" key={a.name}>
+                  <span className="block text-[12px] text-text-secondary mb-1">{a.label}</span>
+                  {column ? (
+                    <div
+                      className={`${inputClass} w-full truncate text-text-secondary`}
+                      title={`Берётся из колонки «${column}» — своё значение у каждой строки`}
+                    >
+                      из колонки «{column}»
+                    </div>
+                  ) : (
+                    <ComboCell
+                      value={attributes[a.name] ?? ''}
+                      options={attrOptions[a.name] ?? []}
+                      onChange={(v) => setAttributes((prev) => ({ ...prev, [a.name]: v }))}
+                      placeholder="—"
+                      arrowLabel={`Показать значения: ${a.label}`}
+                      inputClassName={`${inputClass} w-full pr-6`}
+                    />
+                  )}
+                </label>
+              );
+            })}
 
             {/* НДС — ЗДЕСЬ ЖЕ (просьба владельца 18.09.2026): наверху остаётся
                 то, без чего файл не прочитать (площадка и период), а ставка —
@@ -726,6 +758,44 @@ export function PartnerReportsPage() {
                 })}
               </div>
 
+              {/* ЧЕТЫРЕ ПАРАМЕТРА — ТОЖЕ КОЛОНКАМИ, если площадка их даёт
+                  (24.09.2026). У МТС и «101 и К» они одни на весь файл и
+                  задаются полем выше; у Believe в одном отчёте 308 разных
+                  сочетаний, а территория идёт по странам, — и там их надо
+                  брать из строки. Формулы у них не бывает: формулы считают
+                  числа, а это слова. */}
+              <div className={`flex-col gap-3 mb-4 ${mappingOpen ? 'flex' : 'hidden'}`}>
+                <div className="text-[12.5px] text-text-muted">
+                  Параметры отчёта: оставьте «одно значение», если оно общее для
+                  всего файла, или укажите колонку — тогда значение возьмётся из
+                  каждой строки.
+                </div>
+                {ATTRS.map((a) => (
+                  <label key={a.name} className="flex items-center gap-3 flex-wrap">
+                    <span className="text-[12px] text-text-secondary w-[150px]">{a.label}</span>
+                    <select
+                      value={mapping[a.name]?.column ?? ''}
+                      onChange={(e) =>
+                        setMapping((m) => {
+                          const next = { ...m };
+                          if (e.target.value) next[a.name] = { column: e.target.value };
+                          else delete next[a.name];
+                          return next;
+                        })
+                      }
+                      className={`${inputClass} flex-1 min-w-[320px]`}
+                    >
+                      <option value="">— одно значение на весь отчёт —</option>
+                      {preview.columns.filter(Boolean).map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ))}
+              </div>
+
               {/* Кнопка живёт ВНУТРИ настройки: файл разбирается заново с
                   новым правилом, и делать это на каждую правку поля незачем. */}
               {mappingOpen && (
@@ -801,6 +871,15 @@ export function PartnerReportsPage() {
                           <th className={th}>Количество</th>
                           <th className={th}>Авторские, ₽</th>
                           <th className={th}>Смежные, ₽</th>
+                          {/* Столбцы параметров появляются, ТОЛЬКО если
+                              правило берёт их из колонок: у площадок с общим
+                              значением они повторяли бы одно и то же в каждой
+                              строке и занимали место. Предпросмотр отвечает
+                              на один вопрос — верно ли поняты колонки, — и
+                              проверить надо как раз то, что меняется. */}
+                          {shownAttrs.map((a) => (
+                            <th className={th} key={a.name}>{a.label}</th>
+                          ))}
                         </tr>
                       </thead>
                       <tbody>
@@ -846,6 +925,9 @@ export function PartnerReportsPage() {
                             <td className={`${td} tabular-nums`}>{r.quantity ?? '—'}</td>
                             <td className={`${td} tabular-nums`}>{amount(r.amount_author)}</td>
                             <td className={`${td} tabular-nums`}>{amount(r.amount_related)}</td>
+                            {shownAttrs.map((a) => (
+                              <td className={td} key={a.name}>{r[a.name] || '—'}</td>
+                            ))}
                           </tr>
                         ))}
                       </tbody>

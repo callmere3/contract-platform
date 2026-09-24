@@ -53,6 +53,8 @@ from app.models import (
     User,
 )
 from app.partner_reports import (
+    ATTR_FIELDS,
+    MAPPABLE_FIELDS,
     FIELDS,
     FIELD_LABELS,
     artist_tokens,
@@ -111,13 +113,11 @@ SKU_BATCH = 10_000
 # СТРОКИ, А НЕ СПРАВОЧНИК: какие значения бывают, знает площадка, а не мы.
 # Любой зафиксированный список разошёлся бы с первым же новым партнёром;
 # подсказки в поле собираются по тому, что уже вводили (`/attributes`).
-REPORT_ATTRS = ("content_type", "usage_type", "usage_kind", "territory")
-ATTR_LABELS = {
-    "content_type": "Тип контента",
-    "usage_type": "Тип использования",
-    "usage_kind": "Вид использования",
-    "territory": "Территория",
-}
+# ОДИН СПИСОК НА ВСЁ: те же четыре имени служат и снимком в шапке отчёта, и
+# полями строки, и ключами правила (`ATTR_FIELDS` в `partner_reports`).
+# Разойдись они — параметр, взятый из колонки, молча не попал бы в строку.
+REPORT_ATTRS = ATTR_FIELDS
+ATTR_LABELS = {name: FIELD_LABELS[name] for name in REPORT_ATTRS}
 MAX_ATTR_LEN = 120
 
 
@@ -417,6 +417,10 @@ def _preview_row(row, resolved: dict) -> dict:
         "quantity": _money(row.quantity),
         "amount_author": _money(row.amount_author),
         "amount_related": _money(row.amount_related),
+        # Параметры строки — только те, что правило взяло из колонок файла.
+        # У площадок с общими параметрами тут пусто, и таблица предпросмотра
+        # этих столбцов не показывает вовсе.
+        **{name: getattr(row, name) for name in REPORT_ATTRS},
         "problems": row.problems,
     }
 
@@ -653,12 +657,19 @@ def save_rule(
 
     clean: dict = {}
     for key, spec in parsed.items():
-        if key not in FIELDS:
+        if key not in MAPPABLE_FIELDS:
             raise HTTPException(400, f"Неизвестное поле правила: «{key}»")
         if not isinstance(spec, dict):
             raise HTTPException(400, f"Поле «{key}»: ожидается объект")
         column = str(spec.get("column") or "").strip()
         formula = str(spec.get("formula") or "").strip()
+        # У ПАРАМЕТРОВ ФОРМУЛЫ НЕ БЫВАЕТ: формулы считают числа, а тип
+        # контента и территория — слова. Либо колонка файла, либо одно
+        # значение на весь отчёт (оно живёт не здесь, а рядом с правилом).
+        if key in ATTR_FIELDS and formula:
+            raise HTTPException(
+                400, f"Поле «{FIELD_LABELS[key]}»: формулой не задаётся — только колонкой"
+            )
         if column and formula:
             raise HTTPException(
                 400, f"Поле «{FIELD_LABELS[key]}»: либо колонка, либо формула, не оба"
@@ -1091,6 +1102,15 @@ def preview(
             for name in REPORT_ATTRS
         },
         "attribute_labels": ATTR_LABELS,
+        # Какие из четырёх параметров правило берёт ИЗ КОЛОНКИ файла: у таких
+        # значение своё в каждой строке, и поле «одно на весь отчёт» для них
+        # не показывается — иначе человек правил бы то, что ни на что не
+        # влияет.
+        "attributes_from_columns": {
+            name: ((chosen["mapping"] or {}).get(name) or {}).get("column")
+            for name in REPORT_ATTRS
+            if ((chosen["mapping"] or {}).get(name) or {}).get("column")
+        },
         "period": (
             {
                 "from": found_period[0].isoformat(),
@@ -1130,6 +1150,10 @@ def preview(
 ROW_COLUMNS = (
     "id", "report_id", "row_num", "sku", "title", "artist",
     "quantity", "amount_author", "amount_related", "track_id",
+    # Параметры пишем ТОЛЬКО если правило взяло их из колонок файла. Пусто —
+    # значит, у площадки они общие и лежат в шапке отчёта; дублировать снимок
+    # в каждую из полумиллиона строк незачем.
+    *REPORT_ATTRS,
 )
 
 
@@ -1164,6 +1188,7 @@ def _store_rows(db: Session, report_id, rows: list, track_by_row: dict) -> None:
                 amount_author=r.amount_author,
                 amount_related=r.amount_related,
                 track_id=track_by_row.get(r.row_num),
+                **{name: getattr(r, name) for name in REPORT_ATTRS},
             )
             for r in rows
         ])
@@ -1186,6 +1211,7 @@ def _store_rows(db: Session, report_id, rows: list, track_by_row: dict) -> None:
                     r.amount_author,
                     r.amount_related,
                     track_by_row.get(r.row_num),
+                    *(getattr(r, name) for name in REPORT_ATTRS),
                 ))
 
 

@@ -1177,6 +1177,15 @@ class PartnerReportRow(Base):
     # они лежат без ссылки на трек и попадают в счётчик неразнесённых.
     sku: Mapped[str | None] = mapped_column(String(32), index=True)
     title: Mapped[str | None] = mapped_column(String(300))
+    # ЧЕТЫРЕ ПАРАМЕТРА — И У СТРОКИ ТОЖЕ (24.09.2026). У МТС и «101 и К» они
+    # одни на весь файл и лежат в шапке отчёта; у Believe в одном отчёте 308
+    # разных сочетаний, а территория идёт по странам, — и там их место здесь.
+    # Пусто значит «у этой площадки параметр общий», и читать его надо из
+    # отчёта: дублировать снимок в каждую из полумиллиона строк незачем.
+    content_type: Mapped[str | None] = mapped_column(String(120))
+    usage_type: Mapped[str | None] = mapped_column(String(120))
+    usage_kind: Mapped[str | None] = mapped_column(String(120))
+    territory: Mapped[str | None] = mapped_column(String(120))
     # Исполнитель нужен не для расчёта, а для ПОДБОРА артикула по названию,
     # когда площадка код не проставила, и чтобы человек в списке «не
     # разнесено» понимал, о каком треке речь.
