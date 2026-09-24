@@ -1,4 +1,4 @@
-import { API, apiJson } from './client';
+import { API, apiFetch, apiJson, filenameFromResponse } from './client';
 
 /**
  * Отчёты площадок (ML Finance → «Отчёты», admin и director).
@@ -145,6 +145,29 @@ export function inspectReport(source) {
     method: 'POST',
     body: uploadBody(source),
   });
+}
+
+/**
+ * Строки ВНЕ КАТАЛОГА файлом — все, а не первые 300 предпросмотра. Тот же файл
+ * и те же настройки, что у предпросмотра: сервер возьмёт уже готовый разбор.
+ * Имя файла («Вне каталога <площадка>.xlsx») придумывает сервер.
+ */
+export async function exportUnmatched(source) {
+  const r = await apiFetch(`${API}/partner-reports/preview/unmatched`, {
+    method: 'POST',
+    body: uploadBody(source),
+  });
+  if (!r.ok) {
+    let message = `Не удалось выгрузить файл (${r.status})`;
+    try {
+      const data = await r.json();
+      if (typeof data.detail === 'string') message = data.detail;
+    } catch {
+      /* ответ не JSON — остаётся общий текст */
+    }
+    throw new Error(message);
+  }
+  return { blob: await r.blob(), filename: filenameFromResponse(r, 'Вне каталога.xlsx') };
 }
 
 /** Разбор БЕЗ записи: колонки, правило, первые строки и итоги по всему файлу. */

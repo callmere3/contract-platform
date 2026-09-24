@@ -30,6 +30,7 @@
 сколько из этих сумм причитается — следующий шаг, он живёт в правах на треки.
 """
 import hashlib
+import io
 import json
 import re
 import threading
@@ -38,7 +39,9 @@ import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
+import openpyxl
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session
 
@@ -77,6 +80,7 @@ from app.partner_reports import (
 )
 from app.roles import CAN_MANAGE_PARTNER_REPORTS, CAN_VIEW_PARTNER_REPORTS
 from app.routers_payments import payment_numbers
+from app.routers_templates import _content_disposition
 
 partner_reports_router = APIRouter(
     prefix="/partner-reports",
@@ -1400,6 +1404,69 @@ def preview(
             "total": _money(totals["amount_author"] + totals["amount_related"]),
         },
     }
+
+
+@partner_reports_router.post(
+    "/preview/unmatched", dependencies=[Depends(require_role(*CAN_MANAGE_PARTNER_REPORTS))]
+)
+def export_unmatched(
+    partner_id: str = Form(""),
+    file: UploadFile = File(...),
+    mapping: str = Form(""),
+    vat_rate: str = Form(""),
+    sheet: str = Form(""),
+    manual_skus: str = Form(""),
+    db: Session = Depends(get_session),
+) -> StreamingResponse:
+    """
+    Строки ВНЕ КАТАЛОГА — файлом, ВСЕ, а не первые 300 предпросмотра (просьба
+    владельца 24.09.2026). У «Зайцев.нет» их сотня с лишним, и работа с ними —
+    завести недостающие позиции в номенклатуру — идёт уже в Excel.
+
+    Файл тот же, что у предпросмотра, и разбор тот же (`_parse_and_resolve`):
+    после предпросмотра он уже в памяти, и выгрузка почти мгновенна.
+    Имя файла — «Вне каталога <площадка>.xlsx».
+    """
+    content = _read_upload(file)
+    head = _head_info(db, partner_id, content, file.filename, mapping, vat_rate, sheet)
+    manual = _manual_skus(manual_skus)
+    result, resolved = _parse_and_resolve(db, content, file.filename, head, manual)
+    missing = [r for r in result.rows if r.row_num not in resolved]
+
+    # Параметры — столбцами, только если правило берёт их из колонок файла: у
+    # площадки с общим значением они повторяли бы одно и то же в каждой строке.
+    attrs = [name for name in REPORT_ATTRS if name in head["out"]["attributes_from_columns"]]
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Вне каталога"
+    ws.append([
+        "Строка в файле", "Артикул в отчёте", "Код площадки (ISRC/UPC)",
+        "Название", "Исполнитель", "Количество",
+        "Авторские, ₽", "Смежные, ₽", "Итого, ₽",
+        *(ATTR_LABELS[name] for name in attrs),
+    ])
+    for r in missing:
+        # Суммы — ЧИСЛАМИ, а не строками: в Excel их будут складывать.
+        ws.append([
+            r.row_num, r.sku or "", r.code or "",
+            r.title or "", r.artist or "",
+            r.quantity,
+            r.amount_author, r.amount_related, r.amount_author + r.amount_related,
+            *((getattr(r, name) or "") for name in attrs),
+        ])
+    ws.freeze_panes = "A2"
+    for letter, width in zip("ABCDEFGHI", (10, 16, 22, 40, 30, 12, 14, 14, 14)):
+        ws.column_dimensions[letter].width = width
+
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    name = " ".join((head["partner"].name or "").split())
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": _content_disposition(f"Вне каталога {name}.xlsx")},
+    )
 
 
 ROW_COLUMNS = (
