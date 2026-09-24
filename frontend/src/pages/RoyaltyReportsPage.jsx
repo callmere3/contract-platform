@@ -821,7 +821,8 @@ function SummaryTable({ summary }) {
   const th =
     'text-left font-semibold text-[11px] uppercase tracking-[0.04em] text-text-muted px-3 py-2 border-b border-border';
   const td = 'px-3 py-2 border-t border-border text-[13px]';
-  const numeric = (c) => c.money || c.field === 'quantity' || c.field === 'tracks' || c.field === 'reports';
+  const numeric = (c) =>
+    c.money || ['quantity', 'tracks', 'reports', 'holders'].includes(c.field);
   const show = (c, v) => {
     if (v === null || v === undefined || v === '') return '—';
     if (c.money) return formatMoney(v);

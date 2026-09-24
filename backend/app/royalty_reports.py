@@ -526,134 +526,114 @@ SUMMARY_BY = {
 }
 
 
-def _gross(db: Session, s: Settings, by: str) -> dict:
+def _quantities(db: Session, s: Settings, by: str) -> dict:
     """
-    Валовые суммы отчётов площадок по треку или площадке — ДО дележа.
+    Количество и число отчётов по треку или площадке — из строк отчётов,
+    ОДИН раз на строку.
 
-    Берутся все строки попавших в период отчётов, в том числе «вне каталога»:
-    это тоже пришедшие деньги, и сводка по площадке без них не сошлась бы с
-    её отчётом. Выбор правообладателей и товарный фильтр сужают строки до
-    треков, на которые у выбранных есть права.
+    Из расчёта вознаграждения количество брать нельзя: там строка трека
+    повторяется у каждого его правообладателя, и у трека с двумя владельцами
+    прослушивания посчитались бы дважды. Строки — только треков, у которых
+    есть Лицензиар (с учётом выбора правообладателей и товарного фильтра):
+    сводка отвечает на вопрос «сколько причитается Лицензиарам», и «вне
+    каталога» к нему не относится.
     """
     R, Rep = PartnerReportRow, PartnerReport
     key = R.track_id if by == "track" else Rep.partner_id
+    owners = select(TrackRight.track_id).where(TrackRight.contragent_id.isnot(None))
+    if s.contragent_ids:
+        owners = owners.where(TrackRight.contragent_id.in_(s.contragent_ids))
     q = (
-        select(
-            key,
-            func.coalesce(func.sum(R.quantity), 0),
-            func.coalesce(func.sum(R.amount_author), 0),
-            func.coalesce(func.sum(R.amount_related), 0),
-            func.count(func.distinct(Rep.id)),
-        )
+        select(key, func.coalesce(func.sum(R.quantity), 0), func.count(func.distinct(Rep.id)))
         .select_from(R)
         .join(Rep, Rep.id == R.report_id)
-        .where(_report_filter(s), _not_pending())
+        .where(_report_filter(s), _not_pending(), R.track_id.in_(owners))
         .group_by(key)
     )
-    if s.contragent_ids:
-        q = q.where(R.track_id.in_(
-            select(TrackRight.track_id).where(TrackRight.contragent_id.in_(s.contragent_ids))
-        ))
     if s.track_ids:
         q = q.where(R.track_id.in_(s.track_ids))
-    return {
-        k: {"quantity": Decimal(str(qty)), "author": Decimal(str(a)),
-            "related": Decimal(str(r)), "reports": int(n)}
-        for k, qty, a, r, n in db.execute(q).all()
-    }
+    return {k: (Decimal(str(qty)), int(n)) for k, qty, n in db.execute(q).all()}
 
 
 def summary(db: Session, s: Settings, by: str) -> list:
     """
-    Строки сводки: словари с Decimal-суммами, отсортированные по убыванию
-    вознаграждения (для правообладателей) или суммы по отчётам.
+    Строки сводки: словари с Decimal-суммами, по убыванию вознаграждения.
 
-    Вознаграждения — из того же `compute`, что и ведомости: сводка и
-    ведомости обязаны сходиться, и считать их двумя путями значило бы однажды
-    получить два разных числа.
+    КОЛОНКИ ОДНИ И ТЕ ЖЕ во всех разрезах (правка 24.09.2026, замечание
+    владельца): сумма реализации Лицензиара, вознаграждение авторские,
+    смежные и итого, комиссия Лицензиата. Различаются только первые,
+    опознавательные колонки. Суммы — из того же `compute`, что и ведомости,
+    поэтому итоги совпадают во всех разрезах и с ведомостями.
     """
     results = compute(db, s)
     if by == "holder":
         rows = [{
             "key": r.contragent_id, "title": r.title, "tracks": r.tracks,
-            "quantity": r.quantity, "gross": r.realization,
+            "quantity": r.quantity, "realization": r.realization,
             "reward_author": r.reward_author, "reward_related": r.reward_related,
-            "reward": r.reward, "left": r.realization - r.reward,
+            "reward": r.reward, "commission": r.realization - r.reward,
         } for r in results]
         return sorted(rows, key=lambda x: -x["reward"])
 
-    reward: dict = {}
+    acc: dict = {}
     for r in results:
         for ln in r.lines:
             k = ln.sku if by == "track" else ln.partner
-            acc = reward.setdefault(k, [ZERO, ZERO])
-            acc[0] += ln.reward_author
-            acc[1] += ln.reward_related
-    gross = _gross(db, s, by)
-    rows = []
+            a = acc.setdefault(k, {"line": ln, "realization": ZERO, "ra": ZERO, "rr": ZERO,
+                                   "holders": set()})
+            a["realization"] += ln.realization
+            a["ra"] += ln.reward_author
+            a["rr"] += ln.reward_related
+            a["holders"].add(r.contragent_id)
+
+    counts = _quantities(db, s, by)
     if by == "track":
-        ids = [k for k in gross if k is not None]
-        tracks = {t.id: t for t in db.scalars(select(Track).where(Track.id.in_(ids)))} if ids else {}
-        for tid, g in gross.items():
-            t = tracks.get(tid)
-            sku = t.sku if t else ""
-            ra, rr = reward.get(sku, [ZERO, ZERO]) if t else (ZERO, ZERO)
-            total = g["author"] + g["related"]
-            rows.append({
-                "key": str(tid) if tid else "", "sku": sku,
-                "title": (t.title if t else "без привязки к треку") or "",
-                "artist": (t.artist or "") if t else "",
-                "quantity": g["quantity"], "gross_author": g["author"], "gross_related": g["related"],
-                "gross": total, "reward_author": ra, "reward_related": rr,
-                "reward": ra + rr, "left": total - ra - rr,
-            })
+        by_sku = {t.sku: t.id for t in db.scalars(select(Track).where(Track.sku.in_(list(acc))))}
     else:
-        names = dict(db.execute(select(Partner.id, Partner.name)).all())
-        for pid, g in gross.items():
-            name = names.get(pid, "")
-            ra, rr = reward.get(name, [ZERO, ZERO])
-            total = g["author"] + g["related"]
-            rows.append({
-                "key": str(pid), "title": name, "reports": g["reports"],
-                "quantity": g["quantity"], "gross_author": g["author"], "gross_related": g["related"],
-                "gross": total, "reward_author": ra, "reward_related": rr,
-                "reward": ra + rr, "left": total - ra - rr,
-            })
-    return sorted(rows, key=lambda x: -x["gross"])
+        by_name = {name: pid for pid, name in db.execute(select(Partner.id, Partner.name)).all()}
+
+    rows = []
+    for k, a in acc.items():
+        ln = a["line"]
+        qty, reports = counts.get(by_sku.get(k) if by == "track" else by_name.get(k), (ZERO, 0))
+        row = {
+            "quantity": qty, "realization": a["realization"],
+            "reward_author": a["ra"], "reward_related": a["rr"], "reward": a["ra"] + a["rr"],
+            "commission": a["realization"] - a["ra"] - a["rr"],
+        }
+        if by == "track":
+            row.update({"key": k, "sku": ln.sku, "title": ln.title, "artist": ln.artist,
+                        "holders": len(a["holders"])})
+        else:
+            row.update({"key": k, "title": k, "reports": reports})
+        rows.append(row)
+    return sorted(rows, key=lambda x: -x["reward"])
 
 
-# Колонки сводки для экрана и Excel: (поле, заголовок, это деньги?).
+# Колонки сводки для экрана и Excel: (поле, заголовок, это деньги?). Общая
+# часть одна на все разрезы — она и есть «сводка»; спереди только то, по
+# чему строку опознают.
+_MONEY_COLUMNS = [
+    ("quantity", "Количество", False),
+    ("realization", "Сумма реализации Лицензиара", True),
+    ("reward_author", "Вознаграждение авторские", True),
+    ("reward_related", "Вознаграждение смежные", True),
+    ("reward", "Вознаграждение итого", True),
+    ("commission", "Комиссия Лицензиата", True),
+]
 SUMMARY_COLUMNS = {
-    "holder": [
-        ("title", "Правообладатель", False), ("tracks", "Треков", False),
-        ("quantity", "Количество", False), ("gross", "Сумма реализации Лицензиара", True),
-        ("reward_author", "Вознаграждение авторские", True),
-        ("reward_related", "Вознаграждение смежные", True),
-        ("reward", "Вознаграждение итого", True), ("left", "Комиссия Лицензиата", True),
-    ],
-    "track": [
-        ("sku", "Код", False), ("title", "Название", False), ("artist", "Исполнитель", False),
-        ("quantity", "Количество", False), ("gross_author", "По отчётам: авторские", True),
-        ("gross_related", "По отчётам: смежные", True), ("gross", "По отчётам: итого", True),
-        ("reward", "Вознаграждение правообладателям", True), ("left", "Остаётся Медиа Лэнд", True),
-    ],
-    "partner": [
-        ("title", "Площадка", False), ("reports", "Отчётов", False),
-        ("quantity", "Количество", False), ("gross_author", "По отчётам: авторские", True),
-        ("gross_related", "По отчётам: смежные", True), ("gross", "По отчётам: итого", True),
-        ("reward", "Вознаграждение правообладателям", True), ("left", "Остаётся Медиа Лэнд", True),
-    ],
+    "holder": [("title", "Правообладатель", False), ("tracks", "Треков", False), *_MONEY_COLUMNS],
+    "track": [("sku", "Код", False), ("title", "Название", False),
+              ("artist", "Исполнитель", False), ("holders", "Правообладателей", False),
+              *_MONEY_COLUMNS],
+    "partner": [("title", "Площадка", False), ("reports", "Отчётов", False), *_MONEY_COLUMNS],
 }
+_SUMMED = {f for f, _, _ in _MONEY_COLUMNS}
 
 
 def summary_totals(rows: list, by: str) -> dict:
-    """Итог по всем строкам сводки: суммируются числа, кроме «треков» и «отчётов»."""
-    out = {}
-    for field_name, _, _ in SUMMARY_COLUMNS[by]:
-        if field_name in ("quantity", "gross", "gross_author", "gross_related",
-                          "reward_author", "reward_related", "reward", "left"):
-            out[field_name] = sum((r.get(field_name, ZERO) for r in rows), ZERO)
-    return out
+    """Итог по всем строкам сводки: количество и суммы."""
+    return {f: sum((r.get(f, ZERO) for r in rows), ZERO) for f in _SUMMED}
 
 
 def summary_file_name(s: Settings, by: str) -> str:
