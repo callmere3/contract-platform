@@ -1206,9 +1206,18 @@ def find_period(table: list, header_row: int) -> tuple | None:
         return None
     text = " ".join(chunks).lower().replace("\xa0", " ")
 
-    # «с 1 июля 2026 по 31 июля 2026»
+    # «с 1 июля 2026 по 31 июля 2026» и «c 01 мая по 31 мая 2026г.»
+    #
+    # ГОД У ПЕРВОЙ ДАТЫ НЕОБЯЗАТЕЛЕН: у МегаФона он написан один раз, в
+    # конце («период c 01 мая по 31 мая 2026г.»), и требовать его дважды
+    # значит не прочитать период вовсе. Нет — берём год второй даты: период
+    # внутри одного отчёта через новый год не переходит.
+    #
+    # «С» ЛОВИМ И КИРИЛЛИЦЕЙ, И ЛАТИНИЦЕЙ: в шапке МегаФона стоит латинская
+    # «c» (U+0063). На вид не отличить, а регулярное выражение промахивается
+    # молча — и период тихо не находится.
     match = re.search(
-        r"с\s+(\d{1,2})\s+(" + _MONTH_RE + r")\s+(\d{4})"
+        r"[сc]\s+(\d{1,2})\s+(" + _MONTH_RE + r")(?:\s+(\d{4}))?"
         r"\s+по\s+(\d{1,2})\s+(" + _MONTH_RE + r")\s+(\d{4})",
         text,
     )
@@ -1217,7 +1226,7 @@ def find_period(table: list, header_row: int) -> tuple | None:
         first, second = _month_number(m1), _month_number(m2)
         if first and second:
             try:
-                return date(int(y1), first, int(d1)), date(int(y2), second, int(d2))
+                return date(int(y1 or y2), first, int(d1)), date(int(y2), second, int(d2))
             except ValueError:
                 return None
 
