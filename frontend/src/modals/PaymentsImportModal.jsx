@@ -238,34 +238,34 @@ export function PaymentsImportModal({ level, isTop, onDone }) {
                     key={r.line}
                     className={r.problems.length ? 'bg-danger-soft' : undefined}
                   >
-                    <td className="px-2 py-1.5 border-b border-border-soft tabular-nums whitespace-nowrap">
+                    <td className="px-2 py-1.5 border-b border-border tabular-nums whitespace-nowrap">
                       {ru(r.occurred_on)}
                     </td>
-                    <td className="px-2 py-1.5 border-b border-border-soft max-w-[170px] truncate">
+                    <td className="px-2 py-1.5 border-b border-border max-w-[170px] truncate">
                       {r.partner || <span className="text-text-muted">—</span>}
                       {r.partner && !r.partner_known && (
                         <span className="text-text-muted"> (текстом)</span>
                       )}
                     </td>
-                    <td className="px-2 py-1.5 border-b border-border-soft max-w-[200px] truncate text-text-muted">
+                    <td className="px-2 py-1.5 border-b border-border max-w-[200px] truncate text-text-muted">
                       {r.description}
                     </td>
-                    <td className="px-2 py-1.5 border-b border-border-soft tabular-nums text-right whitespace-nowrap">
+                    <td className="px-2 py-1.5 border-b border-border tabular-nums text-right whitespace-nowrap">
                       {r.amount ? formatMoney(r.amount) : '—'}
                     </td>
-                    <td className="px-2 py-1.5 border-b border-border-soft tabular-nums text-right whitespace-nowrap">
+                    <td className="px-2 py-1.5 border-b border-border tabular-nums text-right whitespace-nowrap">
                       {r.currency_amount ? `${r.currency_amount} ${r.currency || ''}` : ''}
                     </td>
-                    <td className="px-2 py-1.5 border-b border-border-soft tabular-nums text-right">
+                    <td className="px-2 py-1.5 border-b border-border tabular-nums text-right">
                       {r.vat_rate != null ? `${String(r.vat_rate).replace('.', ',')}%` : ''}
                     </td>
-                    <td className="px-2 py-1.5 border-b border-border-soft tabular-nums text-right whitespace-nowrap">
+                    <td className="px-2 py-1.5 border-b border-border tabular-nums text-right whitespace-nowrap">
                       {r.transfer_amount ? formatMoney(r.transfer_amount) : '—'}
                     </td>
-                    <td className="px-2 py-1.5 border-b border-border-soft text-center">
+                    <td className="px-2 py-1.5 border-b border-border text-center">
                       {r.transfer_status || ''}
                     </td>
-                    <td className="px-2 py-1.5 border-b border-border-soft whitespace-nowrap">
+                    <td className="px-2 py-1.5 border-b border-border whitespace-nowrap">
                       {r.duplicate && <span className="text-text-muted">уже заведено</span>}
                       {r.problems.length > 0 && (
                         <span className="text-danger">{r.problems.join('; ')}</span>

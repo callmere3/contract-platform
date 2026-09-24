@@ -85,10 +85,10 @@ export function ReportFilterModal({ columns, value, level, isTop, onApply }) {
           <tbody>
             {columns.map((c) => (
               <tr key={c.key}>
-                <td className="px-3 py-1 border-t border-border-soft text-[12.5px] text-text">
+                <td className="px-3 py-1 border-t border-border text-[12.5px] text-text">
                   {c.label}
                 </td>
-                <td className="px-3 py-1 border-t border-border-soft">
+                <td className="px-3 py-1 border-t border-border">
                   <input
                     value={draft[c.key] ?? ''}
                     onChange={(e) => set(c.key, e.target.value)}

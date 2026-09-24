@@ -228,7 +228,7 @@ export function ReportRowsModal({
     'text-left font-semibold text-[11px] uppercase tracking-[0.04em] text-text-muted px-2 py-1.5 whitespace-nowrap border-b border-border bg-surface sticky top-0 z-[1]';
   // Высота строки задана жёстко — см. ROW_H: ячейка не переносит текст.
   const td =
-    'px-2 py-0 border-t border-border-soft text-[12.5px] whitespace-nowrap overflow-hidden text-ellipsis';
+    'px-2 py-0 border-t border-border text-[12.5px] whitespace-nowrap overflow-hidden text-ellipsis';
   const field =
     'bg-input-bg border border-border rounded-input px-2 py-1 text-[12.5px] text-text outline-none font-sans';
   const count = (v) => Number(v ?? 0).toLocaleString('ru-RU', { maximumFractionDigits: 2 });
