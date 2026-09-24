@@ -540,7 +540,12 @@ def _quantities(db: Session, s: Settings, by: str) -> dict:
     """
     R, Rep = PartnerReportRow, PartnerReport
     key = R.track_id if by == "track" else Rep.partner_id
-    owners = select(TrackRight.track_id).where(TrackRight.contragent_id.isnot(None))
+    # Доля больше нуля: права с нулевой долей в сводку не попадают (строки
+    # вознаграждения по ним нет), и их прослушивания не должны попадать в
+    # количество — иначе объект и площадка разошлись бы по количеству.
+    owners = select(TrackRight.track_id).where(
+        TrackRight.contragent_id.isnot(None), TrackRight.share > 0
+    )
     if s.contragent_ids:
         owners = owners.where(TrackRight.contragent_id.in_(s.contragent_ids))
     q = (
