@@ -345,8 +345,12 @@ export function ReportRowsModal({
       <div className="grid grid-cols-2 gap-x-10 text-[12.5px] mb-4 shrink-0">
         <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 items-center content-start">
           <span className="text-text-secondary">Площадка</span>
-          <span className="text-text font-semibold">{card.partner}</span>
-          <Region value={card.region} />
+          {/* Приписка ВНУТРИ ячейки: сетка здесь двухколоночная, и отдельным
+              элементом она встала бы в колонку подписей и сдвинула всё ниже. */}
+          <span className="text-text font-semibold">
+            {card.partner}
+            <Region value={card.region} />
+          </span>
           <span className="text-text-secondary">Файл</span>
           <span className="text-text truncate" data-hint={card.file_name}>
             {card.file_name}
