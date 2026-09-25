@@ -349,8 +349,9 @@ export function PaymentsPage() {
   // сверка — с ней сравнивают и фактический завод, и итог привязанного
   // отчёта, — и из всей таблицы её должно быть видно сразу. Подсветка лёгкая,
   // тоном акцента, чтобы выделять столбец, а не спорить с «≠» и красным
-  // расхождением. Прозрачность от акцента — в обеих темах тон свой.
-  const keyCol = 'bg-accent/[0.08]';
+  // расхождением. Тон свой в каждой теме (--c-key-col в index.css): 8% от
+  // акцента в светлой теме почти не читались.
+  const keyCol = 'bg-key-col';
   const cellInput =
     'w-full bg-transparent border border-transparent hover:border-border focus:border-accent rounded-input px-2 py-0.5 text-[12.5px] text-text outline-none font-sans';
   const tab = (active) =>

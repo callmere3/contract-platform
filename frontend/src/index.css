@@ -18,6 +18,10 @@
   --color-input-bg: var(--c-input-bg);
   --color-accent: var(--c-accent);
   --color-accent-soft: var(--c-accent-soft);
+  /* Подсветка ключевого столбца таблицы (сумма завода в «Поступлениях»).
+     Своя в каждой теме: индиго на белом при той же прозрачности выходит
+     заметно бледнее янтаря на тёмном (замечание владельца 25.09.2026). */
+  --color-key-col: var(--c-key-col);
   --color-danger: var(--c-danger);
   --color-danger-soft: var(--c-danger-soft);
   --color-success: var(--c-success);
@@ -47,6 +51,7 @@
   --card-shadow-value: 0 8px 24px rgba(0, 0, 0, 0.4);
   --c-accent: #f59e0b;
   --c-accent-soft: rgba(245, 158, 11, 0.18);
+  --c-key-col: rgba(245, 158, 11, 0.14);
   --c-danger: #f87171;
   --c-danger-soft: rgba(248, 113, 113, 0.14);
   --c-success: #22c55e;
@@ -68,6 +73,7 @@
   --card-shadow-value: 0 8px 24px rgba(0, 0, 0, 0.06);
   --c-accent: #6366f1;
   --c-accent-soft: rgba(99, 102, 241, 0.1);
+  --c-key-col: rgba(99, 102, 241, 0.17);
   --c-danger: #dc2626;
   --c-danger-soft: rgba(220, 38, 38, 0.07);
   --c-success: #16a34a;
