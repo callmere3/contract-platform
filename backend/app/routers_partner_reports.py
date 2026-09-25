@@ -359,7 +359,9 @@ def _resolve_tracks(db: Session, rows: list, partner_id=None) -> dict:
     # площадки, и его решение сильнее любой догадки сервиса.
     aliases = _aliases_for(db, partner_id, rows) if partner_id is not None else {}
     if aliases:
-        unresolved = [r for r in rows if r.row_num not in resolved and r.title]
+        # НАШ АРТИКУЛ В СТРОКЕ НЕ МЕНЯЕМ НИКОГДА (правило владельца 25.09.2026,
+        # см. ниже) — сопоставление подставляется только строкам без него.
+        unresolved = [r for r in rows if r.row_num not in resolved and not r.sku and r.title]
         wanted = {
             aliases[key]
             for key in (_alias_key(r.title, r.artist) for r in unresolved)
@@ -378,14 +380,22 @@ def _resolve_tracks(db: Session, rows: list, partner_id=None) -> dict:
     # артикула в нём нет вовсе, а есть «UPC / ISRC», и по ISRC трек находится
     # точно. Ниже запомненных сопоставлений: там решение человека, а это
     # опознание по коду.
-    unresolved = [r for r in rows if r.row_num not in resolved and (r.code or r.sku)]
+    # ЕСЛИ НАШ АРТИКУЛ УКАЗАН — МЕНЯТЬ ЕГО ЗАПРЕЩЕНО (правило владельца
+    # 25.09.2026, «ВАЖНО!»). Артикул, которого нет в номенклатуре, — это не
+    # ошибка площадки, а, как правило, старый релиз из базы до Dista, который
+    # должен быть изъят: его деньги обязаны остаться «вне каталога» под СВОИМ
+    # номером, а не уехать по ISRC или названию на другую позицию. Поэтому
+    # код, запомненное сопоставление и название пробуются ТОЛЬКО у строк без
+    # артикула. Раньше ISRC пробовался и при ненайденном артикуле и
+    # подменял его — так больше не делается.
+    unresolved = [r for r in rows if r.row_num not in resolved and not r.sku and r.code]
     if unresolved:
         candidates: dict = {}
         for row in unresolved:
             # Сперва колонка кода площадки, если правило её задало; иначе —
             # то, что стояло в «Артикуле»: у площадки там может лежать её
             # собственный код, который нашим артикулом не оказался.
-            for code in _code_candidates(row.code or row.sku):
+            for code in _code_candidates(row.code):
                 candidates.setdefault(code, []).append(row)
         by_code = _tracks_by_code(db, list(candidates))
         for code, waiting in candidates.items():
@@ -402,12 +412,8 @@ def _resolve_tracks(db: Session, rows: list, partner_id=None) -> dict:
 
     # Строки без артикула — по названию. Одинаковые пары «название +
     # исполнитель» ищем один раз: в отчёте они повторяются по нескольку строк.
-    # И СТРОКИ С АРТИКУЛОМ, КОТОРОГО У НАС НЕТ (правка 25.09.2026): у Believe
-    # в строке номер РЕЛИЗА, и если релиз заведён у нас под другим номером
-    # («Автор твоих стихов / Тбили»: в отчёте 1240336, у нас 1240356), строка
-    # уходила «вне каталога», хотя трек есть. ISRC для таких строк и так
-    # пробовался — теперь пробуется и название с исполнителем, так же строго.
-    pending = [r for r in rows if r.row_num not in resolved and r.title]
+    # Только строки БЕЗ артикула — наш артикул не меняем (см. выше).
+    pending = [r for r in rows if r.row_num not in resolved and not r.sku and r.title]
     cache: dict = {}
     for row in pending:
         key = (row.title.lower(), (row.artist or "").lower())
