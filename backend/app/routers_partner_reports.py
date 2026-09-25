@@ -392,27 +392,33 @@ def _attrs_from_rows(db: Session, report_id) -> dict:
     return {name: bool(n) for name, n in zip(REPORT_ATTRS, counts)}
 
 
+PER_ROW_PROBE = 50
+
+
 def _per_row_attrs(db: Session, reports: list) -> dict:
     """
     {id отчёта: [параметры из колонки файла]} для списка отчётов.
 
-    Спрашиваем только про параметры, у которых ПУСТОЙ снимок (только они и
-    бывают построчными), и через EXISTS: у Believe в отчёте полмиллиона строк,
-    и считать их все, как `_attrs_from_rows`, ради «есть хоть одно значение»
-    незачем — первая же строка отвечает.
+    Спрашиваем только про параметры с ПУСТЫМ снимком (только они и бывают
+    построчными) и смотрим ПЕРВЫЕ `PER_ROW_PROBE` строк отчёта по индексу
+    (report_id, row_num). Первый вариант спрашивал EXISTS по всем строкам и
+    грузил список 3,7 с: где значения нет, EXISTS прочёсывал все полмиллиона
+    строк Believe. Колонка файла заполнена почти в каждой строке, поэтому
+    полсотни первых строк отвечают на вопрос с запасом.
     """
     out: dict = {}
+    R = PartnerReportRow
     for report in reports:
         empty = [name for name in REPORT_ATTRS if not getattr(report, name)]
         if not empty:
             continue
-        R = PartnerReportRow
-        flags = db.execute(select(*[
-            select(R.row_num).where(R.report_id == report.id, getattr(R, name).isnot(None))
-            .limit(1).exists()
-            for name in empty
-        ])).one()
-        names = [name for name, flag in zip(empty, flags) if flag]
+        probe = db.execute(
+            select(*[getattr(R, name) for name in empty])
+            .where(R.report_id == report.id)
+            .order_by(R.row_num)
+            .limit(PER_ROW_PROBE)
+        ).all()
+        names = [name for i, name in enumerate(empty) if any(row[i] for row in probe)]
         if names:
             out[str(report.id)] = names
     return out
