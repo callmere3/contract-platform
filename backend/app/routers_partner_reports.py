@@ -263,6 +263,12 @@ def _tracks_by_code(db: Session, codes: list) -> dict:
     return {k: v for k, v in found.items() if v is not None}
 
 
+# Сколько кандидатов по слову названия берём для подбора трека по названию и
+# исполнителю. Упёрлись в предел и не нашли — второй заход сужает по
+# исполнителю (см. _resolve_tracks).
+NAME_CANDIDATES = 200
+
+
 def _resolve_tracks(db: Session, rows: list, partner_id=None) -> dict:
     """
     Привязать строки отчёта к каталогу: сначала по артикулу, а СТРОКИ БЕЗ
@@ -353,12 +359,26 @@ def _resolve_tracks(db: Session, rows: list, partner_id=None) -> dict:
             candidates = []
             if word:
                 pattern = "%" + word.replace("%", "").replace("_", "") + "%"
-                candidates = db.execute(
-                    select(Track.id, Track.sku, Track.title, Track.artist)
-                    .where(Track.title.ilike(pattern))
-                    .limit(200)
-                ).all()
-            cache[key] = pick_track(row.title, row.artist, candidates)
+                query = select(Track.id, Track.sku, Track.title, Track.artist).where(
+                    Track.title.ilike(pattern)
+                )
+                candidates = db.execute(query.limit(NAME_CANDIDATES)).all()
+                found = pick_track(row.title, row.artist, candidates)
+                # КОРОТКОЕ СЛОВО УПИРАЕТСЯ В ПРЕДЕЛ (ВОИС, 25.09.2026): у «КАК ЖЕ
+                # ОН МОГ» все слова по три буквы, «%как%» даёт тысячи треков, и
+                # нужный в первые двести не попадал. Список упёрся в предел, а
+                # трек не нашёлся — ищем ещё раз, сузив по самому длинному слову
+                # исполнителя. Прежний путь не трогаем: где он находил, находит.
+                artist_word = search_word(row.artist)
+                if found is None and artist_word and len(candidates) >= NAME_CANDIDATES:
+                    narrowed = "%" + artist_word.replace("%", "").replace("_", "") + "%"
+                    candidates = db.execute(
+                        query.where(Track.artist.ilike(narrowed)).limit(NAME_CANDIDATES)
+                    ).all()
+                    found = pick_track(row.title, row.artist, candidates)
+                cache[key] = found
+            else:
+                cache[key] = None
         track = cache[key]
         if track is not None:
             row.sku = track.sku
