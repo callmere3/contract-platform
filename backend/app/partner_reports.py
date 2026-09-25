@@ -1708,6 +1708,18 @@ def find_period(table: list, header_row: int) -> tuple | None:
         except ValueError:
             return None
 
+    # «ПО СОСТОЯНИЮ НА 01.08.2026» — ВОИС (правило владельца 25.09.2026):
+    # отчёт за ПРОШЛЫЙ месяц, то есть весь июль. Месяц берём предыдущий
+    # относительно даты, на которую составлен отчёт.
+    match = re.search(
+        r"по\s+состоянию\s+на\s+(\d{1,2})[.\-/](\d{1,2})[.\-/](\d{4})", text
+    )
+    if match:
+        month, year = int(match.group(2)), int(match.group(3))
+        if 1 <= month <= 12:
+            month, year = (month - 1, year) if month > 1 else (12, year - 1)
+            return date(year, month, 1), _month_end(year, month)
+
     # «III квартал 2026», «за 3 квартал 2026»
     match = re.search(r"\b(i{1,3}v?|[1-4])\s*квартал\w*\s*(\d{4})", text)
     if match:
