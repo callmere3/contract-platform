@@ -36,6 +36,7 @@ import re
 import threading
 import time
 import uuid
+from types import SimpleNamespace
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
@@ -56,6 +57,7 @@ from app.models import (
     PartnerReportRule,
     PartnerTrackAlias,
     Track,
+    TrackRight,
     User,
 )
 from app.partner_reports import (
@@ -78,7 +80,7 @@ from app.partner_reports import (
     normalize_header,
     parse_report,
     period_label,
-    pick_track,
+    name_hits,
     report_region,
     read_columns,
     read_head,
@@ -242,14 +244,49 @@ def _code_candidates(value: str) -> list:
     return out
 
 
+def _pick_duplicate(db: Session, tracks: list):
+    """
+    Из нескольких подходящих позиций — первая по артикулу, НО ТОЛЬКО ЕСЛИ ЭТО
+    ЯВНЫЙ ДУБЛЬ (правило владельца 25.09.2026): у всех одинаковые права — тот
+    же правообладатель, вид права, доля и ставка роялти. Тогда деньги уходят
+    одному и тому же человеку одинаково, какую позицию ни возьми, и заставлять
+    вписывать артикул руками незачем. Настоящий случай — «Миледи / Adam»: две
+    позиции, 7210303 и 7246395, один ISRC, у обеих TURAN MEDIA 100% / 80%.
+
+    Права различаются или прав нет вовсе — не выбираем ничего, как раньше:
+    угаданная позиция с чужим правообладателем хуже пустой.
+
+    `tracks` — объекты с `id` и `sku`. Возвращает выбранный объект или None.
+    """
+    ids = list({t.id for t in tracks})
+    if len(ids) < 2:
+        return tracks[0] if tracks else None
+    rights: dict = {i: [] for i in ids}
+    for track_id, kind, holder, owner, share, royalty in db.execute(
+        select(TrackRight.track_id, TrackRight.right_type, TrackRight.contragent_id,
+               TrackRight.owner, TrackRight.share, TrackRight.royalty)
+        .where(TrackRight.track_id.in_(ids))
+    ):
+        rights[track_id].append((
+            kind, str(holder) if holder else (owner or "").strip().casefold(),
+            Decimal(share or 0), Decimal(royalty or 0),
+        ))
+    signatures = {tuple(sorted(r)) for r in rights.values()}
+    if len(signatures) != 1 or not next(iter(signatures)):
+        return None
+    return min(tracks, key=lambda t: t.sku or "")
+
+
 def _tracks_by_code(db: Session, codes: list) -> dict:
     """
-    Код (ISRC/UPC) → (id трека, наш артикул). НЕОДНОЗНАЧНЫЕ НЕ ОТДАЁМ.
+    Код (ISRC/UPC) → (id трека, наш артикул). НЕОДНОЗНАЧНЫЕ НЕ ОТДАЁМ —
+    кроме явного дубля.
 
     Один ISRC в каталоге встречается у нескольких позиций — у DGA062047234 их
     семнадцать (одна запись в разных альбомах). Выбрать из них наугад значит
-    отправить деньги не туда, поэтому такой код просто не считается найденным:
-    строка останется неразнесённой, и артикул ей впишет человек.
+    отправить деньги не туда, поэтому такой код не считается найденным: строка
+    останется неразнесённой, и артикул ей впишет человек. ИСКЛЮЧЕНИЕ — явный
+    дубль одного правообладателя (`_pick_duplicate`): тогда первая позиция.
     """
     found: dict = {}
     codes = [c for c in codes if c]
@@ -259,15 +296,29 @@ def _tracks_by_code(db: Session, codes: list) -> dict:
                 Track.code.in_(codes[start:start + SKU_BATCH])
             )
         ):
-            key = (code or "").upper()
-            found[key] = None if key in found else (track_id, sku)
-    return {k: v for k, v in found.items() if v is not None}
+            found.setdefault((code or "").upper(), []).append(
+                SimpleNamespace(id=track_id, sku=sku)
+            )
+    out = {}
+    for key, tracks in found.items():
+        chosen = tracks[0] if len({t.id for t in tracks}) == 1 else _pick_duplicate(db, tracks)
+        if chosen is not None:
+            out[key] = (chosen.id, chosen.sku)
+    return out
 
 
 # Сколько кандидатов по слову названия берём для подбора трека по названию и
 # исполнителю. Упёрлись в предел и не нашли — второй заход сужает по
 # исполнителю (см. _resolve_tracks).
 NAME_CANDIDATES = 200
+
+
+def _name_pick(db: Session, row, candidates):
+    """Трек по названию и исполнителю: единственный — или явный дубль."""
+    hits = name_hits(row.title, row.artist, candidates)
+    if len(hits) == 1:
+        return hits[0]
+    return _pick_duplicate(db, hits) if hits else None
 
 
 def _resolve_tracks(db: Session, rows: list, partner_id=None) -> dict:
@@ -364,7 +415,7 @@ def _resolve_tracks(db: Session, rows: list, partner_id=None) -> dict:
                     Track.title.ilike(pattern)
                 )
                 candidates = db.execute(query.limit(NAME_CANDIDATES)).all()
-                found = pick_track(row.title, row.artist, candidates)
+                found = _name_pick(db, row, candidates)
                 # КОРОТКОЕ СЛОВО УПИРАЕТСЯ В ПРЕДЕЛ (ВОИС, 25.09.2026): у «КАК ЖЕ
                 # ОН МОГ» все слова по три буквы, «%как%» даёт тысячи треков, и
                 # нужный в первые двести не попадал. Список упёрся в предел, а
@@ -376,7 +427,7 @@ def _resolve_tracks(db: Session, rows: list, partner_id=None) -> dict:
                     candidates = db.execute(
                         query.where(Track.artist.ilike(narrowed)).limit(NAME_CANDIDATES)
                     ).all()
-                    found = pick_track(row.title, row.artist, candidates)
+                    found = _name_pick(db, row, candidates)
                 cache[key] = found
             else:
                 cache[key] = None

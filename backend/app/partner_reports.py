@@ -1013,16 +1013,27 @@ def pick_track(title, artist, candidates) -> object | None:
     ОБА поля; если подошли несколько разных треков, не выбираем ни одного:
     угаданный артикул хуже пустого, потому что деньги уедут молча и не туда.
     """
+    hits = name_hits(title, artist, candidates)
+    return hits[0] if len(hits) == 1 else None
+
+
+def name_hits(title, artist, candidates) -> list:
+    """
+    ВСЕ кандидаты, у которых совпали и название, и исполнитель, — по одному на
+    трек, в порядке кандидатов. Нужен, когда совпало несколько: явный дубль
+    одного правообладателя роутер всё же берёт (см. _pick_duplicate).
+    """
     key = normalize_name(title)
     if not key or not str(artist or "").strip():
-        return None
-    hits = [
-        c
-        for c in candidates
-        if normalize_name(c.title) == key and artists_match(artist, c.artist)
-    ]
-    unique = {c.id for c in hits}
-    return hits[0] if len(unique) == 1 else None
+        return []
+    out, seen = [], set()
+    for c in candidates:
+        if c.id in seen:
+            continue
+        if normalize_name(c.title) == key and artists_match(artist, c.artist):
+            seen.add(c.id)
+            out.append(c)
+    return out
 
 
 MONTHS_RU = (
