@@ -345,6 +345,12 @@ export function PaymentsPage() {
   // вертикальных отступов у ячейки нет — два набора отступов, у ячейки и у
   // поля внутри неё, складывались и давали строку вдвое выше нужного.
   const td = 'px-3 py-0 align-top border-t border-border';
+  // СУММА ЗАВОДА ПОДСВЕЧЕНА (просьба владельца 25.09.2026): по ней идёт
+  // сверка — с ней сравнивают и фактический завод, и итог привязанного
+  // отчёта, — и из всей таблицы её должно быть видно сразу. Подсветка лёгкая,
+  // тоном акцента, чтобы выделять столбец, а не спорить с «≠» и красным
+  // расхождением. Прозрачность от акцента — в обеих темах тон свой.
+  const keyCol = 'bg-accent/[0.08]';
   const cellInput =
     'w-full bg-transparent border border-transparent hover:border-border focus:border-accent rounded-input px-2 py-0.5 text-[12.5px] text-text outline-none font-sans';
   const tab = (active) =>
@@ -433,7 +439,7 @@ export function PaymentsPage() {
                   <th className={th}>Описание платежа</th>
                   <th className={th}>Сумма поступления</th>
                   <th className={th}>НДС</th>
-                  <th className={th}>Сумма завода</th>
+                  <th className={`${th} ${keyCol} text-text`}>Сумма завода</th>
                   <th className={th}>Заведено</th>
                   <th className={th}>Сумма фактического завода</th>
                   <th className={th}>Расхождение</th>
@@ -579,7 +585,7 @@ export function PaymentsPage() {
                         столбцом: это не ещё одно число для таблицы, а
                         подсказка «проверьте ввод». Молчим, пока сумма
                         поступления не заполнена: сверять не с чем. */}
-                    <td className={`${td} w-[140px] relative`}>
+                    <td className={`${td} ${keyCol} w-[140px] relative`}>
                       <MoneyCell
                         value={r.transfer_amount}
                         disabled={!manage}
