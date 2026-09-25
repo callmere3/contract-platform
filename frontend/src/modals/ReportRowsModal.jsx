@@ -160,6 +160,16 @@ export function ReportRowsModal({
   // Высота видимой части: окно во весь экран, и она меняется вместе с окном
   // браузера.
   const tableShown = total !== null;
+  // ОТЧЁТ ИЗ НЕСКОЛЬКИХ ФАЙЛОВ (ВОИС шлёт два за месяц): первым столбцом —
+  // номер файла, с его именем в подсказке. Номера строк на сервере сквозные,
+  // диапазоны файлов лежат в `files`.
+  const ranges = card.files || [];
+  const multi = ranges.length > 1;
+  const widths = multi ? [56, ...COLUMN_WIDTHS] : COLUMN_WIDTHS;
+  const fileOf = (row) => {
+    const index = ranges.findIndex((f) => row >= f.first_row && row <= f.last_row);
+    return index < 0 ? null : { index, name: ranges[index].name };
+  };
   useEffect(() => {
     const el = scroller.current;
     if (!el) return;
@@ -505,12 +515,13 @@ export function ReportRowsModal({
         >
           <table className="w-full min-w-[1400px] table-fixed border-collapse">
             <colgroup>
-              {COLUMN_WIDTHS.map((w, i) => (
+              {widths.map((w, i) => (
                 <col key={i} style={{ width: w }} />
               ))}
             </colgroup>
             <thead>
               <tr>
+                {multi && <th className={th}>Файл</th>}
                 <th className={th}>Артикул</th>
                 <th className={th}>Код/ISRC/UPC</th>
                 <th className={th}>Товар</th>
@@ -529,7 +540,7 @@ export function ReportRowsModal({
               </tr>
             </thead>
             <tbody>
-              {topPad > 0 && <Spacer height={topPad} />}
+              {topPad > 0 && <Spacer height={topPad} span={widths.length} />}
               {Array.from({ length: last - first }, (_, k) => first + k).map((i) => {
                 const r = blocks.current.get(Math.floor(i / BLOCK))?.[i % BLOCK];
                 if (!r) {
@@ -537,7 +548,7 @@ export function ReportRowsModal({
                   // прокрутка не прыгала, когда он приедет.
                   return (
                     <tr key={`wait-${i}`} style={{ height: ROW_H }}>
-                      <td colSpan={COLUMN_WIDTHS.length} className={`${td} text-text-muted`}>
+                      <td colSpan={widths.length} className={`${td} text-text-muted`}>
                         …
                       </td>
                     </tr>
@@ -551,6 +562,11 @@ export function ReportRowsModal({
                        деньги ушли в «Вне каталога», и это видно сразу. */
                     className={r.matched ? undefined : 'bg-danger-soft'}
                   >
+                  {multi && (
+                    <td className={`${td} text-text-secondary`} data-hint={fileOf(r.row)?.name}>
+                      {fileOf(r.row) ? fileOf(r.row).index + 1 : '—'}
+                    </td>
+                  )}
                   <td className={`${td} font-mono`}>{r.sku || '—'}</td>
                   <td className={`${td} font-mono text-text-secondary`} data-hint={r.code}>
                     {r.code || '—'}
@@ -572,7 +588,7 @@ export function ReportRowsModal({
                   </tr>
                 );
               })}
-              {bottomPad > 0 && <Spacer height={bottomPad} />}
+              {bottomPad > 0 && <Spacer height={bottomPad} span={widths.length} />}
             </tbody>
           </table>
         </div>
@@ -587,10 +603,10 @@ export function ReportRowsModal({
 const COLUMN_WIDTHS = [96, 150, '22%', '14%', 110, 130, 130, 96, 90, 110, 110, 110];
 
 /** Пустая строка-подпорка: держит высоту строк, которых сейчас нет в документе. */
-function Spacer({ height }) {
+function Spacer({ height, span }) {
   return (
     <tr aria-hidden style={{ height }}>
-      <td colSpan={COLUMN_WIDTHS.length} className="p-0 border-0" />
+      <td colSpan={span} className="p-0 border-0" />
     </tr>
   );
 }

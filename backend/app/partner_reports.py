@@ -179,6 +179,9 @@ class ParseResult:
     # У Believe отчёты приходят в USD, EUR и RUB, и без курса доллары легли бы
     # в базу рублями — ошибка на два порядка, которую на глаз не заметить.
     currencies: set = field(default_factory=set)
+    # Отчёт из нескольких файлов: [{name, first_row, last_row}] — какой файл
+    # какие (сквозные) номера строк занял. У одного файла пусто.
+    files: list = field(default_factory=list)
 
     @property
     def totals(self) -> dict:

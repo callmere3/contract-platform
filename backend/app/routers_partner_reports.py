@@ -64,6 +64,7 @@ from app.partner_reports import (
     period_from_column,
     ATTR_FIELDS,
     MAPPABLE_FIELDS,
+    ParseResult,
     FIELDS,
     sku_configured,
     FIELD_LABELS,
@@ -729,6 +730,8 @@ def _report_out(report: PartnerReport, partner_name: str, payment_date=None,
         },
         "period_label": period_label(report.period_from, report.period_to),
         "file_name": report.file_name,
+        # Отчёт из нескольких файлов — какой файл какие строки (см. модель).
+        "files": report.files or [],
         "sheet": report.sheet,
         "rows_count": report.rows_count,
         "unmatched_count": report.unmatched_count,
@@ -967,6 +970,32 @@ def save_rule(
     )
     db.commit()
     return {"rule": _rule_out(rule)}
+
+
+def _read_uploads(file: UploadFile | None, files: list) -> list:
+    """
+    Файлы загрузки: [(имя, байты)]. Их может быть НЕСКОЛЬКО (ВОИС шлёт за
+    месяц два отчёта, а платит одним поступлением — 25.09.2026): тогда они
+    собираются в ОДИН отчёт (см. _parse_sources). Поле `file` осталось ради
+    прежних вызовов с одним файлом.
+    """
+    uploads = ([file] if file is not None else []) + list(files or [])
+    if not uploads:
+        raise HTTPException(400, "Не выбран файл отчёта")
+    if len(uploads) > MAX_FILES:
+        raise HTTPException(400, f"За раз можно загрузить не больше {MAX_FILES} файлов")
+    return [(u.filename or "", _read_upload(u)) for u in uploads]
+
+
+# Больше десятка файлов в одном отчёте — это уже не «два файла одного
+# месяца», а, скорее всего, ошибка выбора.
+MAX_FILES = 10
+
+
+def _files_label(sources: list) -> str:
+    """Имя отчёта в списке: одно имя или «a.xlsx + b.xlsx» (колонка на 255)."""
+    label = " + ".join(name for name, _ in sources)
+    return label if len(label) <= 255 else label[:254] + "…"
 
 
 def _read_upload(file: UploadFile) -> bytes:
@@ -1524,15 +1553,17 @@ def _sweeper() -> None:
 threading.Thread(target=_sweeper, name="parsed-sweeper", daemon=True).start()
 
 
-def _parsed_key(content: bytes, filename: str, head: dict, manual: dict) -> str:
+def _parsed_key(sources: list, head: dict, manual: dict) -> str:
     rate = head["rate"]
     try:
         rate = format(Decimal(rate).normalize(), "f") if rate else ""
     except Exception:
         pass
     parts = (
-        hashlib.sha256(content).hexdigest(),
-        (filename or "").lower().rsplit(".", 1)[-1],
+        tuple(
+            (hashlib.sha256(content).hexdigest(), (name or "").lower().rsplit(".", 1)[-1])
+            for name, content in sources
+        ),
         json.dumps(head["mapping"], sort_keys=True, ensure_ascii=False),
         rate,
         head["currency_rate"] or "",
@@ -1543,14 +1574,53 @@ def _parsed_key(content: bytes, filename: str, head: dict, manual: dict) -> str:
     return hashlib.sha256(repr(parts).encode("utf-8")).hexdigest()
 
 
-def _parse_and_resolve(db: Session, content: bytes, filename: str, head: dict, manual: dict):
+def _parse_sources(sources: list, head: dict):
+    """
+    Разобрать файлы ОДНИМ правилом и склеить в один результат.
+
+    Правило, площадку и период дал ПЕРВЫЙ файл (`_head_info`): отчёт один, и
+    файлы в нём — части одного и того же. Номера строк СКВОЗНЫЕ: строки
+    второго файла идут после последнего номера первого — по ним вписываются
+    артикулы в предпросмотре и хранятся строки в базе, и совпасть им нельзя.
+    Какой файл какие номера занял — в `files`. Ошибка любого файла — ошибка
+    всего отчёта, с его именем: частично загруженный отчёт хуже отказа.
+    """
+    merged = None
+    offset = 0
+    for name, content in sources:
+        part = parse_report(
+            content, name, head["mapping"],
+            vat_rate=head["rate"] or None, sheet=head["sheet"],
+            currency_rate=head["currency_rate"] or None,
+        )
+        if len(sources) == 1:
+            return part
+        for row in part.rows:
+            row.row_num += offset
+        last = max((r.row_num for r in part.rows), default=offset)
+        if merged is None:
+            merged = ParseResult(columns=part.columns, header_row=part.header_row, rows=[])
+        merged.rows.extend(part.rows)
+        merged.problems.extend(f"«{name}»: {p}" for p in part.problems)
+        merged.warnings.extend(w for w in part.warnings if w not in merged.warnings)
+        merged.currencies |= part.currencies
+        merged.files.append({
+            "name": name,
+            "first_row": min((r.row_num for r in part.rows), default=offset + 1),
+            "last_row": last,
+        })
+        offset = last
+    return merged
+
+
+def _parse_and_resolve(db: Session, sources: list, head: dict, manual: dict):
     """
     Разобрать строки и привязать их к каталогу: (ParseResult, {строка: трек}).
 
     Результат общий для предпросмотра и загрузки — см. комментарий выше.
     Строки после этого НЕ МЕНЯТЬ: тот же объект может читать соседний запрос.
     """
-    key = _parsed_key(content, filename, head, manual)
+    key = _parsed_key(sources, head, manual)
     now = time.monotonic()
     with _parsed_lock:
         for k in [k for k, e in _parsed.items() if now - e["at"] > PARSED_TTL]:
@@ -1570,11 +1640,7 @@ def _parse_and_resolve(db: Session, content: bytes, filename: str, head: dict, m
             for k in [k for k, e in _parsed.items() if k != key and "value" in e]:
                 _parsed.pop(k, None)
         try:
-            result = parse_report(
-                content, filename, head["mapping"],
-                vat_rate=head["rate"] or None, sheet=head["sheet"],
-                currency_rate=head["currency_rate"] or None,
-            )
+            result = _parse_sources(sources, head)
             # Артикулы, вписанные руками в предпросмотре, — до привязки к каталогу.
             _apply_manual(result.rows, manual)
             # Привязка к каталогу: по артикулу, а строки без него — по названию
@@ -1617,7 +1683,8 @@ def forget_all_parsed() -> None:
 )
 def inspect(
     partner_id: str = Form(""),
-    file: UploadFile = File(...),
+    file: UploadFile | None = File(None),
+    files: list[UploadFile] = File(default=[]),
     mapping: str = Form(""),
     vat_rate: str = Form(""),
     sheet: str = Form(""),
@@ -1632,8 +1699,10 @@ def inspect(
     отвечает за доли секунды даже на полумиллионном отчёте. Строки, итоги и
     «нет в номенклатуре» считает следом `preview`.
     """
-    content = _read_upload(file)
-    return _head_info(db, partner_id, content, file.filename, mapping, vat_rate, sheet, currency_rate)["out"]
+    sources = _read_uploads(file, files)
+    name, content = sources[0]
+    out = _head_info(db, partner_id, content, name, mapping, vat_rate, sheet, currency_rate)["out"]
+    return {**out, "file_name": _files_label(sources), "files": [n for n, _ in sources]}
 
 
 @partner_reports_router.post(
@@ -1641,7 +1710,8 @@ def inspect(
 )
 def preview(
     partner_id: str = Form(""),
-    file: UploadFile = File(...),
+    file: UploadFile | None = File(None),
+    files: list[UploadFile] = File(default=[]),
     mapping: str = Form(""),
     vat_rate: str = Form(""),
     sheet: str = Form(""),
@@ -1657,14 +1727,15 @@ def preview(
     описание на несколько строк, и число этих строк меняется от файла к файлу
     (в Dista его приходилось вбивать руками — «пропустить строк сверху»).
     """
-    content = _read_upload(file)
-    head = _head_info(db, partner_id, content, file.filename, mapping, vat_rate, sheet, currency_rate)
+    sources = _read_uploads(file, files)
+    name, content = sources[0]
+    head = _head_info(db, partner_id, content, name, mapping, vat_rate, sheet, currency_rate)
     manual = _manual_skus(manual_skus)
 
     # Разбираем ВЕСЬ файл, а не первые сто строк: итоги человек сверяет с
     # платежом площадки, а строки без артикула бывают и на пятисотой строке —
     # показать их иначе нечем.
-    result, resolved = _parse_and_resolve(db, content, file.filename, head, manual)
+    result, resolved = _parse_and_resolve(db, sources, head, manual)
 
     # Начало файла и строки без трека — ДВА РАЗНЫХ СПИСКА, а не один
     # склеенный: первый показывают всегда, второй — по кнопке. Склеенные, они
@@ -1676,6 +1747,11 @@ def preview(
     totals = result.totals
     return {
         **head["out"],
+        "file_name": _files_label(sources),
+        "files": [n for n, _ in sources],
+        # Какой файл какие строки занял — в таблице предпросмотра рядом с
+        # номером строки пишется файл.
+        "file_ranges": result.files,
         "columns": result.columns,
         "header_row": result.header_row + 1,
         "problems": result.problems,
@@ -1784,7 +1860,8 @@ def create_report(
     partner_id: uuid.UUID = Form(...),
     period_from: str = Form(...),
     period_to: str = Form(...),
-    file: UploadFile = File(...),
+    file: UploadFile | None = File(None),
+    files: list[UploadFile] = File(default=[]),
     mapping: str = Form(""),
     vat_rate: str = Form(""),
     sheet: str = Form(""),
@@ -1825,13 +1902,14 @@ def create_report(
     if partner is None:
         raise HTTPException(404, "Партнёр не найден")
 
-    content = _read_upload(file)
+    sources = _read_uploads(file, files)
+    first_name, content = sources[0]
     rule = db.scalar(
         select(PartnerReportRule).where(PartnerReportRule.partner_id == partner_id)
     )
     # Шапка и правило — тем же кодом, что в предпросмотре: иначе ключ разбора
     # разошёлся бы с предпросмотром, и загрузка считала бы всё заново.
-    head = _head_info(db, str(partner_id), content, file.filename, mapping, vat_rate, sheet, currency_rate)
+    head = _head_info(db, str(partner_id), content, first_name, mapping, vat_rate, sheet, currency_rate)
     chosen_sheet = head["sheet"]
     active_mapping = head["mapping"]
     rate = head["rate"]
@@ -1839,7 +1917,7 @@ def create_report(
 
     # Разбор и привязка — общие с предпросмотром (см. _parse_and_resolve): если
     # предпросмотр этого файла ещё считается, ждём его, а не начинаем заново.
-    result, resolved = _parse_and_resolve(db, content, file.filename, head, manual)
+    result, resolved = _parse_and_resolve(db, sources, head, manual)
     # Загрузка запоминает вписанные артикулы — прежняя привязка устарела, а
     # разобранное этого файла больше не нужно и занимает много памяти.
     forget_all_parsed()
@@ -1890,7 +1968,8 @@ def create_report(
         partner_id=partner_id,
         period_from=start,
         period_to=end,
-        file_name=file.filename,
+        file_name=_files_label(sources),
+        files=result.files or None,
         sheet=chosen_sheet,
         rows_count=len(result.rows),
         unmatched_count=sum(1 for r in result.rows if r.row_num not in track_by_row),
@@ -1983,7 +2062,7 @@ def create_report(
         for name, value in attrs.items():
             setattr(rule, name, value)
         rule.sheet = chosen_sheet
-        rule.sample_file = file.filename
+        rule.sample_file = first_name
         rule.updated_at = datetime.now(timezone.utc)
 
     db.commit()
@@ -1993,7 +2072,7 @@ def create_report(
         meta={
             "partner": partner.name,
             "period": period_label(start, end),
-            "file": file.filename,
+            "file": _files_label(sources),
             "rows": report.rows_count,
             "unmatched": report.unmatched_count,
             "unmatched_amount": str(unmatched_amount),

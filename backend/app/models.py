@@ -1102,6 +1102,10 @@ class PartnerReport(Base):
     period_from: Mapped[date] = mapped_column(Date)
     period_to: Mapped[date] = mapped_column(Date)
     file_name: Mapped[str] = mapped_column(String(255))
+    # Отчёт из НЕСКОЛЬКИХ файлов (ВОИС шлёт два за месяц): какой файл какие
+    # номера строк занял — [{name, first_row, last_row}]. У отчёта из одного
+    # файла пусто, имя — в file_name. Миграция a7d3e2c91f60.
+    files: Mapped[list | None] = mapped_column(JSONB)
     sheet: Mapped[str | None] = mapped_column(String(120))
     rows_count: Mapped[int] = mapped_column(Integer, default=0)
     # Строк, у которых артикул не нашёлся в каталоге ИЛИ его нет в отчёте

@@ -240,6 +240,9 @@ export function PartnerReportsPage() {
   const [quarter, setQuarter] = useState(Math.floor(today.getMonth() / 3) + 1);
   const [range, setRange] = useState(monthRange(today.getFullYear(), Math.max(0, today.getMonth() - 1)));
 
+  // Выбранные файлы — СПИСОК: несколько файлов одной площадки за один период
+  // собираются в один отчёт (ВОИС шлёт два за месяц — просьба владельца
+  // 25.09.2026). Правило, площадку и период даёт первый.
   const [file, setFile] = useState(null);
   const [dragOver, setDragOver] = useState(false);
   const [preview, setPreview] = useState(null);
@@ -718,8 +721,8 @@ export function PartnerReportsPage() {
             onDrop={(e) => {
               e.preventDefault();
               setDragOver(false);
-              const dropped = e.dataTransfer.files?.[0];
-              if (dropped) takeFile(dropped);
+              const dropped = Array.from(e.dataTransfer.files || []);
+              if (dropped.length) takeFile(dropped);
             }}
             onClick={() => fileInput.current?.click()}
             className={`m-5 border-2 border-dashed rounded-card px-6 py-10 text-center cursor-pointer ${
@@ -729,17 +732,20 @@ export function PartnerReportsPage() {
             <input
               ref={fileInput}
               type="file"
+              multiple
               accept=".xlsx,.xlsm,.csv,.tsv,.txt"
               className="hidden"
-              onChange={(e) => e.target.files?.[0] && takeFile(e.target.files[0])}
+              onChange={(e) => e.target.files?.length && takeFile(Array.from(e.target.files))}
             />
             <div className="text-[14px] text-text font-semibold">
-              {file ? file.name : 'Перетащите сюда файл отчёта'}
+              {file ? file.map((f) => f.name).join(' + ') : 'Перетащите сюда файл отчёта'}
             </div>
             <div className="text-[12.5px] text-text-muted mt-1">
-              {file
-                ? 'Можно перетащить другой файл или нажать, чтобы выбрать'
-                : 'или нажмите, чтобы выбрать: .xlsx, .csv, .tsv'}
+              {file?.length > 1
+                ? `${file.length} файла соберутся в один отчёт — правило и период по первому`
+                : file
+                  ? 'Можно перетащить другой файл или нажать, чтобы выбрать'
+                  : 'или нажмите, чтобы выбрать: .xlsx, .csv, .tsv. Несколько файлов одной площадки за один период — перетащите вместе, соберутся в один отчёт'}
             </div>
             {/* Про партнёра здесь больше не спрашиваем: знакомый отчёт
                 называет площадку сам, а незнакомый скажет об этом при разборе. */}
@@ -1147,7 +1153,9 @@ export function PartnerReportsPage() {
                       <tbody>
                         {shownRows.map((r) => (
                           <tr key={r.row} className={r.problems.length ? 'bg-danger-soft' : undefined}>
-                            <td className={`${td} tabular-nums text-text-muted`}>{r.row}</td>
+                            <td className={`${td} tabular-nums text-text-muted`}>
+                              <RowNumber row={r.row} ranges={preview.file_ranges} />
+                            </td>
                             {/* Артикул: у найденной строки — текст (подобранный
                                 по названию помечен, это догадка сервиса, а не
                                 данные площадки), у ненайденной — поле ввода. */}
@@ -1584,5 +1592,24 @@ export function PartnerReportsPage() {
         )}
       </Card>
     </div>
+  );
+}
+
+
+/**
+ * Номер строки в предпросмотре. У отчёта из нескольких файлов номера на
+ * сервере СКВОЗНЫЕ (строки второго файла идут после первого), а человеку
+ * нужен номер В СВОЁМ ФАЙЛЕ — его и показываем, с номером файла рядом.
+ */
+function RowNumber({ row, ranges }) {
+  if (!ranges || ranges.length < 2) return row;
+  const i = ranges.findIndex((f) => row >= f.first_row && row <= f.last_row);
+  if (i < 0) return row;
+  const local = row - (i ? ranges[i - 1].last_row : 0);
+  return (
+    <span data-hint={`Файл ${i + 1}: ${ranges[i].name}, строка ${local}`}>
+      {local}
+      <span className="ml-1 text-[11px]">· ф{i + 1}</span>
+    </span>
   );
 }
