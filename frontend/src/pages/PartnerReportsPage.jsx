@@ -1472,7 +1472,20 @@ export function PartnerReportsPage() {
                         className={cellClass('text-text-secondary whitespace-nowrap')}
                         onClick={cellPick(a.name, r)}
                       >
-                        {r[a.name] || '—'}
+                        {r[a.name] ||
+                          (r.per_row_attributes?.includes(a.name) ? (
+                            // Своё значение у каждой строки — из колонки файла
+                            // площадки (Believe: страна, платформа). Прочерк
+                            // здесь читался как пустая колонка.
+                            <span
+                              className="text-text-muted"
+                              data-hint="Своё у каждой строки — берётся из колонки отчёта площадки"
+                            >
+                              отчёт
+                            </span>
+                          ) : (
+                            '—'
+                          ))}
                       </td>
                     ))}
                     {/* К какому поступлению отчёт привязан. Пусто — значит,

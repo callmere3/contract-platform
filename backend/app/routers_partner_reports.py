@@ -392,6 +392,32 @@ def _attrs_from_rows(db: Session, report_id) -> dict:
     return {name: bool(n) for name, n in zip(REPORT_ATTRS, counts)}
 
 
+def _per_row_attrs(db: Session, reports: list) -> dict:
+    """
+    {id отчёта: [параметры из колонки файла]} для списка отчётов.
+
+    Спрашиваем только про параметры, у которых ПУСТОЙ снимок (только они и
+    бывают построчными), и через EXISTS: у Believe в отчёте полмиллиона строк,
+    и считать их все, как `_attrs_from_rows`, ради «есть хоть одно значение»
+    незачем — первая же строка отвечает.
+    """
+    out: dict = {}
+    for report in reports:
+        empty = [name for name in REPORT_ATTRS if not getattr(report, name)]
+        if not empty:
+            continue
+        R = PartnerReportRow
+        flags = db.execute(select(*[
+            select(R.row_num).where(R.report_id == report.id, getattr(R, name).isnot(None))
+            .limit(1).exists()
+            for name in empty
+        ])).one()
+        names = [name for name, flag in zip(empty, flags) if flag]
+        if names:
+            out[str(report.id)] = names
+    return out
+
+
 def _attrs_from_form(values: dict) -> dict:
     """
     Параметры отчёта из формы: лишние пробелы прочь, пусто — это None.
@@ -750,6 +776,12 @@ def list_reports(
         )
         for r, name, paid_on, pay_id, pay_partner in rows
     ]
+    # Какие параметры взяты из колонки файла — у таких в шапке пусто, и
+    # список пишет «отчёт» вместо прочерка (просьба владельца 25.09.2026:
+    # прочерк у Believe читался как пустая колонка).
+    per_row = _per_row_attrs(db, [r for r, *_ in rows])
+    for out in reports:
+        out["per_row_attributes"] = per_row.get(out["id"], [])
     return {
         "reports": reports,
         # Итог по показанному — чтобы сверять квартал целиком, не складывая
