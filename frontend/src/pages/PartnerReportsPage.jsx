@@ -84,7 +84,7 @@ const ATTRS = [
  * Человек видит «40 916,36» и ждёт, что «916» найдётся.
  */
 const REPORT_COLUMNS = [
-  { key: 'partner', label: 'Партнёр', text: (r) => r.partner },
+  { key: 'partner', label: 'Партнёр', text: (r) => r.partner_label || r.partner },
   { key: 'period', label: 'Период', text: (r) => r.period_label },
   ...['content_type', 'usage_type', 'usage_kind', 'territory'].map((name) => ({
     key: name,
@@ -1453,7 +1453,7 @@ export function PartnerReportsPage() {
                       className={cellClass('font-semibold text-text')}
                       onClick={cellPick('partner', r)}
                     >
-                      {r.partner}
+                      {r.partner_label || r.partner}
                     </td>
                     {/* Имя файла и число строк убраны из списка (просьба
                         владельца 18.09.2026): имя площадки и период отвечают,

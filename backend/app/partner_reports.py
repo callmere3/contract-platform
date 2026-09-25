@@ -989,6 +989,24 @@ MONTHS_RU = (
 QUARTERS_RU = ("I", "II", "III", "IV")
 
 
+# ПРИПИСКА ТЕРРИТОРИИ К ПЛОЩАДКЕ (просьба владельца 25.09.2026). Believe
+# шлёт три отчёта за месяц — RU, KZ и AE, — а в справочнике это одна
+# площадка, и после привязки к поступлению (суммы уже в рублях) три строки
+# списка стали неразличимы. Различает их ВАЛЮТА ИСХОДНОГО ОТЧЁТА: RU — в
+# рублях, KZ — в евро, AE — в долларах (сверено по всем девяти загруженным).
+# Валюта хранится снимком и после привязки не меняется, поэтому приписка
+# держится. Ключ — имя площадки без учёта регистра.
+REPORT_REGIONS = {
+    "beleive digital": {"RUB": "RU", "EUR": "KZ", "USD": "AE"},
+}
+
+
+def report_region(partner_name: str | None, currency: str | None) -> str | None:
+    """«RU» / «KZ» / «AE» для площадок с несколькими отчётами за период."""
+    regions = REPORT_REGIONS.get((partner_name or "").strip().casefold())
+    return regions.get(currency or "RUB") if regions else None
+
+
 def period_label(start, end) -> str:
     """
     Подпись периода отчёта: «Июль 2026», «III кв. 2026» или «01.06.2026 —

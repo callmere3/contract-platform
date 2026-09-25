@@ -262,7 +262,7 @@ export function LinkReportPaymentModal({ report, level, isTop, onChanged }) {
       ) : (
         <>
       <div className="text-[13px] text-text mb-4">
-        <b>{report.partner}</b> · {report.period_label} · итог{' '}
+        <b>{report.partner_label || report.partner}</b> · {report.period_label} · итог{' '}
         <b className="tabular-nums">
           {foreign
             ? `${formatMoney(report.currency_total).replace(' ₽', '')} ${CURRENCY_SIGNS[report.currency] || report.currency}`

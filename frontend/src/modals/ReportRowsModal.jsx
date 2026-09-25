@@ -271,7 +271,7 @@ export function ReportRowsModal({
 
   return (
     <Modal
-      title={`Отчёт: ${card.partner} · ${card.period_label}`}
+      title={`Отчёт: ${card.partner_label || card.partner} · ${card.period_label}`}
       onClose={closeModal}
       level={level}
       isTop={isTop}
@@ -344,7 +344,7 @@ export function ReportRowsModal({
       <div className="grid grid-cols-2 gap-x-10 text-[12.5px] mb-4 shrink-0">
         <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 items-center content-start">
           <span className="text-text-secondary">Площадка</span>
-          <span className="text-text font-semibold">{card.partner}</span>
+          <span className="text-text font-semibold">{card.partner_label || card.partner}</span>
           <span className="text-text-secondary">Файл</span>
           <span className="text-text truncate" data-hint={card.file_name}>
             {card.file_name}

@@ -76,6 +76,7 @@ from app.partner_reports import (
     parse_report,
     period_label,
     pick_track,
+    report_region,
     read_columns,
     read_head,
     rubles,
@@ -662,6 +663,12 @@ def _report_out(report: PartnerReport, partner_name: str, payment_date=None,
         "id": str(report.id),
         "partner_id": str(report.partner_id),
         "partner": partner_name,
+        # «BELEIVE DIGITAL RU»: у Believe три отчёта за месяц, и различить их
+        # можно только припиской (см. REPORT_REGIONS). Экран показывает ЭТО.
+        "region": report_region(partner_name, report.currency),
+        "partner_label": " ".join(
+            x for x in (partner_name, report_region(partner_name, report.currency)) if x
+        ),
         "period": {
             "from": report.period_from.isoformat(),
             "to": report.period_to.isoformat(),

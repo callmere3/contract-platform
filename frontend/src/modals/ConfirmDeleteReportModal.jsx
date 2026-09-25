@@ -61,7 +61,7 @@ export function ConfirmDeleteReportModal({ report, level, isTop, onDeleted, clos
     >
       <div className="text-[13px] text-text leading-relaxed">
         <div className="mb-3">
-          <b>{report.partner}</b> · {report.period_label}
+          <b>{report.partner_label || report.partner}</b> · {report.period_label}
         </div>
         <div className="text-text-secondary">Файл: {report.file_name}</div>
         <div className="text-text-secondary">
