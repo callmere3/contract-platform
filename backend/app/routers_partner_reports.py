@@ -68,7 +68,9 @@ from app.partner_reports import (
     sku_configured,
     FIELD_LABELS,
     artist_tokens,
+    find_header_row,
     find_period,
+    header_at,
     normalize_name,
     mapping_columns,
     match_builtin,
@@ -1310,6 +1312,11 @@ def _head_info(
     columns, header_row = read_columns(content, filename, chosen_sheet, head=file_head)
     chosen = _pick_rule(rule, mapping, columns)
     active_mapping = chosen["mapping"]
+    # Шапка в две строки (ADV): колонки для экрана — с именами «верх / низ»,
+    # иначе в настройке колонок не нашлось бы тех, что называет правило.
+    if (active_mapping or {}).get("subheader"):
+        sub_row = find_header_row(file_head, mapping_columns(active_mapping), True)
+        columns = header_at(file_head, sub_row, True)
     rate = (
         vat_rate.strip()
         or (str(rule.vat_rate) if rule and rule.vat_rate else "")

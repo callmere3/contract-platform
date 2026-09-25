@@ -357,6 +357,39 @@ def header_names(row) -> list:
     return names
 
 
+def combined_header(row, sub) -> list:
+    """
+    ШАПКА В ДВЕ СТРОКИ (24.09.2026, отчёт ADV): «Доля Лицензиара, %» сверху
+    объединена над «Авторские права» и «Смежные права» снизу, и у второй
+    колонки пары верхняя ячейка ПУСТАЯ — по одной верхней строке до неё не
+    дотянуться никак. Имя такой колонки — «верх / низ»: «Доля Лицензиара, % /
+    Смежные права». Пустой верх берётся от ближайшей колонки слева
+    (так выглядит объединённая ячейка), но только если под ним есть подпись;
+    колонка без нижней подписи называется, как раньше, одним верхом.
+
+    Числа во второй строке подписью не считаются: у ADV там итоги отчёта.
+    """
+    top = header_names(row or [])
+    subs = [_clean(c) if isinstance(c, str) else "" for c in (sub or [])]
+    out, carry = [], ""
+    for i in range(max(len(top), len(subs))):
+        t = top[i] if i < len(top) else ""
+        b = subs[i] if i < len(subs) else ""
+        if t:
+            carry = t
+        base = t or (carry if b else "")
+        out.append(f"{base} / {b}" if base and b else (base or b))
+    return header_names(out)
+
+
+def header_at(table: list, i: int, subheader: bool = False) -> list:
+    """Имена колонок шапки в строке `i` — с учётом второй строки, если она есть."""
+    row = table[i] if i < len(table) else []
+    if subheader:
+        return combined_header(row, table[i + 1] if i + 1 < len(table) else [])
+    return header_names(row)
+
+
 def guess_header_row(table: list) -> int:
     """
     Где шапка, если правила ещё нет: самая «широкая» текстовая строка сверху.
@@ -397,7 +430,7 @@ def read_columns(
     return columns, header_row
 
 
-def find_header_row(table: list, wanted: list) -> int:
+def find_header_row(table: list, wanted: list, subheader: bool = False) -> int:
     """
     Номер строки с шапкой (0-based) — та, где нашлось больше всего нужных
     названий. Ищем по СОДЕРЖИМОМУ, а не по номеру: у площадок сверху бывает
@@ -408,7 +441,7 @@ def find_header_row(table: list, wanted: list) -> int:
     for i, row in enumerate(table[:MAX_HEADER_SCAN]):
         # Имена берём разведёнными: правило может ссылаться на
         # «Правообладатель (2)», и по сырой строке такое не нашлось бы.
-        keys = {normalize_header(c) for c in header_names(row) if c}
+        keys = {normalize_header(c) for c in header_at(table, i, subheader) if c}
         hits = len(wanted_keys & keys)
         if hits > best_hits:
             best_row, best_hits = i, hits
@@ -702,8 +735,13 @@ def parse_report(
     wanted = mapping_columns(mapping)
     # Пустое правило — шапку ищем по виду строки, а не по именам: именно так
     # читается первый файл нового партнёра, для которого правила ещё нет.
-    header_row = find_header_row(head, wanted) if wanted else guess_header_row(head)
-    columns = header_names(head[header_row] if header_row < len(head) else [])
+    # Шапка в две строки (правило с `subheader`) — данные начинаются на
+    # строку ниже, а имена колонок собираются из обеих (см. combined_header).
+    subheader = bool((mapping or {}).get("subheader"))
+    header_row = (
+        find_header_row(head, wanted, subheader) if wanted else guess_header_row(head)
+    )
+    columns = header_at(head, header_row, subheader)
     by_key = {}
     for i, name in enumerate(columns):
         if name:
@@ -736,7 +774,7 @@ def parse_report(
         result.problems.append(f"курс «{currency_rate}» — это не число больше нуля")
         return result
 
-    data = chain(head[header_row + 1:], rows_iter)
+    data = chain(head[header_row + 1 + subheader:], rows_iter)
     if limit is not None:
         data = islice(data, limit)
 
@@ -757,7 +795,7 @@ def parse_report(
     ]
 
     for offset, raw in enumerate(data):
-        row_num = header_row + 2 + offset        # как в Excel: с единицы, с шапкой
+        row_num = header_row + 2 + subheader + offset   # как в Excel: с единицы, с шапкой
         if not any(c is not None and str(c).strip() for c in raw):
             continue
 
@@ -1046,6 +1084,14 @@ _MTS_RATE_RELATED = (
 # МЕГАФОН. Имена колонок длинные, и в формулах они повторяются по четыре
 # раза — держим их здесь, чтобы опечатка не разъехалась между авторскими и
 # смежными.
+# Колонки отчёта ADV (двойные пробелы внутри имён — как в файле; сравнение
+# идёт без учёта лишних пробелов).
+_ADV_CODE = "Код Произведения"
+_ADV_KIND = "Вид Контента"
+_ADV_QTY = "Кол-во Загрузок/ Прослушиваний (штук)"
+_ADV_PRICE = "Стоимость Контента (рубли, без учета НДС)"
+_ADV_SHARE = "Доля Лицензиара, %"
+_ADV_RATE = "Вознаграждение Лицензиара (%/ руб.)"
 _MF_PRICE = "Стоимость загрузки, руб. без НДС"
 _MF_RATE_AUTHOR = "Ставка Лицензиара (авторские)"
 _MF_RATE_RELATED = "Ставка Лицензиара (смежные)"
@@ -1164,6 +1210,46 @@ BUILTIN_RULES = (
             # соседней колонке «Паблишер». Авторских поэтому нет вовсе —
             # отсутствующее поле сервер считает нулём.
             "amount_related": {"column": "Правообладатель (2)"},
+        },
+    },
+    {
+        # ADV (АдвМьюзик), 25.09.2026, образец владельца «ADV май 26.xlsx»:
+        # 4 049 строк, «Всего» 340 302,73 без НДС — сходится до копейки.
+        "name": "ADV",
+        "signature": (_ADV_CODE, _ADV_KIND, _ADV_QTY, _ADV_PRICE),
+        "partner_names": ("ADV Music",),
+        # Суммы в отчёте БЕЗ НДС — так подписана колонка; НДС идёт отдельной
+        # строкой под итогом.
+        "vat_rate": None,
+        # Тип контента — в каждой строке свой («MP3 фонограмма» или «РБТ»),
+        # поэтому он в mapping колонкой; остальных параметров в файле нет.
+        "attributes": {},
+        "mapping": {
+            # ШАПКА В ДВЕ СТРОКИ: доли и ставки лицензиара разбиты под общей
+            # подписью на авторские и смежные (см. combined_header). Признак
+            # ВНУТРИ mapping, как `tables` и `period`: так он едет вместе с
+            # правилом и в сохранённое у партнёра.
+            "subheader": True,
+            "sku": {"column": _ADV_CODE},
+            "title": {"column": "Название"},
+            "artist": {"column": "Исполнитель"},
+            "quantity": {"column": _ADV_QTY},
+            "content_type": {"column": _ADV_KIND},
+            # ГОТОВЫХ СУММ ПО ВИДАМ ПРАВ НЕТ — есть только общая «Сумма
+            # вознаграждения». Её площадка считает как стоимость × количество
+            # × (доля авторских × ставка авторских + доля смежных × ставка
+            # смежных), и каждое слагаемое — ровно наша сумма по виду права.
+            # Сверено на всех 4 049 строках образца: расхождений ноль.
+            "amount_author": {
+                "formula": f"[{_ADV_PRICE}] * [{_ADV_QTY}]"
+                           f" * [{_ADV_SHARE} / Авторские права]"
+                           f" * [{_ADV_RATE} / за авторские права]"
+            },
+            "amount_related": {
+                "formula": f"[{_ADV_PRICE}] * [{_ADV_QTY}]"
+                           f" * [{_ADV_SHARE} / Смежные права]"
+                           f" * [{_ADV_RATE} / за смежные права]"
+            },
         },
     },
     {
@@ -1515,9 +1601,15 @@ def find_period(table: list, header_row: int) -> tuple | None:
     # «С» ЛОВИМ И КИРИЛЛИЦЕЙ, И ЛАТИНИЦЕЙ: в шапке МегаФона стоит латинская
     # «c» (U+0063). На вид не отличить, а регулярное выражение промахивается
     # молча — и период тихо не находится.
+    #
+    # ДЕНЬ БЫВАЕТ В КАВЫЧКАХ (ADV, 25.09.2026): «за период с "01" мая 2026 по
+    # "31" мая 2026 г.». Без них выражение не срабатывало, и поиск падал до
+    # «месяц ГОДА» — а тот находил строку выше, «к соглашению … от «01»
+    # января 2019 года», то есть дату ДОГОВОРА вместо периода.
+    q = r"[\"«»“”„']?"
     match = re.search(
-        r"[сc]\s+(\d{1,2})\s+(" + _MONTH_RE + r")(?:\s+(\d{4}))?"
-        r"\s+по\s+(\d{1,2})\s+(" + _MONTH_RE + r")\s+(\d{4})",
+        r"[сc]\s+" + q + r"(\d{1,2})" + q + r"\s+(" + _MONTH_RE + r")(?:\s+(\d{4}))?"
+        r"\s+по\s+" + q + r"(\d{1,2})" + q + r"\s+(" + _MONTH_RE + r")\s+(\d{4})",
         text,
     )
     if match:
