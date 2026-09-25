@@ -78,16 +78,59 @@ function lastQuarter() {
 // которыми делятся. Всё прочитанное проверяется — мусор в хранилище или
 // приватное окно, где оно бросает исключение, страницу не роняют: просто
 // открываются настройки по умолчанию.
-const STORE = 'ml_royalty_settings';
+//
+// У КАЖДОГО РЕЖИМА СВОИ НАСТРОЙКИ, а открывается страница ВСЕГДА на
+// «Правообладателям» (просьба владельца 25.09.2026). Ведомости делают
+// адресно — одному-двум правообладателям, — а сводку смотрят по всем, и
+// общий набор настроек заставлял перевыбирать их при каждом переключении.
+// Хранятся рядом: { holders: {...}, summary: {...} }. Прежняя общая запись
+// (ml_royalty_settings) служит заготовкой обоим режимам один раз.
+const STORE = 'ml_royalty_settings_by_mode';
+const OLD_STORE = 'ml_royalty_settings';
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-function loadSaved() {
+function readJson(key) {
   try {
-    const raw = JSON.parse(localStorage.getItem(STORE) || 'null');
-    return raw && typeof raw === 'object' ? raw : {};
+    const raw = JSON.parse(localStorage.getItem(key) || 'null');
+    return raw && typeof raw === 'object' ? raw : null;
   } catch {
-    return {};
+    return null;
   }
+}
+
+function loadStore() {
+  const store = readJson(STORE);
+  if (store) return store;
+  const old = readJson(OLD_STORE) || {};
+  return { holders: old, summary: old };
+}
+
+/**
+ * Сохранённые настройки режима → значения для страницы, каждое проверено.
+ * По умолчанию сводка смотрит ВСЕХ правообладателей, ведомости — никого:
+ * их делают адресно.
+ */
+function restore(saved, mode) {
+  const s = saved && typeof saved === 'object' ? saved : {};
+  const start = lastQuarter();
+  return {
+    tab: pick(s.tab, ['main', 'holders', 'partners', 'tracks'], 'main'),
+    year: Number.isInteger(s.year) && s.year > 2000 && s.year < 2100 ? s.year : start.year,
+    period:
+      DATE.test(s.period?.from || '') && DATE.test(s.period?.to || '')
+        ? { from: s.period.from, to: s.period.to }
+        : quarterRange(start.year, start.q),
+    dateBasis: pick(s.dateBasis, ['period', 'report'], 'period'),
+    kinds: { summary: bool(s.kinds?.summary, true), detailed: bool(s.kinds?.detailed, true) },
+    groupDetail: bool(s.groupDetail, true),
+    holdersAll: bool(s.holdersAll, mode === 'summary'),
+    holders: savedItems(s.holders),
+    partnersAll: bool(s.partnersAll, true),
+    partners: savedItems(s.partners),
+    tracksAll: bool(s.tracksAll, true),
+    tracks: savedItems(s.tracks),
+    by: pick(s.by, ['holder', 'track', 'partner'], 'holder'),
+  };
 }
 
 /** Выбранные элементы списка: только {id, label, sub} со строковым id. */
@@ -106,42 +149,31 @@ const inputClass =
   'bg-input-bg border border-border rounded-input px-3 py-2 text-[13px] text-text outline-none font-sans';
 
 export function RoyaltyReportsPage() {
-  // Сохранённое читаем ОДИН раз — при открытии страницы.
-  const [saved] = useState(loadSaved);
-  const [mode, setMode] = useState(() => pick(saved.mode, ['holders', 'summary'], 'holders'));
+  // Хранилище читаем ОДИН раз — при открытии страницы; дальше оно живёт в
+  // ref и пишется целиком. Режим при открытии — всегда «Правообладателям».
+  const store = useRef(null);
+  if (store.current === null) store.current = loadStore();
+  const [initial] = useState(() => restore(store.current.holders, 'holders'));
+  const [mode, setMode] = useState('holders');
   const [modeOpen, setModeOpen] = useState(false);
-  const [tab, setTab] = useState(() =>
-    pick(saved.tab, ['main', 'holders', 'partners', 'tracks'], 'main'),
-  );
+  const [tab, setTab] = useState(initial.tab);
 
-  const start = lastQuarter();
-  const [year, setYear] = useState(() =>
-    Number.isInteger(saved.year) && saved.year > 2000 && saved.year < 2100 ? saved.year : start.year,
-  );
-  const [period, setPeriod] = useState(() =>
-    DATE.test(saved.period?.from || '') && DATE.test(saved.period?.to || '')
-      ? { from: saved.period.from, to: saved.period.to }
-      : quarterRange(start.year, start.q),
-  );
-  const [dateBasis, setDateBasis] = useState(() =>
-    pick(saved.dateBasis, ['period', 'report'], 'period'),
-  );
-  const [kinds, setKinds] = useState(() => ({
-    summary: bool(saved.kinds?.summary, true),
-    detailed: bool(saved.kinds?.detailed, true),
-  }));
-  const [groupDetail, setGroupDetail] = useState(() => bool(saved.groupDetail, true));
+  const [year, setYear] = useState(initial.year);
+  const [period, setPeriod] = useState(initial.period);
+  const [dateBasis, setDateBasis] = useState(initial.dateBasis);
+  const [kinds, setKinds] = useState(initial.kinds);
+  const [groupDetail, setGroupDetail] = useState(initial.groupDetail);
 
   // Выбор: режим «все/по выбранным» и сам список. У правообладателей «все» —
   // это те, кому за период есть что начислить.
-  const [holdersAll, setHoldersAll] = useState(() => bool(saved.holdersAll, false));
-  const [holders, setHolders] = useState(() => savedItems(saved.holders));
-  const [partnersAll, setPartnersAll] = useState(() => bool(saved.partnersAll, true));
-  const [partners, setPartners] = useState(() => savedItems(saved.partners));
-  const [tracksAll, setTracksAll] = useState(() => bool(saved.tracksAll, true));
-  const [tracks, setTracks] = useState(() => savedItems(saved.tracks));
+  const [holdersAll, setHoldersAll] = useState(initial.holdersAll);
+  const [holders, setHolders] = useState(initial.holders);
+  const [partnersAll, setPartnersAll] = useState(initial.partnersAll);
+  const [partners, setPartners] = useState(initial.partners);
+  const [tracksAll, setTracksAll] = useState(initial.tracksAll);
+  const [tracks, setTracks] = useState(initial.tracks);
 
-  const [by, setBy] = useState(() => pick(saved.by, ['holder', 'track', 'partner'], 'holder'));
+  const [by, setBy] = useState(initial.by);
   const [preview, setPreview] = useState(null);
   const [summary, setSummary] = useState(null);
   const [busy, setBusy] = useState(null); // 'preview' | 'generate'
@@ -166,22 +198,45 @@ export function RoyaltyReportsPage() {
     setSummary(null);
   }, [settingsKey, mode]);
 
-  // Любая правка — сразу в хранилище. Запись может не пройти (приватное окно,
-  // переполнение) — тогда просто не запомним, работать это не мешает.
+  // Любая правка — сразу в хранилище, в запись ТЕКУЩЕГО режима. Запись может
+  // не пройти (приватное окно, переполнение) — тогда просто не запомним.
+  const current = {
+    tab, year, period, dateBasis, kinds, groupDetail, by,
+    holdersAll, holders, partnersAll, partners, tracksAll, tracks,
+  };
   useEffect(() => {
+    store.current = { ...store.current, [mode]: current };
     try {
-      localStorage.setItem(
-        STORE,
-        JSON.stringify({
-          mode, tab, year, period, dateBasis, kinds, groupDetail, by,
-          holdersAll, holders, partnersAll, partners, tracksAll, tracks,
-        }),
-      );
+      localStorage.setItem(STORE, JSON.stringify(store.current));
     } catch {
       /* не запомнили — не беда */
     }
+    // current собирается из перечисленного ниже; отдельной зависимостью он
+    // был бы новым объектом на каждый рендер.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, tab, year, period, dateBasis, kinds, groupDetail, by,
       holdersAll, holders, partnersAll, partners, tracksAll, tracks]);
+
+  /** Переключить режим: запомнить настройки этого, поднять настройки того. */
+  function switchMode(next) {
+    if (next === mode) return;
+    store.current = { ...store.current, [mode]: current };
+    const r = restore(store.current[next], next);
+    setTab(r.tab);
+    setYear(r.year);
+    setPeriod(r.period);
+    setDateBasis(r.dateBasis);
+    setKinds(r.kinds);
+    setGroupDetail(r.groupDetail);
+    setHoldersAll(r.holdersAll);
+    setHolders(r.holders);
+    setPartnersAll(r.partnersAll);
+    setPartners(r.partners);
+    setTracksAll(r.tracksAll);
+    setTracks(r.tracks);
+    setBy(r.by);
+    setMode(next);
+  }
 
   const isSummary = mode === 'summary';
   const ready = holdersAll || holders.length > 0;
@@ -291,11 +346,8 @@ export function RoyaltyReportsPage() {
                     key={m.key}
                     type="button"
                     onClick={() => {
-                      setMode(m.key);
+                      switchMode(m.key);
                       setModeOpen(false);
-                      // В сводке по умолчанию смотрят всех: ведомости делают
-                      // адресно, а сводку — чтобы увидеть картину целиком.
-                      if (m.key === 'summary' && !holders.length) setHoldersAll(true);
                     }}
                     className={`text-left px-4 py-2 text-[14px] font-normal tracking-normal bg-transparent border-0 cursor-pointer font-sans hover:bg-hover ${
                       m.key === mode ? 'text-accent font-semibold' : 'text-text'
