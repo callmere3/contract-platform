@@ -459,6 +459,9 @@ LOGO = ASSETS / "logo.png"
 # Размер логотипа как в образце юриста: 1591194 × 542591 EMU.
 LOGO_SIZE = (167, 57)
 HEADER_HEIGHT = 46
+# Сколько знаков подписи «титл - псевдоним» влезает в колонку A листа 1
+# (52.57, Times New Roman 9 жирный): 57 знаков уже не влезали, ~50 — предел.
+LABEL_CENTER_MAX = 45
 _MONEY = '#,##0.00\\ "₽"'
 
 
@@ -507,6 +510,15 @@ def _front_page(ws, res: Result, s: Settings, quantity, realization, royalty) ->
     ws["B5"] = s.period_from
     ws["D5"] = s.period_to          # в образце EOMONTH(B5,2) — годится только для квартала
     ws["A8"] = res.label
+    # ДЛИННАЯ ПОДПИСЬ — ВЛЕВО (замечание владельца 25.09.2026). В образце
+    # ячейка по центру, и текст шире колонки Excel режет С ОБЕИХ СТОРОН: у
+    # «Кобыльский Д.Н. (ИП) - Акула, Илья Саглиани, …» пропадало начало, то
+    # есть сам титл. Прижатый влево, он теряет только хвост — псевдонимы.
+    # Короткую оставляем по центру, как у юриста.
+    if len(res.label) > LABEL_CENTER_MAX:
+        al = copy(ws["A8"].alignment)
+        al.horizontal = "left"
+        ws["A8"].alignment = al
     ws["B8"] = float(quantity)
     ws["C8"] = float(realization)
     ws["D8"] = float(royalty)
