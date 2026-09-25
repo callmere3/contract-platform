@@ -1400,6 +1400,58 @@ _parsed_lock = threading.Lock()
 _parse_gate = threading.Semaphore(1)
 
 
+# ПАМЯТЬ ОТДАЁТСЯ СИСТЕМЕ (инцидент 25.09.2026). Утром разобрали Believe RU
+# на 596 тыс. строк, а в обед процесс api убило системой за нехватку памяти
+# (~1 ГБ) — посреди расчёта ведомостей. Причин было две:
+# - протухшая запись разбора выбрасывалась ТОЛЬКО когда начинался следующий
+#   разбор: предпросмотр без загрузки держал сотни мегабайт хоть до вечера;
+# - освобождённое Python отдаёт своему распределителю, а не системе, и
+#   процесс после большого отчёта так и оставался толстым.
+# Поэтому раз в минуту протухшее выбрасывается фоновой проверкой, а после
+# любого выброса и после `forget_all_parsed` зовётся `malloc_trim` (glibc):
+# он возвращает системе свободные куски кучи. Не на glibc — просто ничего не
+# делает.
+def _release_memory() -> None:
+    import ctypes
+    import gc
+
+    gc.collect()
+    try:
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except (OSError, AttributeError):
+        pass
+
+
+def _evict_expired() -> bool:
+    now = time.monotonic()
+    with _parsed_lock:
+        stale = [k for k, e in _parsed.items() if "value" in e and now - e["at"] > PARSED_TTL]
+        for k in stale:
+            _parsed.pop(k, None)
+    return bool(stale)
+
+
+# Выброс в `forget_all_parsed` случается посреди запроса, который ещё держит
+# разобранные строки у себя, — тогда отдать системе пока нечего. Флаг просит
+# фоновую проверку повторить отдачу, когда запрос уже закончится.
+_trim_pending = False
+
+
+def _sweeper() -> None:
+    global _trim_pending
+    while True:
+        time.sleep(60)
+        try:
+            if _evict_expired() or _trim_pending:
+                _trim_pending = False
+                _release_memory()
+        except Exception:  # noqa: BLE001 — фоновой проверке падать нельзя
+            pass
+
+
+threading.Thread(target=_sweeper, name="parsed-sweeper", daemon=True).start()
+
+
 def _parsed_key(content: bytes, filename: str, head: dict, manual: dict) -> str:
     rate = head["rate"]
     try:
@@ -1482,8 +1534,10 @@ def _parse_and_resolve(db: Session, content: bytes, filename: str, head: dict, m
 
 def forget_all_parsed() -> None:
     """Номенклатура или запомненные артикулы поменялись — привязка устарела."""
+    global _trim_pending
     with _parsed_lock:
         _parsed.clear()
+    _trim_pending = True
 
 
 @partner_reports_router.post(
