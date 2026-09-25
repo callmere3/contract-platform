@@ -29,6 +29,7 @@ import {
   previewReport,
 } from '../api/partnerReports';
 import { useModal } from '../modals/ModalProvider';
+import Region from '../components/ui/Region';
 
 /**
  * ML Finance → «Отчёты»: загрузка отчётов площадок.
@@ -84,7 +85,9 @@ const ATTRS = [
  * Человек видит «40 916,36» и ждёт, что «916» найдётся.
  */
 const REPORT_COLUMNS = [
-  { key: 'partner', label: 'Партнёр', text: (r) => r.partner_label || r.partner },
+  // Приписка территории (RU/KZ/AE) в фильтр НЕ входит (просьба владельца
+  // 25.09.2026): отбирают по площадке, а приписка — подсказка глазу.
+  { key: 'partner', label: 'Партнёр', text: (r) => r.partner },
   { key: 'period', label: 'Период', text: (r) => r.period_label },
   ...['content_type', 'usage_type', 'usage_kind', 'territory'].map((name) => ({
     key: name,
@@ -1453,7 +1456,8 @@ export function PartnerReportsPage() {
                       className={cellClass('font-semibold text-text')}
                       onClick={cellPick('partner', r)}
                     >
-                      {r.partner_label || r.partner}
+                      {r.partner}
+                      <Region value={r.region} />
                     </td>
                     {/* Имя файла и число строк убраны из списка (просьба
                         владельца 18.09.2026): имя площадки и период отвечают,
