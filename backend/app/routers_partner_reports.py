@@ -2020,12 +2020,19 @@ def create_report(
     # трек приедет уже с артикулом. Запоминаем ТОЛЬКО то, что нашлось в
     # каталоге: код с опечаткой, который ничему не соответствует, повторять из
     # месяца в месяц незачем.
+    #
+    # ОДНА И ТА ЖЕ ПАРА «НАЗВАНИЕ + ИСПОЛНИТЕЛЬ» ВСТРЕЧАЕТСЯ В ОТЧЁТЕ НЕ РАЗ
+    # (баг 25.09.2026: два файла ВОИС, «СПАСИБО / Катя Лель» вписана в обоих).
+    # Сопоставление, заведённое в ЭТОЙ загрузке, база ещё не видит — сессия
+    # без автосброса, — и второе такое же падало на уникальности ключа
+    # ошибкой 500. Поэтому заведённые здесь держим под рукой сами.
     remembered = 0
+    created: dict = {}
     for row in result.rows:
         if row.row_num not in manual or row.row_num not in track_by_row or not row.title:
             continue
         title_key, artist_key = _alias_key(row.title, row.artist)
-        alias = db.scalar(
+        alias = created.get((title_key, artist_key)) or db.scalar(
             select(PartnerTrackAlias).where(
                 PartnerTrackAlias.partner_id == partner_id,
                 PartnerTrackAlias.title_key == title_key,
@@ -2033,18 +2040,18 @@ def create_report(
             )
         )
         if alias is None:
-            db.add(
-                PartnerTrackAlias(
-                    id=uuid.uuid4(),
-                    partner_id=partner_id,
-                    title_key=title_key,
-                    artist_key=artist_key,
-                    title=row.title,
-                    artist=row.artist,
-                    sku=row.sku,
-                    created_by=current_user.id,
-                )
+            alias = PartnerTrackAlias(
+                id=uuid.uuid4(),
+                partner_id=partner_id,
+                title_key=title_key,
+                artist_key=artist_key,
+                title=row.title,
+                artist=row.artist,
+                sku=row.sku,
+                created_by=current_user.id,
             )
+            db.add(alias)
+            created[(title_key, artist_key)] = alias
             remembered += 1
         elif alias.sku != row.sku:
             # Человек вписал другой артикул той же строке — значит, прежнее
