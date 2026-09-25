@@ -247,10 +247,22 @@ def unlinked_reports(db: Session, s: Settings) -> list:
     ]
 
 
+def _catalog_tracks():
+    """
+    Треки КАТАЛОГА — только они идут в ведомости и сводки (правило владельца
+    25.09.2026). Позиции неКаталога к отчётам площадок ПРИВЯЗЫВАЮТСЯ как
+    обычно — деньги по ним приходят и должны лежать на своём треке, а не в
+    «Вне каталога», — но правообладателям за квартал по ним не отчитываемся:
+    это изъятые позиции.
+    """
+    return select(Track.id).where(Track.in_catalog.is_(True))
+
+
 def compute(db: Session, s: Settings) -> list:
     """Насчитать вознаграждение: список `Result`, по одному на правообладателя."""
     rights_q = select(TrackRight.track_id, TrackRight.contragent_id).where(
-        TrackRight.contragent_id.isnot(None)
+        TrackRight.contragent_id.isnot(None),
+        TrackRight.track_id.in_(_catalog_tracks()),
     )
     if s.contragent_ids:
         rights_q = rights_q.where(TrackRight.contragent_id.in_(s.contragent_ids))
@@ -755,7 +767,8 @@ def _quantities(db: Session, s: Settings, by: str) -> dict:
     # вознаграждения по ним нет), и их прослушивания не должны попадать в
     # количество — иначе объект и площадка разошлись бы по количеству.
     owners = select(TrackRight.track_id).where(
-        TrackRight.contragent_id.isnot(None), TrackRight.share > 0
+        TrackRight.contragent_id.isnot(None), TrackRight.share > 0,
+        TrackRight.track_id.in_(_catalog_tracks()),
     )
     if s.contragent_ids:
         owners = owners.where(TrackRight.contragent_id.in_(s.contragent_ids))

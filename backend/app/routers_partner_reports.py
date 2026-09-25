@@ -402,7 +402,12 @@ def _resolve_tracks(db: Session, rows: list, partner_id=None) -> dict:
 
     # Строки без артикула — по названию. Одинаковые пары «название +
     # исполнитель» ищем один раз: в отчёте они повторяются по нескольку строк.
-    pending = [r for r in rows if r.row_num not in resolved and not r.sku and r.title]
+    # И СТРОКИ С АРТИКУЛОМ, КОТОРОГО У НАС НЕТ (правка 25.09.2026): у Believe
+    # в строке номер РЕЛИЗА, и если релиз заведён у нас под другим номером
+    # («Автор твоих стихов / Тбили»: в отчёте 1240336, у нас 1240356), строка
+    # уходила «вне каталога», хотя трек есть. ISRC для таких строк и так
+    # пробовался — теперь пробуется и название с исполнителем, так же строго.
+    pending = [r for r in rows if r.row_num not in resolved and r.title]
     cache: dict = {}
     for row in pending:
         key = (row.title.lower(), (row.artist or "").lower())

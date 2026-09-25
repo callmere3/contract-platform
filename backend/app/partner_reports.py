@@ -933,7 +933,9 @@ def _apply_formula(expr: str, numbers: dict, row: ReportRow, label: str):
 # Служебные слова в поле исполнителя: они не различают артистов, а только
 # связывают их («ОСОБОВ feat. TRUEтень»). Сравнивать по ним нельзя, иначе
 # «Slim & Константа» и «Slim, Константа» окажутся разными, а это один дуэт.
-ARTIST_STOPWORDS = {"feat", "ft", "featuring", "prod", "vs", "and", "x"}
+# «и» — союз, а не имя (ВОИС, 25.09.2026): «КАТЯ ЛЕЛЬ, РОЖДЕСТВО» в отчёте и
+# «Рождество и Катя Лель» в каталоге — один и тот же дуэт; «and» тут давно.
+ARTIST_STOPWORDS = {"feat", "ft", "featuring", "prod", "vs", "and", "x", "и"}
 
 
 def normalize_name(value) -> str:
@@ -1026,11 +1028,18 @@ def name_hits(title, artist, candidates) -> list:
     key = normalize_name(title)
     if not key or not str(artist or "").strip():
         return []
+    # НАЗВАНИЕ СРАВНИВАЕМ ЕЩЁ И СЛИТНО (ВОИС, 25.09.2026): «КОМАТОЗ-ЛЮБОВЬ» в
+    # отчёте и «Коматозлюбовь» в каталоге — одно название, а дефис при
+    # нормализации становится пробелом, и «коматоз любовь» с «коматозлюбовь»
+    # не совпадало. Буквы и их порядок те же — различаются только пробелы и
+    # знаки, так что строгость сравнения не страдает.
+    compact = key.replace(" ", "")
     out, seen = [], set()
     for c in candidates:
         if c.id in seen:
             continue
-        if normalize_name(c.title) == key and artists_match(artist, c.artist):
+        other = normalize_name(c.title)
+        if (other == key or other.replace(" ", "") == compact) and artists_match(artist, c.artist):
             seen.add(c.id)
             out.append(c)
     return out
