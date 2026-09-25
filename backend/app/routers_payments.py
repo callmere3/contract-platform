@@ -37,7 +37,7 @@ from app.auth import get_current_user, require_role
 from app.db import get_session
 from app.models import Partner, PartnerPayment, PartnerReport, User
 from app.partner_names import PartnerIndex, clean_name
-from app.payments_import import parse_rows
+from app.payments_import import normalize_currency_note, parse_rows
 from app.roles import CAN_MANAGE_PAYMENTS, CAN_VIEW_PAYMENTS
 
 payments_router = APIRouter(
@@ -406,8 +406,9 @@ def _apply(payment: PartnerPayment, body: dict, db: Session) -> list[str]:
             setattr(payment, name, _parse_money(body[name], "Сумма"))
             touched.append(name)
     if "currency_amount" in body:
-        # Как написали, так и храним: поле справочное, разбирать его не на что.
-        note = " ".join(str(body["currency_amount"] or "").split())
+        # К тому же виду, что и из импорта («2 950,91 $»); не разобрали —
+        # храним как написали.
+        note = normalize_currency_note(body["currency_amount"]) or ""
         if len(note) > 64:
             raise HTTPException(400, "Сумма в валюте: слишком длинная запись")
         payment.currency_amount = note or None

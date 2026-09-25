@@ -224,6 +224,24 @@ def parse_currency_note(text) -> tuple:
     return parse_money(_strip_currency(raw)), code
 
 
+def normalize_currency_note(text) -> str | None:
+    """
+    Сумма в валюте, вписанная руками в таблице, — к тому же виду, что и из
+    импорта: «$2 950.91» → «2 950,91 $», «10 456.59 €» → «10 456,59 €»
+    (просьба владельца 25.09.2026). Раньше вид приводил только импорт, а
+    правка в таблице хранила как написали — и в одном столбце снова стояли
+    записи разного вида. Не разобрали сумму или валюту — оставляем как
+    написано: поле справочное, и терять вписанное из-за формы записи нельзя.
+    """
+    raw = " ".join(str(text or "").split())
+    if not raw:
+        return None
+    number, code = parse_currency_note(raw)
+    if number is None or code is None:
+        return raw
+    return f"{_pretty(number)} {SIGNS[code]}"
+
+
 def _row_number(value) -> int | None:
     """
     Номер строки из первого столбца файла.

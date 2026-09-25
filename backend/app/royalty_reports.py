@@ -458,6 +458,7 @@ STATEMENT_TEMPLATE = ASSETS / "royalty_statement.xlsx"
 LOGO = ASSETS / "logo.png"
 # Размер логотипа как в образце юриста: 1591194 × 542591 EMU.
 LOGO_SIZE = (167, 57)
+HEADER_HEIGHT = 46
 _MONEY = '#,##0.00\\ "₽"'
 
 
@@ -546,6 +547,10 @@ def _grid(ws, header: list | None, rows: list, s: Settings, text_cols: set, mone
         for i, title in enumerate(header, 1):
             c = ws.cell(row=1, column=i, value=title)
             c._style = copy(head_style)
+    # Шапка выше, чем в образце (31.2): «Сумма реализации Лицензиара» и
+    # «Лицензиар Роялти авторские» в узкой колонке переносятся на четыре
+    # строки и в три не влезали (замечание владельца 25.09.2026).
+    ws.row_dimensions[1].height = HEADER_HEIGHT
     width = len(header) if header else ws.max_column
     if widths:
         for i, w in enumerate(widths, 1):
