@@ -22,6 +22,15 @@ from sqlalchemy.orm import Session
 from app.models import Track, TrackRight, TrackRightHistory
 
 CENT = Decimal("0.01")
+# PostgreSQL принимает не больше 65 535 параметров в запросе, а треков в
+# квартале с архивом Dista — 86 тысяч: списки id режем пачками.
+ID_BATCH = 10000
+
+
+def chunks(ids, size: int = ID_BATCH):
+    ids = list(ids)
+    for i in range(0, len(ids), size):
+        yield ids[i:i + size]
 
 
 def _num(value) -> Decimal | None:
@@ -109,29 +118,31 @@ class RightsTimeline:
         self.versions: dict = {}   # track_id -> [(valid_from, valid_to)] по возрастанию
         self.shares: dict = {}     # (track_id, contragent_id, version) -> {type: [share, royalty]}
 
-        track_ids, contragent_ids = list(track_ids), list(contragent_ids)
-        for tid, cid, rtype, share, royalty in db.execute(
-            select(TrackRight.track_id, TrackRight.contragent_id, TrackRight.right_type,
-                   TrackRight.share, TrackRight.royalty)
-            .where(TrackRight.track_id.in_(track_ids), TrackRight.contragent_id.in_(contragent_ids))
-            .order_by(TrackRight.slot)
-        ):
-            self._add((tid, cid, None), rtype, share, royalty)
-
+        contragent_ids = set(contragent_ids)
         spans: dict = {}
-        for tid, vfrom, vto, cid, rtype, share, royalty in db.execute(
-            select(TrackRightHistory.track_id, TrackRightHistory.valid_from,
-                   TrackRightHistory.valid_to, TrackRightHistory.contragent_id,
-                   TrackRightHistory.right_type, TrackRightHistory.share,
-                   TrackRightHistory.royalty)
-            .where(TrackRightHistory.track_id.in_(track_ids))
-            .order_by(TrackRightHistory.slot)
-        ):
-            # Сроки версий — по ВСЕМ правообладателям трека: какая версия
-            # действовала, не зависит от того, чья доля нас интересует.
-            spans.setdefault(tid, set()).add((vfrom, vto))
-            if cid in contragent_ids:
-                self._add((tid, cid, vfrom), rtype, share, royalty)
+        for batch in chunks(track_ids):
+            for tid, cid, rtype, share, royalty in db.execute(
+                select(TrackRight.track_id, TrackRight.contragent_id, TrackRight.right_type,
+                       TrackRight.share, TrackRight.royalty)
+                .where(TrackRight.track_id.in_(batch), TrackRight.contragent_id.isnot(None))
+                .order_by(TrackRight.slot)
+            ):
+                if cid in contragent_ids:
+                    self._add((tid, cid, None), rtype, share, royalty)
+
+            for tid, vfrom, vto, cid, rtype, share, royalty in db.execute(
+                select(TrackRightHistory.track_id, TrackRightHistory.valid_from,
+                       TrackRightHistory.valid_to, TrackRightHistory.contragent_id,
+                       TrackRightHistory.right_type, TrackRightHistory.share,
+                       TrackRightHistory.royalty)
+                .where(TrackRightHistory.track_id.in_(batch))
+                .order_by(TrackRightHistory.slot)
+            ):
+                # Сроки версий — по ВСЕМ правообладателям трека: какая версия
+                # действовала, не зависит от того, чья доля нас интересует.
+                spans.setdefault(tid, set()).add((vfrom, vto))
+                if cid in contragent_ids:
+                    self._add((tid, cid, vfrom), rtype, share, royalty)
         for tid, s in spans.items():
             self.versions[tid] = sorted(s)
 

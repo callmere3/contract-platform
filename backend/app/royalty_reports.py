@@ -42,7 +42,7 @@ from app.models import (
     Contragent, ContragentNickname, Partner, PartnerPayment, PartnerReport, PartnerReportRow,
     Track, TrackRight, TrackRightHistory,
 )
-from app.rights_history import RightsTimeline
+from app.rights_history import RightsTimeline, chunks
 
 # Город и Лицензиат в ведомости — одни на все отчёты; понадобится менять —
 # это строки здесь, а не настройка в интерфейсе.
@@ -338,7 +338,9 @@ def compute(db: Session, s: Settings, *, detail: bool = True) -> list:
     )
 
     tracks = {
-        t.id: t for t in db.scalars(select(Track).where(Track.id.in_(track_ids)))
+        t.id: t
+        for batch in chunks(track_ids)
+        for t in db.scalars(select(Track).where(Track.id.in_(batch)))
     }
     # Доли и ставки — по (трек, правообладатель, вид права) и ПО ВЕРСИИ
     # состава: для отчёта берётся состав, действовавший на конец его периода
@@ -895,7 +897,11 @@ def summary(db: Session, s: Settings, by: str) -> list:
 
     counts = _quantities(db, s, by)
     if by == "track":
-        by_sku = {t.sku: t.id for t in db.scalars(select(Track).where(Track.sku.in_(list(acc))))}
+        by_sku = {
+            sku: tid
+            for batch in chunks(acc)
+            for sku, tid in db.execute(select(Track.sku, Track.id).where(Track.sku.in_(batch)))
+        }
     else:
         by_name = {name: pid for pid, name in db.execute(select(Partner.id, Partner.name)).all()}
 
