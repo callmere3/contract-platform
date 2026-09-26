@@ -9,9 +9,12 @@
 
 СЛОЙ 2: копия бэкапов за пределами VPS — на ПК, в репозиторий restic.
 
-Запускается планировщиком Windows раз в сутки. Слой 1 (ops/backup.sh, cron
-на сервере) к этому моменту уже сложил свежие файлы в /root/backups; здесь
-мы их только забираем.
+Запускается планировщиком Windows раз в сутки. БЭКАП НА СЕРВЕРЕ НЕ ХРАНИТСЯ
+(решение владельца 26.09.2026: с архивом отчётов Dista база выросла до
+гигабайтов, и 14 дампов на сервере не помещаются). Сервер отдаёт всё
+ПОТОКОМ по запросу (ops/serve-backup.sh): дамп идёт из pg_dump прямо сюда,
+на диск сервера не ложась. Поэтому копии живут ТОЛЬКО здесь, в restic, — и
+выключенный ПК значит, что за этот день копии нет.
 
 ПОЧЕМУ ТЯНЕМ, А НЕ ТОЛКАЕМ. Сервер не знает ни адреса копии, ни ключа к
 ней. Взломавший сервер не сможет стереть бэкапы — а стереть их первым делом
@@ -38,8 +41,8 @@ param(
   [string]$RepoPath    = "D:\Backups\contract-platform",
   [string]$StagingPath = "D:\Backups\staging",
   [string]$LogPath     = "D:\Backups\pull.log",
-  # Старше этого — считаем, что cron на сервере сломался и молчит.
-  [int]$MaxAgeHours    = 48
+  # Дамп меньше этого — считаем обрезанным: настоящая база весит гигабайты.
+  [long]$MinDbBytes    = 50MB
 )
 
 $ErrorActionPreference = "Stop"
@@ -71,27 +74,46 @@ try {
   if (Test-Path $StagingPath) { Remove-Item "$StagingPath\*" -Recurse -Force }
   else { New-Item -ItemType Directory -Path $StagingPath -Force | Out-Null }
 
-  $tar = Join-Path $StagingPath "_pull.tar"
-  $sshOpts = "-i ""$key"" -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=30"
+  $sshOpts = "-i ""$key"" -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=30 -o Compression=yes"
   # IdentitiesOnly=yes обязателен: без него ssh может подсунуть ключ из
   # агента, и мы незаметно ходили бы полноправным root вместо ограниченного
-  # ключа (ровно на это я попался при проверке).
-  cmd /c "ssh $sshOpts $Server > ""$tar"" 2>nul"
-  if ($LASTEXITCODE -ne 0) { throw "ssh вернул код $LASTEXITCODE — сервер недоступен или ключ не принят" }
-  if (-not (Test-Path $tar) -or (Get-Item $tar).Length -lt 1024) { throw "Скачанный архив пуст или подозрительно мал" }
+  # ключа (ровно на это я попался при проверке). Compression=yes — дамп
+  # текстовый и по сети сжимается в разы; на диске он остаётся несжатым,
+  # иначе restic не смог бы его дедуплицировать.
+  $date = Get-Date -Format "yyyy-MM-dd"
 
-  & tar -xf $tar -C $StagingPath
-  if ($LASTEXITCODE -ne 0) { throw "Архив не распаковался — скорее всего приехал битым" }
-  Remove-Item $tar -Force
+  # Три потока, по одному слову-команде на каждый (см. ops/serve-backup.sh).
+  # Имена файлов те же, что раньше лежали в /root/backups, — restore.sh их
+  # и ждёт.
+  function Pull($what, $file) {
+    $out = Join-Path $StagingPath $file
+    cmd /c "ssh $sshOpts $Server $what > ""$out"" 2>nul"
+    if ($LASTEXITCODE -ne 0) { throw "ssh ($what) вернул код $LASTEXITCODE — сервер недоступен или ключ не принят" }
+    return $out
+  }
 
-  # Свежесть. Слой 1 кладёт db-ГГГГ-ММ-ДД.sql; если самый свежий старше
-  # MaxAgeHours, cron на сервере молчит — а молчание тут и есть авария.
-  $newest = Get-ChildItem "$StagingPath\db-*.sql" | Sort-Object Name -Descending | Select-Object -First 1
-  if (-not $newest) { throw "В бэкапе нет ни одного дампа db-*.sql" }
-  $stamp = [datetime]::ParseExact($newest.BaseName.Substring(3), "yyyy-MM-dd", $null)
-  $ageH  = [math]::Round(((Get-Date) - $stamp).TotalHours)
-  if ($ageH -gt $MaxAgeHours) { throw "Свежему дампу $ageH ч (порог $MaxAgeHours) — cron на сервере сломался" }
+  $db = Pull "db" "db-$date.sql"
+  if ((Get-Item $db).Length -lt $MinDbBytes) { throw "Дамп базы подозрительно мал: $((Get-Item $db).Length) байт" }
+  # pg_dump дописывает эту строку последней: нет её — поток оборвался на
+  # полпути, и дамп не развернётся.
+  $fs = [IO.File]::OpenRead($db)
+  try {
+    $n = [Math]::Min(4096, $fs.Length); $fs.Seek(-$n, 'End') | Out-Null
+    $buf = New-Object byte[] $n; $fs.Read($buf, 0, $n) | Out-Null
+  } finally { $fs.Close() }
+  if (-not ([Text.Encoding]::UTF8.GetString($buf) -match 'PostgreSQL database dump complete')) {
+    throw "Дамп базы оборван: нет завершающей строки pg_dump"
+  }
 
+  $tpl = Pull "templates" "templates-$date.tar"
+  if ((Get-Item $tpl).Length -lt 1024) { throw "Архив шаблонов пуст или подозрительно мал" }
+
+  $meta = Pull "meta" "_meta.tar"
+  & tar -xf $meta -C $StagingPath
+  if ($LASTEXITCODE -ne 0) { throw "Архив .env не распаковался — скорее всего приехал битым" }
+  Remove-Item $meta -Force
+  Rename-Item (Join-Path $StagingPath "env.txt") "env-$date.txt"
+  Rename-Item (Join-Path $StagingPath "templates.txt") "templates-$date.txt"
   $files = (Get-ChildItem $StagingPath -File).Count
   $size  = [math]::Round(((Get-ChildItem $StagingPath -File | Measure-Object Length -Sum).Sum / 1KB))
   & $restic.FullName backup $StagingPath --repo $RepoPath --password-file $pwFile --tag contracts --quiet
@@ -103,7 +125,7 @@ try {
 
   $snaps = (& $restic.FullName snapshots --repo $RepoPath --password-file $pwFile --json | ConvertFrom-Json).Count
   $repoKB = [math]::Round(((Get-ChildItem $RepoPath -Recurse -File | Measure-Object Length -Sum).Sum / 1KB))
-  Write-Log "OK  забрано ${files} файлов (${size} КБ), дампу ${ageH} ч, точек восстановления: ${snaps}, репозиторий ${repoKB} КБ"
+  Write-Log "OK  забрано ${files} файлов (${size} КБ), точек восстановления: ${snaps}, репозиторий ${repoKB} КБ"
 
   if (Test-Path $alert) { Remove-Item $alert -Force }
   exit 0
@@ -118,7 +140,7 @@ catch {
 
 Пока этот файл лежит здесь, свежих копий нет.
 Подробности: $LogPath
-Проверить сервер: ssh root@64.188.98.101 "tail /var/log/contracts-backup.log"
+Проверить сервер: ssh root@64.188.98.101 "cd ~/contract-platform && docker compose ps"
 "@
   Set-Content -Path $alert -Value $text -Encoding utf8
   exit 1
