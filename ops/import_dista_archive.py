@@ -55,7 +55,7 @@ from app.db import SessionLocal
 from app.models import (
     Contragent, Partner, PartnerReport, RoyaltyAccrual, Track, TrackRightHistory,
 )
-from app.partner_reports import PRECISION
+from app.partner_reports import PRECISION, report_region
 from app.routers_partner_reports import _store_rows, outside_track_id
 
 DUPLICATE_TOLERANCE = Decimal("0.02")
@@ -191,12 +191,17 @@ def import_reports(db, folder, dry, stats, only_doc=None):
     have = set(db.scalars(select(PartnerReport.dista_doc_id)
                           .where(PartnerReport.dista_doc_id.isnot(None))))
     ours = {}
-    for pid, pf, pt, ta, tr in db.execute(
+    names = {pid: name for _, (pid, name) in partners.items()}
+    for pid, pf, pt, ta, tr, cur in db.execute(
         select(PartnerReport.partner_id, PartnerReport.period_from, PartnerReport.period_to,
-               PartnerReport.total_author, PartnerReport.total_related)
+               PartnerReport.total_author, PartnerReport.total_related, PartnerReport.currency)
         .where(PartnerReport.source.is_(None))
     ):
-        ours.setdefault((pid, pf, pt), []).append(Decimal(ta or 0) + Decimal(tr or 0))
+        # Регион (у Believe RU/KZ/AE) — по валюте ИСХОДНОГО файла, как в
+        # списке отчётов: у нас KZ и AE до привязки лежат в валюте, и по
+        # сумме их с рублями Dista не сравнить.
+        region = report_region(names.get(pid, ""), cur)
+        ours.setdefault((pid, pf, pt), []).append((Decimal(ta or 0) + Decimal(tr or 0), region))
     heads = {h["doc_id"]: h for h in _lines(os.path.join(folder, "reports.jsonl"))}
     outside = None if dry else outside_track_id(db)
     skipped_dupes = []
@@ -241,8 +246,16 @@ def import_reports(db, folder, dry, stats, only_doc=None):
                 usage_kind=c[8] or None, territory=c[9] or None,
             ))
         total = ta + tr
-        dupe = next((t for t in ours.get((pid, pf, pt), [])
-                     if total and abs(t - total) / total <= DUPLICATE_TOLERANCE), None)
+        same = ours.get((pid, pf, pt), [])
+        # Регион отчёта Dista — из пометки «RU 06.26» (у Believe).
+        dregion = (h.get("remark") or "")[:2].upper() if report_region(pname, "RUB") else None
+        dupe = next((t for t, reg in same
+                     if (dregion and reg == dregion)
+                     or (total and abs(t - total) / total <= DUPLICATE_TOLERANCE)), None)
+        if dupe is None and same:
+            print(f"  ВНИМАНИЕ: {pname} {pf}—{pt} ({h.get('remark') or 'без пометки'}): у нас есть "
+                  f"отчёт за тот же период с другим итогом ({', '.join(f'{t:.2f} {r or ""}' for t, r in same)}), "
+                  f"в Dista {total:.2f} — переносим")
         if dupe is not None:
             stats["отчётов уже загружено у нас файлом"] += 1
             skipped_dupes.append(f"{pname} {pf}—{pt}: Dista {total:.2f}, у нас {dupe:.2f}")
