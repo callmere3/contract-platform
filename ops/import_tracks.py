@@ -51,6 +51,7 @@ from sqlalchemy import delete, insert, select, update
 from app.db import SessionLocal
 from app.models import Track, TrackRight
 from app.nomenclature_import import TEXT_FIELDS, keep_if_richer, read_rows
+from app.rights_history import archive_superseded
 
 BATCH = 2000
 
@@ -98,14 +99,19 @@ def main() -> int:
         updates: list[dict] = []
         rights_rows: list[dict] = []
         touched: list[uuid.UUID] = []
+        # Для истории прав: трек → (новая дата прав, новые права).
+        incoming: dict = {}
         now = datetime.now(timezone.utc)
 
         def flush() -> None:
             """Пишем накопленное: сначала треки, потом их права."""
-            nonlocal new_tracks, updates, rights_rows, touched
+            nonlocal new_tracks, updates, rights_rows, touched, incoming
             if args.dry_run:
-                new_tracks, updates, rights_rows, touched = [], [], [], []
+                new_tracks, updates, rights_rows, touched, incoming = [], [], [], [], {}
                 return
+            # Прежний состав прав — в историю, строго ДО записи треков (см.
+            # rights_history): после неё в базе уже новая дата прав.
+            stats["версий прав в историю"] += archive_superseded(db, incoming, source="import")
             if new_tracks:
                 db.execute(insert(Track), new_tracks)
             if updates:
@@ -116,7 +122,7 @@ def main() -> int:
             if rights_rows:
                 db.execute(insert(TrackRight), rights_rows)
             db.commit()
-            new_tracks, updates, rights_rows, touched = [], [], [], []
+            new_tracks, updates, rights_rows, touched, incoming = [], [], [], [], {}
 
         wb = openpyxl.load_workbook(args.path, read_only=True, data_only=True)
         ws = wb[wb.sheetnames[0]]
@@ -189,6 +195,7 @@ def main() -> int:
                     }
                 )
                 stats["обновлено"] += 1
+                incoming[track_id] = (track.get("rights_since"), rights)
 
             touched.append(track_id)
             for right in rights:
@@ -224,7 +231,7 @@ def main() -> int:
         print(f"строк прав записано  : {stats['строк прав']}")
         print(f"строк с ошибками     : {stats['с ошибками']}"
               + (" (пропущены: --strict)" if args.strict else " (загружены как есть)"))
-        for key in ("без артикула", "дублей артикула в файле"):
+        for key in ("без артикула", "дублей артикула в файле", "версий прав в историю"):
             if stats[key]:
                 print(f"{key:<21}: {stats[key]}")
         if problems:

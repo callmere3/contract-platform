@@ -284,6 +284,10 @@ export function PartnerReportsPage() {
   const [showAliases, setShowAliases] = useState(false);
 
   const [reports, setReports] = useState([]);
+  // АРХИВ DISTA — отдельный список отчётов, перенесённых из её базы
+  // (26.09.2026). С загруженными он не смешивается: их сотни, и они
+  // вытеснили бы настоящие.
+  const [archive, setArchive] = useState(false);
   const [busy, setBusy] = useState(false);
   // СТРОКИ СЧИТАЮТСЯ В ФОНЕ (просьба владельца 24.09.2026): форма уже
   // заполнена по шапке, и кнопка «Загрузить отчёт» доступна, не дожидаясь
@@ -338,12 +342,12 @@ export function PartnerReportsPage() {
 
   const loadReports = useCallback(async () => {
     try {
-      const data = await listReports({});
+      const data = await listReports({ archive });
       setReports(data.reports ?? []);
     } catch (e) {
       setError(e.message);
     }
-  }, []);
+  }, [archive]);
 
   useEffect(() => {
     loadReports();
@@ -1330,8 +1334,21 @@ export function PartnerReportsPage() {
             отбор нужнее: по площадке, территории и виду использования
             отчёты ищут глазами по всему списку. */}
         <div className="flex items-center justify-between gap-4 px-5 py-4 border-b border-border">
-          <div className="text-sm font-semibold text-text">
-            Загруженные отчёты
+          <div className="text-sm font-semibold text-text flex items-baseline gap-3">
+            {[
+              [false, 'Загруженные отчёты'],
+              [true, 'Архив Dista'],
+            ].map(([value, label]) => (
+              <button
+                key={label}
+                type="button"
+                onClick={() => setArchive(value)}
+                data-hint={value ? 'Отчёты, перенесённые из базы Dista: к поступлениям не привязаны' : undefined}
+                className={archive === value ? 'text-text' : 'text-text-muted font-normal hover:text-text'}
+              >
+                {label}
+              </button>
+            ))}
             {filterOn && activeFilters.length > 0 && (
               <span className="text-text-muted font-normal">
                 {' '}— отобрано {shownReports.length} из {reports.length}
@@ -1386,7 +1403,7 @@ export function PartnerReportsPage() {
         {shownReports.length === 0 && (
           <div className="px-5 py-4 text-[13px] text-text-muted">
             {reports.length === 0
-              ? 'Отчётов пока нет.'
+              ? archive ? 'Архив Dista пока не перенесён.' : 'Отчётов пока нет.'
               : 'Под условия фильтра не подошёл ни один отчёт.'}
           </div>
         )}

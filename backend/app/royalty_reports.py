@@ -27,7 +27,7 @@ import re
 import struct
 import zipfile
 from copy import copy
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
@@ -35,13 +35,14 @@ from pathlib import Path
 import openpyxl
 from openpyxl.drawing.image import Image as _XlImage
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, or_, select, union
 from sqlalchemy.orm import Session
 
 from app.models import (
     Contragent, ContragentNickname, Partner, PartnerPayment, PartnerReport, PartnerReportRow,
-    Track, TrackRight,
+    Track, TrackRight, TrackRightHistory,
 )
+from app.rights_history import RightsTimeline
 
 # Город и Лицензиат в ведомости — одни на все отчёты; понадобится менять —
 # это строки здесь, а не настройка в интерфейсе.
@@ -230,6 +231,9 @@ def unlinked_reports(db: Session, s: Settings) -> list:
     cond = and_(
         PartnerReport.payment_id.is_(None),
         PartnerReport.period_to <= s.period_to,
+        # Архив Dista к поступлениям не привязывается вовсе — «забытым» он
+        # не бывает, и иначе этот список состоял бы из сотен его отчётов.
+        PartnerReport.source.is_(None),
     )
     if s.partner_ids:
         cond = and_(cond, PartnerReport.partner_id.in_(s.partner_ids))
@@ -258,17 +262,31 @@ def _catalog_tracks():
     return select(Track.id).where(Track.in_catalog.is_(True))
 
 
+def _owner_pairs(s: Settings, *, positive: bool = False):
+    """
+    Пары (трек, правообладатель) — из ТЕКУЩЕГО состава и из ПРЕЖНИХ
+    (`track_right_history`): правообладатель, которого из трека уже вывели,
+    всё равно получает своё за отчёты тех периодов, когда права были его.
+    """
+    parts = []
+    for model in (TrackRight, TrackRightHistory):
+        q = select(model.track_id, model.contragent_id).where(
+            model.contragent_id.isnot(None),
+            model.track_id.in_(_catalog_tracks()),
+        )
+        if positive:
+            q = q.where(model.share > 0)
+        if s.contragent_ids:
+            q = q.where(model.contragent_id.in_(s.contragent_ids))
+        if s.track_ids:
+            q = q.where(model.track_id.in_(s.track_ids))
+        parts.append(q)
+    return union(*parts).subquery()
+
+
 def compute(db: Session, s: Settings) -> list:
     """Насчитать вознаграждение: список `Result`, по одному на правообладателя."""
-    rights_q = select(TrackRight.track_id, TrackRight.contragent_id).where(
-        TrackRight.contragent_id.isnot(None),
-        TrackRight.track_id.in_(_catalog_tracks()),
-    )
-    if s.contragent_ids:
-        rights_q = rights_q.where(TrackRight.contragent_id.in_(s.contragent_ids))
-    if s.track_ids:
-        rights_q = rights_q.where(TrackRight.track_id.in_(s.track_ids))
-    owners = rights_q.distinct().subquery()
+    owners = _owner_pairs(s)
 
     R, Rep = PartnerReportRow, PartnerReport
     attrs = [func.coalesce(getattr(R, a), getattr(Rep, a)).label(a) for a in ATTRS]
@@ -296,24 +314,16 @@ def compute(db: Session, s: Settings) -> list:
     track_ids = {g[1] for g in groups}
     contragent_ids = {g[0] for g in groups}
 
-    # Доли и ставки — по (трек, правообладатель, вид права). Если у человека
-    # на одно право несколько мест (бывает при слиянии дублей), доли
-    # складываются, а ставка берётся первая: она у них одна.
-    rights: dict = {}
-    for tid, cid, rtype, share, royalty in db.execute(
-        select(TrackRight.track_id, TrackRight.contragent_id, TrackRight.right_type,
-               TrackRight.share, TrackRight.royalty)
-        .where(TrackRight.track_id.in_(track_ids), TrackRight.contragent_id.in_(contragent_ids))
-        .order_by(TrackRight.slot)
-    ):
-        slot = rights.setdefault((tid, cid), {}).setdefault(rtype, [ZERO, None])
-        slot[0] += Decimal(share or 0)
-        if slot[1] is None and royalty is not None:
-            slot[1] = Decimal(royalty)
-
     tracks = {
         t.id: t for t in db.scalars(select(Track).where(Track.id.in_(track_ids)))
     }
+    # Доли и ставки — по (трек, правообладатель, вид права) и ПО ВЕРСИИ
+    # состава: для отчёта берётся состав, действовавший на конец его периода
+    # (см. RightsTimeline). Несколько мест одного человека на одно право
+    # складываются, ставка берётся первая.
+    timeline = RightsTimeline(
+        db, track_ids, contragent_ids, {tid: t.rights_since for tid, t in tracks.items()}
+    )
     partners = dict(db.execute(select(Partner.id, Partner.name)).all())
     cards = {
         row[0]: row[1:]
@@ -336,7 +346,7 @@ def compute(db: Session, s: Settings) -> list:
         cid, tid, pid, pfrom, pto = g[0], g[1], g[2], g[3], g[4]
         attr_values = g[5:9]
         qty, amount_a, amount_r = (Decimal(str(x)) for x in g[n:n + 3])
-        r = rights.get((tid, cid), {})
+        r = timeline.rights(tid, cid, pto)
         share_a, royalty_a = r.get("author", [ZERO, None])
         share_r, royalty_r = r.get("related", [ZERO, None])
         if not share_a and not share_r:
@@ -766,12 +776,10 @@ def _quantities(db: Session, s: Settings, by: str) -> dict:
     # Доля больше нуля: права с нулевой долей в сводку не попадают (строки
     # вознаграждения по ним нет), и их прослушивания не должны попадать в
     # количество — иначе объект и площадка разошлись бы по количеству.
-    owners = select(TrackRight.track_id).where(
-        TrackRight.contragent_id.isnot(None), TrackRight.share > 0,
-        TrackRight.track_id.in_(_catalog_tracks()),
-    )
-    if s.contragent_ids:
-        owners = owners.where(TrackRight.contragent_id.in_(s.contragent_ids))
+    # Прежние составы тоже (см. _owner_pairs). Трек фильтра товаров здесь
+    # не нужен: ниже он накладывается на строки.
+    pairs = _owner_pairs(replace(s, track_ids=None), positive=True)
+    owners = select(pairs.c.track_id)
     q = (
         select(key, func.coalesce(func.sum(R.quantity), 0), func.count(func.distinct(Rep.id)))
         .select_from(R)

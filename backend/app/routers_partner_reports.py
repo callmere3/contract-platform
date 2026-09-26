@@ -478,6 +478,9 @@ def _attrs_from_rows(db: Session, report_id) -> dict:
 
 
 PER_ROW_PROBE = 50
+# Архив Dista — несколько сотен отчётов с 2025 года (а с 2024-м — тысяча
+# с лишним); показываем его целиком, отбор идёт на экране.
+ARCHIVE_LIMIT = 3000
 
 
 def _per_row_attrs(db: Session, reports: list) -> dict:
@@ -496,6 +499,12 @@ def _per_row_attrs(db: Session, reports: list) -> dict:
     for report in reports:
         empty = [name for name in REPORT_ATTRS if not getattr(report, name)]
         if not empty:
+            continue
+        if report.source == "dista":
+            # У отчёта из архива Dista параметры всегда построчные (Dista
+            # хранила их у строки), и спрашивать базу про сотни отчётов
+            # архива незачем.
+            out[str(report.id)] = empty
             continue
         probe = db.execute(
             select(*[getattr(R, name) for name in empty])
@@ -822,6 +831,8 @@ def _report_out(report: PartnerReport, partner_name: str, payment_date=None,
         "payment_label": payment_label,
         **{name: getattr(report, name) for name in REPORT_ATTRS},
         "uploaded_at": report.uploaded_at.isoformat() if report.uploaded_at else None,
+        # 'dista' — перенесён из архива Dista, а не загружен файлом.
+        "source": report.source,
     }
 
 
@@ -830,6 +841,7 @@ def list_reports(
     partner_id: uuid.UUID | None = None,
     period_from: str | None = None,
     period_to: str | None = None,
+    archive: bool = False,
     db: Session = Depends(get_session),
 ) -> dict:
     """
@@ -838,6 +850,12 @@ def list_reports(
     Фильтр по периоду — ПЕРЕСЕЧЕНИЕ, а не точное совпадение: у площадок
     периоды разные (месяц, квартал), и «покажи всё за третий квартал» должно
     находить и июльский отчёт МТС.
+
+    `archive=true` — ОТДЕЛЬНЫЙ СПИСОК отчётов, перенесённых из архива Dista
+    (26.09.2026). Вместе с загруженными их не показываем: их сотни, перенесены
+    они одним прогоном, и по дате загрузки они вытеснили бы из списка все
+    настоящие. Архив сортируется по периоду — дата переноса в нём ничего не
+    значит.
     """
     query = (
         select(PartnerReport, Partner.name, PartnerPayment.occurred_on,
@@ -852,7 +870,15 @@ def list_reports(
     if period_to:
         query = query.where(PartnerReport.period_from <= _date(period_to, "period_to"))
 
-    rows = db.execute(query.order_by(PartnerReport.uploaded_at.desc()).limit(200)).all()
+    if archive:
+        query = query.where(PartnerReport.source == "dista").order_by(
+            PartnerReport.period_to.desc(), Partner.name
+        ).limit(ARCHIVE_LIMIT)
+    else:
+        query = query.where(PartnerReport.source.is_(None)).order_by(
+            PartnerReport.uploaded_at.desc()
+        ).limit(200)
+    rows = db.execute(query).all()
     # Номер поступления и площадка платежа — для подписи в столбце
     # «Поступление». Площадка у платежа СВОЯ: обычно она совпадает с площадкой
     # отчёта (привязка это проверяет), но у строки её могут и не проставить.

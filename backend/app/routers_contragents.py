@@ -50,8 +50,10 @@ from app.models import (
     Contragent,
     ContragentNickname,
     FinanceOperation,
+    RoyaltyAccrual,
     Template,
     TrackRight,
+    TrackRightHistory,
     User,
     doc_type_sort_key,
 )
@@ -1235,6 +1237,23 @@ def delete_contragent(
                 "На контрагента ссылаются права в номенклатуре (%d строк). "
                 "Перепривяжите их импортом, если карточку всё-таки нужно снести."
                 % track_rows
+            ),
+        )
+
+    # История прав и начислений (архив Dista, 26.09.2026) — тоже RESTRICT:
+    # по ним считаются прошлые периоды и будут жить роялти-кабинеты, и
+    # карточка, исчезнув, унесла бы их смысл.
+    history_rows = (
+        db.query(TrackRightHistory).filter(TrackRightHistory.contragent_id == contragent_id).count()
+        + db.query(RoyaltyAccrual).filter(RoyaltyAccrual.contragent_id == contragent_id).count()
+    )
+    if history_rows:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "На контрагента ссылается история: прежние права на треки или "
+                "начисления прошлых периодов (%d строк). Такую карточку удалить нельзя."
+                % history_rows
             ),
         )
 

@@ -57,7 +57,7 @@ from sqlalchemy.orm import Session
 from app.audit import log_action
 from app.auth import get_current_user, require_role
 from app.db import get_session
-from app.models import Contragent, Track, TrackRight, User
+from app.models import Contragent, Track, TrackRight, TrackRightHistory, User
 from app.nomenclature_import import (
     AUTHOR,
     COLUMNS,
@@ -81,6 +81,7 @@ from app.roles import (
     CAN_IMPORT_NOMENCLATURE,
     CAN_VIEW_NOMENCLATURE,
 )
+from app.rights_history import archive_superseded
 from app.routers_partner_reports import forget_all_parsed
 
 nomenclature_router = APIRouter(
@@ -867,6 +868,14 @@ def import_apply(
     touched: list[uuid.UUID] = []
     rights_rows: list[dict] = []
 
+    # ПРЕЖНИЙ СОСТАВ ПРАВ — В ИСТОРИЮ, если дата прав сдвинулась вперёд и
+    # состав поменялся (см. rights_history). Строго ДО записи треков: после
+    # неё в базе уже новая дата, и сравнивать было бы не с чем.
+    history_moved = archive_superseded(db, {
+        existing[row.track["sku"]].id: (row.track.get("rights_since"), row.rights)
+        for row in ready if row.track["sku"] in existing
+    }, source="import")
+
     kept_letters = 0
     for row in ready:
         sku = row.track["sku"]
@@ -960,6 +969,9 @@ def import_apply(
             # испорченной копией. В журнале это видно, чтобы было понятно,
             # почему название в базе не совпадает со строкой выгрузки.
             "kept_letters": kept_letters,
+            # Сколько треков получили новую версию прав: прежний состав ушёл
+            # в историю и остался для расчёта прошлых периодов.
+            "rights_history": history_moved,
         },
     )
     db.commit()
@@ -1004,6 +1016,34 @@ def owner_suggestions(
     return {"owners": [{"id": str(cid), "title": title} for cid, title in rows]}
 
 
+def _rights_history(db: Session, track_id: uuid.UUID) -> list:
+    """
+    Прежние составы прав трека, свежие сверху: [{from, to, rights: […]}].
+
+    Только для показа — править историю нельзя: по ней посчитаны прошлые
+    периоды, и «исправленная» задним числом версия объяснить уже выплаченное
+    не смогла бы. Порядок внутри версии — авторские, потом смежные, как везде.
+    """
+    versions: dict = {}
+    for r in db.scalars(
+        select(TrackRightHistory)
+        .where(TrackRightHistory.track_id == track_id)
+        .order_by(TrackRightHistory.valid_from.desc(), TrackRightHistory.right_type,
+                  TrackRightHistory.slot)
+    ):
+        v = versions.setdefault((r.valid_from, r.valid_to), [])
+        v.append({
+            "right_type": r.right_type, "owner": r.owner,
+            "contragent_id": str(r.contragent_id) if r.contragent_id else None,
+            "share": percent(r.share), "royalty": percent(r.royalty),
+        })
+    return [
+        {"from": vf.isoformat(), "to": vt.isoformat(),
+         "rights": sorted(rows, key=lambda x: x["right_type"] != AUTHOR)}
+        for (vf, vt), rows in versions.items()
+    ]
+
+
 def _card(db: Session, track: Track) -> dict:
     """Карточка трека одним словарём — им отвечают и чтение, и правка."""
     rights = _rights_by_track(db, [track.id]).get(track.id, {})
@@ -1017,6 +1057,7 @@ def _card(db: Session, track: Track) -> dict:
         "share_related": percent(track.share_related),
         "royalty_percent": percent(track.royalty_percent),
         "rights_since": track.rights_since.isoformat() if track.rights_since else None,
+        "rights_history": _rights_history(db, track.id),
         "source_file": track.source_file,
         "imported_at": track.imported_at.isoformat() if track.imported_at else None,
     }
@@ -1325,6 +1366,9 @@ def update_track(
     }
     after = {(r["right_type"], r["owner"], r["share"], r["royalty"]) for r in rights}
 
+    # Сдвинули дату прав вперёд и поменяли состав — прежний уходит в историю
+    # (см. rights_history). Строго ДО записи: после неё дата уже новая.
+    history_moved = archive_superseded(db, {track_id: (fields["rights_since"], rights)}, source="edit")
     db.execute(update(Track).where(Track.id == track_id).values(**fields))
     db.execute(delete(TrackRight).where(TrackRight.track_id == track_id))
 
@@ -1358,6 +1402,7 @@ def update_track(
             # «что именно правили», а не только «правили».
             "fields": changed,
             "rights_changed": before != after,
+            "rights_history": bool(history_moved),
             "rights": len(rows),
             "owners_created": sorted(created_ids),
         },

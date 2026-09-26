@@ -18,8 +18,11 @@ import { API, apiFetch, apiJson, filenameFromResponse } from './client';
  * Фильтр по периоду — ПЕРЕСЕЧЕНИЕ: у площадок периоды разные (месяц, квартал),
  * и «покажи всё за третий квартал» должно находить и июльский отчёт.
  */
-export function listReports({ partnerId, periodFrom, periodTo } = {}) {
+export function listReports({ partnerId, periodFrom, periodTo, archive = false } = {}) {
   const params = new URLSearchParams();
+  // Архив Dista — ОТДЕЛЬНЫЙ список (перенесён из её базы 26.09.2026): с
+  // загруженными файлами он не смешивается, иначе вытеснил бы их.
+  if (archive) params.set('archive', 'true');
   if (partnerId) params.set('partner_id', partnerId);
   if (periodFrom) params.set('period_from', periodFrom);
   if (periodTo) params.set('period_to', periodTo);

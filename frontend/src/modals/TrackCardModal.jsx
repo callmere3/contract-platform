@@ -206,6 +206,8 @@ function CardView({ card }) {
         />
       ))}
 
+      {card.rights_history?.length > 0 && <RightsHistory versions={card.rights_history} />}
+
       {/* Откуда и когда приехала строка, в карточке не пишем: это нужно при
           разборе импорта, а не при взгляде на трек. Архив — другое дело: это
           состояние самого трека. */}
@@ -255,6 +257,60 @@ function RightsBlock({ title, owners }) {
       )}
     </div>
   );
+}
+
+/**
+ * ПРЕЖНИЕ СОСТАВЫ ПРАВ (26.09.2026): что действовало до текущей даты прав.
+ * По ним считаются отчёты тех периодов — состав берётся на конец периода
+ * отчёта площадки. Только чтение: по истории уже посчитаны деньги.
+ * Свёрнуто по умолчанию: в карточку смотрят ради текущего состава.
+ */
+function RightsHistory({ versions }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mt-5">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="text-[13px] text-accent hover:underline"
+      >
+        {open ? 'Скрыть' : 'Показать'} прежние составы прав ({versions.length})
+      </button>
+      {open && (
+        <div className="mt-3 flex flex-col gap-3">
+          {versions.map((v) => (
+            <div key={v.from} className="border border-border rounded-card overflow-hidden">
+              <div className="px-3.5 py-2 text-[12.5px] text-text-secondary bg-surface-hover border-b border-border">
+                с {russianDate(v.from)} по {russianDate(prevDay(v.to))}
+              </div>
+              {v.rights.map((o, i) => (
+                <div
+                  key={`${o.right_type}-${o.owner}-${i}`}
+                  className="flex items-center justify-between gap-4 px-3.5 py-2 border-b border-border last:border-b-0"
+                >
+                  <span className="text-[13px] text-text min-w-0 truncate">
+                    <span className="text-text-muted">{o.right_type === AUTHOR ? 'авт.' : 'смж.'}</span>{' '}
+                    {o.owner}
+                  </span>
+                  <span className="text-[12.5px] text-text-muted tabular-nums whitespace-nowrap">
+                    доля {formatPercent(o.share)} · роялти {formatPercent(o.royalty)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Срок версии хранится «по» НЕ включительно — человеку показываем последний день. */
+function prevDay(iso) {
+  const d = new Date(`${iso}T00:00:00`);
+  d.setDate(d.getDate() - 1);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 /* ------------------------------------------------------------------ правка */

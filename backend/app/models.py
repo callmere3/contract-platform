@@ -873,6 +873,106 @@ class TrackRight(Base):
     track: Mapped["Track"] = relationship(back_populates="rights")
 
 
+class TrackRightHistory(Base):
+    """
+    ПРЕЖНИЙ состав прав трека — то, что действовало [valid_from, valid_to)
+    (26.09.2026, решение владельца после разбора базы Dista).
+
+    Права меняются: правообладателя выводят из трека, ставку пересматривают.
+    Dista хранила состав на каждую дату (у 2 107 треков их несколько), а мы —
+    только текущий, и пересчёт прошлого квартала взял бы сегодняшние доли.
+
+    ТЕКУЩИЙ СОСТАВ ОСТАЁТСЯ В `track_rights`, а сюда уходят только прежние:
+    всё, что читает права (каталог, карточка, фильтр по правообладателю,
+    выгрузка), по-прежнему видит один состав и об истории не знает. Историю
+    читает только расчёт ведомостей (`royalty_reports.compute`) и карточка
+    трека.
+
+    КАКОЙ СОСТАВ БРАТЬ — ТОТ, ЧТО ДЕЙСТВОВАЛ НА КОНЕЦ ПЕРИОДА ОТЧЁТА
+    ПЛОЩАДКИ. Так считала Dista: проверено по её начислениям — там, где
+    версии прав расходятся, это правило сходится до копейки, а «текущие
+    права» — нет. Текущий состав действует с `tracks.rights_since`.
+
+    Заполняют: перенос из Dista (`source='dista'`) и импорт/правка, когда
+    дата прав сдвигается вперёд, а состав меняется (`archive_superseded` в
+    `rights_history.py`).
+    """
+    __tablename__ = "track_right_history"
+    __table_args__ = (
+        Index("ix_track_right_history_track", "track_id", "valid_from"),
+        Index("ix_track_right_history_contragent", "contragent_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    track_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tracks.id", ondelete="CASCADE")
+    )
+    valid_from: Mapped[date] = mapped_column(Date)
+    # Не включительно: с этой даты действует следующий состав.
+    valid_to: Mapped[date] = mapped_column(Date)
+    right_type: Mapped[str] = mapped_column(String(8))
+    slot: Mapped[int] = mapped_column(SmallInteger)
+    owner: Mapped[str] = mapped_column(String(255))
+    # RESTRICT, как у текущих прав: карточку, по которой когда-то считали
+    # деньги, удалять нельзя — пересчёт прошлого периода потерял бы её.
+    contragent_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("contragents.id", ondelete="RESTRICT")
+    )
+    share: Mapped[Decimal | None] = mapped_column(Numeric(6, 2))
+    royalty: Mapped[Decimal | None] = mapped_column(Numeric(6, 2))
+    source: Mapped[str | None] = mapped_column(String(16))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class RoyaltyAccrual(Base):
+    """
+    Начисление правообладателю за период — ИСТОРИЯ (26.09.2026).
+
+    Перенесено из Dista: там это «Акт приёмки-сдачи работ» (вознаграждение)
+    и два документа к нему — «Сумма собранных прав» (реализация) и
+    «Удержание Лицензиата» (комиссия). С III кв. 2024.
+
+    ТОЛЬКО ИСТОРИЯ (решение владельца): в балансы контрагентов и в
+    ведомости («Предыдущий накопительный итог») это НЕ идёт — балансы
+    заведут руками с учётом выплат, которых в Dista не было. Понадобится
+    роялти-кабинетам правообладателей.
+
+    `contragent_id` nullable: у карточки Dista может не оказаться нашей
+    пары; имя тогда в `holder_name`, как было в Dista. `realization` и
+    `commission` пусты, если сопроводительные документы Dista не удалось
+    однозначно сопоставить с актом (у части правообладателей по два акта за
+    период).
+    """
+    __tablename__ = "royalty_accruals"
+    __table_args__ = (
+        Index("ix_royalty_accruals_contragent", "contragent_id", "period_to"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    contragent_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("contragents.id", ondelete="RESTRICT")
+    )
+    holder_name: Mapped[str] = mapped_column(String(255))
+    period_from: Mapped[date] = mapped_column(Date)
+    period_to: Mapped[date] = mapped_column(Date)
+    accrued_on: Mapped[date] = mapped_column(Date)
+    royalty: Mapped[Decimal] = mapped_column(Numeric(20, 8))
+    realization: Mapped[Decimal | None] = mapped_column(Numeric(20, 8))
+    commission: Mapped[Decimal | None] = mapped_column(Numeric(20, 8))
+    note: Mapped[str | None] = mapped_column(Text)
+    source: Mapped[str] = mapped_column(String(16), server_default="dista", default="dista")
+    dista_doc_id: Mapped[int | None] = mapped_column(Integer, unique=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 class PartnerReportRule(Base):
     """
     ПРАВИЛО РАЗБОРА ОТЧЁТА ПАРТНЁРА — то самое «настроить по образцу»
@@ -1158,6 +1258,13 @@ class PartnerReport(Base):
     uploaded_by: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
     )
+    # 'dista' — отчёт ПЕРЕНЕСЁН ИЗ АРХИВА Dista (26.09.2026), а не загружен
+    # файлом; пусто — обычная загрузка. Такие отчёты живут отдельным списком
+    # («Архив Dista» на вкладке) и не числятся «забытыми» без поступления:
+    # привязывать их не к чему. `dista_doc_id` — номер документа в Dista,
+    # уникален: повторный перенос ничего не задваивает.
+    source: Mapped[str | None] = mapped_column(String(16))
+    dista_doc_id: Mapped[int | None] = mapped_column(Integer, unique=True)
 
     partner: Mapped["Partner"] = relationship()
     rows: Mapped[list["PartnerReportRow"]] = relationship(
