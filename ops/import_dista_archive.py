@@ -56,7 +56,7 @@ from app.models import (
     Contragent, Partner, PartnerReport, RoyaltyAccrual, Track, TrackRightHistory,
 )
 from app.partner_reports import PRECISION, report_region
-from app.routers_partner_reports import _store_rows, outside_track_id
+from app.routers_partner_reports import OUTSIDE_SKU, _store_rows, outside_track_id
 
 DUPLICATE_TOLERANCE = Decimal("0.02")
 
@@ -230,7 +230,10 @@ def import_reports(db, folder, dry, stats, only_doc=None):
             a, r = _dec(c[4]), _dec(c[5])
             q = Decimal(c[3]).quantize(Decimal("0.01"))
             sku = c[2] or None
-            tid = tracks.get(sku) if sku else None
+            # Dista сама складывала строки с неизвестным артикулом на свой
+            # товар «0000001 Вне каталога» — у нас это тот же приёмник, и
+            # считать такую строку разнесённой нельзя.
+            tid = tracks.get(sku) if sku and sku != OUTSIDE_SKU else None
             if tid is None:
                 un_n += 1
                 un_sum += a + r

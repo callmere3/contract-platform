@@ -9,6 +9,7 @@
 import threading
 import time
 import uuid
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 
@@ -93,7 +94,7 @@ def _money(value) -> str:
 def preview(body: RoyaltyRequest, db: Session = Depends(get_session)) -> dict:
     """Кому и сколько насчитано — без файлов."""
     s = _settings(body)
-    results = compute(db, s)
+    results = compute(db, s, detail=False)
     return {
         "contragents": [
             {
@@ -134,7 +135,9 @@ def generate(
     kinds = [k for k in body.kinds if k in ("summary", "detailed")]
     if not kinds:
         raise HTTPException(400, "Выберите вид отчёта: сводный или детализированный")
-    results = compute(db, s)
+    # Облегчённый расчёт — кому и сколько; детализацию build_files берёт
+    # порциями (память сервера, см. DETAIL_BATCH).
+    results = compute(db, s, detail=False)
     if not results:
         raise HTTPException(404, "За этот период начислений нет — формировать нечего")
     if len(results) > MAX_CONTRAGENTS:
@@ -143,7 +146,11 @@ def generate(
             f"Правообладателей {len(results)} — это больше {MAX_CONTRAGENTS} за раз. "
             "Выберите часть из них.",
         )
-    files = build_files(results, s, kinds)
+    files = build_files(
+        results, s, kinds,
+        detail_loader=lambda ids: compute(
+            db, replace(s, contragent_ids=[uuid.UUID(i) for i in ids])),
+    )
     log_action(
         db, current_user, "royalty_report.generate", entity_type="royalty_report",
         meta={

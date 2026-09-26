@@ -80,9 +80,12 @@ class Settings:
     group_detail: bool = True
 
 
-@dataclass
+@dataclass(slots=True)
 class Line:
-    """Строка детализации."""
+    """
+    Строка детализации. С `slots`: их сотни тысяч, и словарь атрибутов на
+    каждой стоит памяти больше, чем сами числа.
+    """
     sku: str
     code: str
     title: str
@@ -278,15 +281,47 @@ def _owner_pairs(s: Settings, *, positive: bool = False):
     return union(*parts).subquery()
 
 
-def compute(db: Session, s: Settings) -> list:
-    """Насчитать вознаграждение: список `Result`, по одному на правообладателя."""
+def compute(db: Session, s: Settings, *, detail: bool = True) -> list:
+    """
+    Насчитать вознаграждение: список `Result`, по одному на правообладателя.
+
+    `detail=False` — ОБЛЕГЧЁННЫЙ РАСЧЁТ (27.09.2026): строка на «трек ×
+    площадка», без параметров и периодов. Его хватает предпросмотру,
+    сводным отчётам и сводной ведомости (она всё равно по строке на трек), а
+    детализация по параметрам нужна только детализированной ведомости. С
+    архивом Dista за квартал набегает 2,4 млн строк отчётов и 2,5 млн групп
+    детализации: собранные целиком объектами Python, они съедали больше
+    гигабайта — всю память сервера. Облегчённых групп там 293 тыс.
+
+    Суммы в обоих режимах ОДНИ И ТЕ ЖЕ: база группирует до КОНЦА ПЕРИОДА
+    отчёта — по нему выбирается состав прав (RightsTimeline), — а
+    складываются периоды уже здесь, после применения долей. Строки из базы
+    читаются ПОТОКОМ (`yield_per`), а не списком целиком.
+    """
     owners = _owner_pairs(s)
 
     R, Rep = PartnerReportRow, PartnerReport
-    attrs = [func.coalesce(getattr(R, a), getattr(Rep, a)).label(a) for a in ATTRS]
-    keys = [owners.c.contragent_id, R.track_id, Rep.partner_id, Rep.period_from, Rep.period_to, *attrs]
-    if not s.group_detail:
-        keys.append(R.id)
+    base = (
+        select(owners.c.contragent_id, R.track_id)
+        .select_from(R)
+        .join(Rep, Rep.id == R.report_id)
+        .join(owners, owners.c.track_id == R.track_id)
+        .where(_report_filter(s), _not_pending())
+    )
+    pairs = db.execute(base.distinct()).all()
+    if not pairs:
+        return []
+    track_ids = {tid for _, tid in pairs}
+    contragent_ids = {cid for cid, _ in pairs}
+    del pairs
+
+    if detail:
+        attrs = [func.coalesce(getattr(R, a), getattr(Rep, a)).label(a) for a in ATTRS]
+        keys = [owners.c.contragent_id, R.track_id, Rep.partner_id, Rep.period_to, Rep.period_from, *attrs]
+        if not s.group_detail:
+            keys.append(R.id)
+    else:
+        keys = [owners.c.contragent_id, R.track_id, Rep.partner_id, Rep.period_to]
     q = (
         select(
             *keys,
@@ -299,14 +334,8 @@ def compute(db: Session, s: Settings) -> list:
         .join(owners, owners.c.track_id == R.track_id)
         .where(_report_filter(s), _not_pending())
         .group_by(*keys)
+        .execution_options(yield_per=20000)
     )
-    groups = db.execute(q).all()
-    if not groups:
-        return []
-
-    n = len(keys)
-    track_ids = {g[1] for g in groups}
-    contragent_ids = {g[0] for g in groups}
 
     tracks = {
         t.id: t for t in db.scalars(select(Track).where(Track.id.in_(track_ids)))
@@ -335,10 +364,11 @@ def compute(db: Session, s: Settings) -> list:
         if nick and nick.strip():
             nicks.setdefault(cid, []).append(nick.strip())
 
+    n = len(keys)
     results: dict = {}
-    for g in groups:
-        cid, tid, pid, pfrom, pto = g[0], g[1], g[2], g[3], g[4]
-        attr_values = g[5:9]
+    lean: dict = {}     # (правообладатель, трек, площадка) -> Line
+    for g in db.execute(q):
+        cid, tid, pid, pto = g[0], g[1], g[2], g[3]
         qty, amount_a, amount_r = (Decimal(str(x)) for x in g[n:n + 3])
         r = timeline.rights(tid, cid, pto)
         share_a, royalty_a = r.get("author", [ZERO, None])
@@ -347,6 +377,37 @@ def compute(db: Session, s: Settings) -> list:
             continue
         base_a = amount_a * share_a / HUNDRED
         base_r = amount_r * share_r / HUNDRED
+        reward_a = base_a * (royalty_a or ZERO) / HUNDRED
+        reward_r = base_r * (royalty_r or ZERO) / HUNDRED
+
+        res = results.get(cid)
+        if res is None:
+            title, number, cdate, name, kind = cards.get(cid, ("", "", None, "", ""))
+            res = results[cid] = Result(
+                contragent_id=str(cid), title=title or "",
+                contract_number=(number or "").strip(), contract_date=cdate,
+                name=(name or "").strip(), kind=kind or "",
+                nicknames=sorted(nicks.get(cid, []), key=str.casefold),
+            )
+
+        if not detail:
+            line = lean.get((cid, tid, pid))
+            if line is not None:
+                line.quantity += qty
+                line.realization += base_a + base_r
+                line.reward_author += reward_a
+                line.reward_related += reward_r
+                # Доли и ставки на строке — последнего периода: у трека без
+                # истории прав они одни и те же.
+                if pto and (line.period_to is None or pto > line.period_to):
+                    line.period_to = pto
+                    line.share_author, line.share_related = share_a, share_r
+                    line.royalty_author, line.royalty_related = royalty_a, royalty_r
+                continue
+            pfrom, attr_values = None, ("", "", "", "")
+        else:
+            pfrom, attr_values = g[4], g[5:9]
+
         t = tracks.get(tid)
         line = Line(
             sku=t.sku if t else "", code=(t.code or "") if t else "",
@@ -358,18 +419,11 @@ def compute(db: Session, s: Settings) -> list:
             usage_kind=attr_values[2] or "", territory=attr_values[3] or "",
             period_from=pfrom, period_to=pto, quantity=qty,
             realization=base_a + base_r,
-            royalty_author=royalty_a, reward_author=base_a * (royalty_a or ZERO) / HUNDRED,
-            royalty_related=royalty_r, reward_related=base_r * (royalty_r or ZERO) / HUNDRED,
+            royalty_author=royalty_a, reward_author=reward_a,
+            royalty_related=royalty_r, reward_related=reward_r,
         )
-        res = results.get(cid)
-        if res is None:
-            title, number, cdate, name, kind = cards.get(cid, ("", "", None, "", ""))
-            res = results[cid] = Result(
-                contragent_id=str(cid), title=title or "",
-                contract_number=(number or "").strip(), contract_date=cdate,
-                name=(name or "").strip(), kind=kind or "",
-                nicknames=sorted(nicks.get(cid, []), key=str.casefold),
-            )
+        if not detail:
+            lean[(cid, tid, pid)] = line
         res.lines.append(line)
 
     for res in results.values():
@@ -711,8 +765,21 @@ def _save(wb) -> bytes:
     return buf.getvalue()
 
 
-def build_files(results: list, s: Settings, kinds: list) -> list:
-    """Файлы отчётов: [(имя, байты)] — по одному на правообладателя и вид."""
+# Детализированные ведомости считаются ПОРЦИЯМИ по столько правообладателей
+# (27.09.2026): детализация квартала с архивом Dista — миллионы строк, и
+# целиком она в память сервера не помещается.
+DETAIL_BATCH = 20
+
+
+def build_files(results: list, s: Settings, kinds: list, detail_loader=None) -> list:
+    """
+    Файлы отчётов: [(имя, байты)] — по одному на правообладателя и вид.
+
+    `results` — облегчённый расчёт (`compute(detail=False)`): сводной
+    ведомости он достаточен — она и так по строке на трек. Детализированная
+    берёт детализацию у `detail_loader(ids)` порциями по DETAIL_BATCH
+    правообладателей; без него — прямо из `results` (они уже детальные).
+    """
     out, seen = [], set()
 
     def add(name, content):
@@ -724,11 +791,20 @@ def build_files(results: list, s: Settings, kinds: list) -> list:
         seen.add(name)
         out.append((name, content))
 
-    for res in results:
-        if "summary" in kinds:
-            add(file_name("summary", s, res), summary_xlsx(res, s))
+    for i in range(0, len(results), DETAIL_BATCH):
+        chunk = results[i:i + DETAIL_BATCH]
+        detailed = {}
         if "detailed" in kinds:
-            add(file_name("detailed", s, res), detailed_xlsx(res, s))
+            if detail_loader is None:
+                detailed = {r.contragent_id: r for r in chunk}
+            else:
+                detailed = {r.contragent_id: r for r in detail_loader([r.contragent_id for r in chunk])}
+        for res in chunk:
+            if "summary" in kinds:
+                add(file_name("summary", s, res), summary_xlsx(res, s))
+            if "detailed" in kinds and res.contragent_id in detailed:
+                add(file_name("detailed", s, res), detailed_xlsx(detailed[res.contragent_id], s))
+        del detailed
     return out
 
 
@@ -796,7 +872,7 @@ def summary(db: Session, s: Settings, by: str) -> list:
     опознавательные колонки. Суммы — из того же `compute`, что и ведомости,
     поэтому итоги совпадают во всех разрезах и с ведомостями.
     """
-    results = compute(db, s)
+    results = compute(db, s, detail=False)
     if by == "holder":
         rows = [{
             "key": r.contragent_id, "title": r.title, "tracks": r.tracks,
