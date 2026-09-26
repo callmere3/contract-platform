@@ -337,10 +337,15 @@ def compute(db: Session, s: Settings, *, detail: bool = True) -> list:
         .execution_options(yield_per=20000)
     )
 
+    # Только нужные колонки, а не объекты ORM: треков в квартале десятки
+    # тысяч, и полный объект на каждый стоит памяти зря.
     tracks = {
         t.id: t
         for batch in chunks(track_ids)
-        for t in db.scalars(select(Track).where(Track.id.in_(batch)))
+        for t in db.execute(
+            select(Track.id, Track.sku, Track.code, Track.title, Track.artist,
+                   Track.authors, Track.rights_since).where(Track.id.in_(batch))
+        )
     }
     # Доли и ставки — по (трек, правообладатель, вид права) и ПО ВЕРСИИ
     # состава: для отчёта берётся состав, действовавший на конец его периода
